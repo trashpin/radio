@@ -39,7 +39,12 @@ Run from repo root (see Flutter docs for details):
   `flutter run -d web-server --web-port=8080 --web-hostname=0.0.0.0`, then browse
   to `http://localhost:8080`. The first web compile takes ~15–20s before the app
   appears — wait for it rather than assuming a blank screen is a failure.
-- **Backend config is not committed.** Supabase URL/key are injected at runtime:
-  `flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...`.
-  Without them the app still boots (Supabase init is skipped) and Settings shows
-  "Not configured" — this is expected for UI-only work.
+- **Backend config is not committed.** Supabase URL/key are read at runtime from
+  a gitignored `.env` file (loaded by `flutter_dotenv`). Copy `.env.example` to
+  `.env` and fill in `SUPABASE_URL` / `SUPABASE_ANON_KEY` from the Supabase
+  dashboard. The startup update script auto-creates `.env` from `.env.example`
+  if missing, so builds never fail on the missing asset — but with blank values
+  the app boots, Settings shows "Not configured", and the Destinations tab shows
+  a friendly "cannot reach" message. This is expected until real keys are added.
+- `.env` is declared as a Flutter **asset** in `pubspec.yaml`; it must exist for
+  `flutter run`/`build` to succeed (hence the auto-copy above).
