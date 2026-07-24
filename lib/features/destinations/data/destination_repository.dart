@@ -1,41 +1,41 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:explorer_os_mobile/core/constants/app_constants.dart';
-import 'package:explorer_os_mobile/core/error/error_handler.dart';
+import 'package:explorer_os_mobile/core/data/read_repository.dart';
+import 'package:explorer_os_mobile/core/data/supabase_tables.dart';
+import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// Data-access layer for destinations.
 ///
-/// The ONLY place that knows how destinations are stored/queried in Supabase.
-/// Keeping queries here (not in the UI or providers) isolates schema knowledge
-/// and keeps the widget/provider layers thin and testable. The app is
-/// read-only, so this class only reads.
-class DestinationRepository {
-  const DestinationRepository(this._client);
+/// Now built on the generic [SupabaseReadRepository], so all the query, caching,
+/// and error-handling plumbing is inherited (no duplication). This class adds
+/// only destination-specific concerns — here, alphabetized listing via
+/// [fetchDestinations]. The app is read-only for content, so it exposes reads
+/// only.
+class DestinationRepository extends SupabaseReadRepository<Destination> {
+  DestinationRepository({
+    required super.client,
+    super.connectivity,
+  }) : super(
+          table: SupabaseTables.destinations,
+          fromJson: Destination.fromJson,
+        );
 
-  final SupabaseClient _client;
-
-  /// Loads all destinations from the `destinations` table, alphabetized.
-  /// Backend/network errors are normalized to a friendly `AppException`.
+  /// All destinations, alphabetized by name (kept for backward compatibility
+  /// with the Explore screen).
   Future<List<Destination>> fetchDestinations() async {
-    try {
-      final rows = await _client
-          .from(AppConstants.destinationsTable)
-          .select()
-          .order('name', ascending: true);
-
-      return rows
-          .map((row) => Destination.fromJson(row))
-          .toList(growable: false);
-    } catch (error, stackTrace) {
-      throw ErrorHandler.from(error, stackTrace);
-    }
+    final items = await getAll();
+    return [...items]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
 }
 
-/// Provides a [DestinationRepository] wired to the shared Supabase client.
+/// Provides a [DestinationRepository] wired to the shared Supabase client and
+/// connectivity service.
 final destinationRepositoryProvider = Provider<DestinationRepository>((ref) {
-  return DestinationRepository(ref.watch(supabaseClientProvider));
+  return DestinationRepository(
+    client: ref.watch(supabaseClientProvider),
+    connectivity: ref.watch(connectivityServiceProvider),
+  );
 });

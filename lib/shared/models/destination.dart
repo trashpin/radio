@@ -1,14 +1,18 @@
-/// A read-only representation of an ExplorerOS destination.
+import 'package:explorer_os_mobile/core/data/model.dart';
+
+/// A read-only representation of an ExplorerOS destination — the top-level unit
+/// of content (e.g. a national park, region, or route).
 ///
 /// Destinations (National Park Buddy, Florida Buddy, Historic Route 66, and any
 /// future ones) are NEVER hardcoded. This model describes the shape of a
 /// destination record returned by the backend (Supabase) so the UI has a
 /// type-safe object to render. It is immutable and only knows how to be created
 /// *from* backend JSON — reflecting the read-only nature of the mobile client.
+/// Implements [Model] so the generic repository/cache can manage it uniformly.
 ///
 /// All fields beyond [id]/[name] are optional so the UI degrades gracefully when
 /// the backend omits them (e.g. a row without a category or image).
-class Destination {
+class Destination implements Model {
   const Destination({
     required this.id,
     required this.name,
@@ -20,6 +24,7 @@ class Destination {
     this.distanceLabel,
   });
 
+  @override
   final String id;
   final String name;
   final String? description;

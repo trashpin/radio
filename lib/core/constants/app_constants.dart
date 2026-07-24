@@ -24,6 +24,6 @@ class AppConstants {
   /// user/session data is wired up (no fake account is implied).
   static const String placeholderExplorerName = 'Explorer';
 
-  /// Name of the read-only destinations table in Supabase.
-  static const String destinationsTable = 'destinations';
+  // Supabase table names now live in `core/data/supabase_tables.dart`
+  // (single source of truth for every entity).
 }
