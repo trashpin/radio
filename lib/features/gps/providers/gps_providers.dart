@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/gps/services/destination_detection_s
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/geolocator_location_provider.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
@@ -29,8 +30,13 @@ import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_se
 /// [locationProviderProvider] is a [SimulatedLocationProvider] — override it in
 /// `main`/tests with a real provider (system/Google/Apple/offline/background).
 
+/// The active positioning source. Defaults to the real device provider
+/// ([GeolocatorLocationProvider]); override with a [SimulatedLocationProvider]
+/// (tests) or a future Google/Apple/offline provider without touching the
+/// engine. Constructing it does not prompt for permission — that happens lazily
+/// on `startTracking()`.
 final locationProviderProvider = Provider<LocationProvider>((ref) {
-  final provider = SimulatedLocationProvider();
+  final provider = GeolocatorLocationProvider();
   ref.onDispose(provider.dispose);
   return provider;
 });
