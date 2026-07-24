@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/radio/events/radio_event.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
@@ -17,11 +20,24 @@ import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.
 /// and this controller emits the new state.
 class RadioEngineController extends Notifier<PlaybackState> {
   RadioEngineService get _engine => ref.read(radioEngineServiceProvider);
+  StreamSubscription<RadioEvent>? _eventSub;
 
   @override
-  PlaybackState build() => _engine.state;
+  PlaybackState build() {
+    // Reflect engine-driven changes (auto-advance from the audio adapter,
+    // interruptions, station changes) without every call site republishing.
+    _eventSub = _engine.events.listen((_) => state = _engine.state);
+    ref.onDispose(() => _eventSub?.cancel());
+    return _engine.state;
+  }
 
   void _publish() => state = _engine.state;
+
+  /// Starts or resumes playback (safe to call from a UI Play button).
+  void play() {
+    _engine.play();
+    _publish();
+  }
 
   /// Begins playback for the already-loaded station/schedulers.
   void start() {
@@ -38,6 +54,12 @@ class RadioEngineController extends Notifier<PlaybackState> {
   /// Skip the current item.
   void skip() {
     _engine.skip();
+    _publish();
+  }
+
+  /// Replay the previous item.
+  void previous() {
+    _engine.previous();
     _publish();
   }
 

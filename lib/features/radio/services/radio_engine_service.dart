@@ -238,16 +238,20 @@ class RadioEngineService {
   }
 
   /// Switches to a different station, reloading its playlist/rules/IDs.
+  ///
+  /// Pass [autoPlay] = false to load without starting (e.g. so a UI Play button
+  /// initiates playback — required by web autoplay policies).
   void changeStation(
     RadioStation newStation, {
     List<Song> songs = const [],
     List<AudioSegment> stationIdSegments = const [],
+    bool autoPlay = true,
   }) {
     playback.stop();
     queue.clear();
     station.load(station: newStation, playlist: songs);
     _emit(StationChanged(DateTime.now(), newStation.id));
-    playNext();
+    if (autoPlay) playNext();
   }
 
   // Volume / mute (via the audio-focus manager).
