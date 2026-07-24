@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../core/constants/app_constants.dart';
-import '../core/router/app_router.dart';
-import '../core/theme/app_theme.dart';
+import 'package:explorer_os_mobile/core/constants/app_constants.dart';
+import 'package:explorer_os_mobile/core/navigation/app_router.dart';
+import 'package:explorer_os_mobile/core/theme/app_theme.dart';
 
-/// The root widget of ExplorerOS-Mobile.
+/// The root widget of ExplorerOS.
 ///
-/// It wires together the three foundational pieces:
-///   • Theme       → `AppTheme.light` / `AppTheme.dark`
-///   • Navigation  → `AppRouter.router` (go_router)
-///   • App identity→ `AppConstants.appName`
-///
-/// We use `MaterialApp.router` (not plain `MaterialApp`) because navigation is
-/// driven declaratively by go_router. `themeMode: system` lets the OS decide
-/// light vs. dark.
+/// Wires the three foundations together: the design-system [AppTheme] (light +
+/// dark), navigation via [AppRouter] (go_router), and the app identity. Uses
+/// `MaterialApp.router` because navigation is declarative. `themeMode: system`
+/// lets the OS choose light/dark.
 class ExplorerApp extends StatelessWidget {
   const ExplorerApp({super.key});
 

@@ -1,62 +1,76 @@
 import 'package:flutter/material.dart';
-import 'app_colors.dart';
+import 'package:explorer_os_mobile/core/theme/app_colors.dart';
 
-/// Typography scale for ExplorerOS-Mobile.
+/// Typography scale for ExplorerOS.
 ///
-/// We keep all `TextStyle`s in one place so headings, body text, and captions
-/// stay consistent app-wide. These styles are wired into `ThemeData.textTheme`
-/// in `app_theme.dart`, so most widgets can simply use
-/// `Theme.of(context).textTheme.*` instead of referencing this class directly.
+/// A clear type hierarchy (large, confident headings + calm body text) is
+/// central to the premium look. These styles are wired into
+/// `ThemeData.textTheme` in `app_theme.dart`, so widgets should normally read
+/// `Theme.of(context).textTheme.*` rather than referencing this class directly.
 class AppTypography {
   const AppTypography._();
 
-  /// Large screen/page titles.
+  // Oversized "hero" display used on the dashboard welcome area.
+  static const TextStyle display = TextStyle(
+    fontSize: 34,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.5,
+    height: 1.1,
+  );
+
   static const TextStyle headingLarge = TextStyle(
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: FontWeight.w700,
-    color: AppColors.textPrimary,
+    letterSpacing: -0.3,
     height: 1.2,
   );
 
-  /// Section titles.
   static const TextStyle headingMedium = TextStyle(
-    fontSize: 22,
-    fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
+    fontSize: 20,
+    fontWeight: FontWeight.w700,
     height: 1.25,
   );
 
-  /// Card titles / prominent labels.
-  static const TextStyle titleSmall = TextStyle(
-    fontSize: 16,
+  static const TextStyle title = TextStyle(
+    fontSize: 17,
     fontWeight: FontWeight.w600,
-    color: AppColors.textPrimary,
+    height: 1.3,
   );
 
-  /// Default body copy.
-  static const TextStyle bodyMedium = TextStyle(
+  static const TextStyle body = TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w400,
-    color: AppColors.textPrimary,
-    height: 1.4,
+    height: 1.45,
   );
 
-  /// Secondary / muted copy.
-  static const TextStyle caption = TextStyle(
+  static const TextStyle label = TextStyle(
     fontSize: 13,
-    fontWeight: FontWeight.w400,
-    color: AppColors.textSecondary,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.3,
   );
 
-  /// Assembles a Material [TextTheme] from the styles above so it can be
-  /// plugged directly into [ThemeData].
-  static TextTheme textTheme(Color primaryTextColor) {
+  static const TextStyle caption = TextStyle(
+    fontSize: 12.5,
+    fontWeight: FontWeight.w400,
+    height: 1.3,
+  );
+
+  /// Builds a Material [TextTheme] for a given [Brightness], applying the right
+  /// primary/secondary text colors from [AppColors].
+  static TextTheme textTheme(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    final primary = isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+    final secondary =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+
     return TextTheme(
-      headlineLarge: headingLarge.copyWith(color: primaryTextColor),
-      headlineMedium: headingMedium.copyWith(color: primaryTextColor),
-      titleMedium: titleSmall.copyWith(color: primaryTextColor),
-      bodyMedium: bodyMedium.copyWith(color: primaryTextColor),
-      bodySmall: caption,
+      displayLarge: display.copyWith(color: primary),
+      headlineLarge: headingLarge.copyWith(color: primary),
+      headlineMedium: headingMedium.copyWith(color: primary),
+      titleMedium: title.copyWith(color: primary),
+      bodyMedium: body.copyWith(color: primary),
+      bodySmall: caption.copyWith(color: secondary),
+      labelLarge: label.copyWith(color: primary),
     );
   }
 }

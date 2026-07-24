@@ -1,26 +1,24 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/constants/app_constants.dart';
-import '../../core/error/error_handler.dart';
-import '../../models/destination.dart';
-import '../../services/supabase_service.dart';
+import 'package:explorer_os_mobile/core/constants/app_constants.dart';
+import 'package:explorer_os_mobile/core/error/error_handler.dart';
+import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// Data-access layer for destinations.
 ///
-/// This is the ONLY place that knows how destinations are stored/queried in
-/// Supabase. Keeping the query here (rather than in the UI) means the widget
-/// layer stays dumb and testable, and any change to the backend schema is
-/// isolated to this file. The app is read-only, so this class only reads.
+/// The ONLY place that knows how destinations are stored/queried in Supabase.
+/// Keeping queries here (not in the UI or providers) isolates schema knowledge
+/// and keeps the widget/provider layers thin and testable. The app is
+/// read-only, so this class only reads.
 class DestinationRepository {
   const DestinationRepository(this._client);
 
   final SupabaseClient _client;
 
-  /// Loads all destinations from the `destinations` table.
-  ///
-  /// Any backend/network error is normalized to a friendly [AppException] via
-  /// [ErrorHandler] so the UI can show a consistent message.
+  /// Loads all destinations from the `destinations` table, alphabetized.
+  /// Backend/network errors are normalized to a friendly `AppException`.
   Future<List<Destination>> fetchDestinations() async {
     try {
       final rows = await _client

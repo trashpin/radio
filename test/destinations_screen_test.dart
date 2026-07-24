@@ -5,9 +5,9 @@
 // proves the screen renders correctly for every backend outcome.
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
-import 'package:explorer_os_mobile/features/destinations/destinations_provider.dart';
-import 'package:explorer_os_mobile/features/destinations/destinations_screen.dart';
-import 'package:explorer_os_mobile/models/destination.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/destinations_screen.dart';
+import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

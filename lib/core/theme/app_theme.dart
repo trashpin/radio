@@ -1,61 +1,93 @@
 import 'package:flutter/material.dart';
-import 'app_colors.dart';
-import 'app_typography.dart';
+import 'package:explorer_os_mobile/core/theme/app_colors.dart';
+import 'package:explorer_os_mobile/core/theme/app_radius.dart';
+import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 
-/// Assembles the light and dark [ThemeData] for ExplorerOS-Mobile.
+/// Assembles the light & dark [ThemeData] for ExplorerOS from the design-system
+/// tokens (colors, typography, spacing, radius).
 ///
-/// This is the single source of truth for how the app looks. `MaterialApp`
-/// (in `app.dart`) consumes `AppTheme.light` and `AppTheme.dark`, so changing
-/// a color or component style here updates the whole app at once.
+/// This is the ONLY place component-level styling defaults live: card shape,
+/// button size/shape, navigation bar, app bar, inputs. Because these are set on
+/// the theme, individual widgets stay free of hardcoded styling — they inherit
+/// the premium defaults automatically. Consumed by `MaterialApp` in `app.dart`.
 class AppTheme {
   const AppTheme._();
 
-  static ThemeData get light {
+  static ThemeData get light => _build(Brightness.light);
+  static ThemeData get dark => _build(Brightness.dark);
+
+  static ThemeData _build(Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary,
+      brightness: brightness,
       primary: AppColors.primary,
       secondary: AppColors.secondary,
-      surface: AppColors.surface,
+      tertiary: AppColors.accent,
+      surface: isDark ? AppColors.surfaceDark : AppColors.surface,
       error: AppColors.error,
-      brightness: Brightness.light,
     );
-    return _base(scheme, AppColors.background, AppColors.textPrimary);
-  }
 
-  static ThemeData get dark {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: AppColors.primary,
-      primary: AppColors.primary,
-      secondary: AppColors.secondary,
-      surface: AppColors.surfaceDark,
-      error: AppColors.error,
-      brightness: Brightness.dark,
-    );
-    return _base(scheme, AppColors.backgroundDark, AppColors.textOnPrimary);
-  }
+    final scaffoldBackground =
+        isDark ? AppColors.backgroundDark : AppColors.background;
+    final textTheme = AppTypography.textTheme(brightness);
 
-  /// Shared theme configuration used by both light and dark variants to avoid
-  /// duplication.
-  static ThemeData _base(
-    ColorScheme scheme,
-    Color scaffoldBackground,
-    Color primaryTextColor,
-  ) {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: scaffoldBackground,
-      textTheme: AppTypography.textTheme(primaryTextColor),
-      appBarTheme: AppBarTheme(
-        centerTitle: true,
-        backgroundColor: scheme.surface,
-        foregroundColor: primaryTextColor,
+      textTheme: textTheme,
+
+      // Cards: large soft corners, no harsh default elevation (we use custom
+      // shadows via AppCard where needed).
+      cardTheme: CardThemeData(
+        color: scheme.surface,
         elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(borderRadius: AppRadius.lgAll),
+        clipBehavior: Clip.antiAlias,
       ),
+
+      // Large, confident primary buttons.
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          minimumSize: const Size.fromHeight(56),
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
+          shape: const RoundedRectangleBorder(borderRadius: AppRadius.pillAll),
+          textStyle: AppTypography.label.copyWith(fontSize: 15),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(56),
+          shape: const RoundedRectangleBorder(borderRadius: AppRadius.pillAll),
+          side: BorderSide(color: scheme.outlineVariant),
+        ),
+      ),
+
+      appBarTheme: AppBarTheme(
+        centerTitle: false,
+        backgroundColor: scaffoldBackground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        titleTextStyle: textTheme.headlineMedium,
+      ),
+
       navigationBarTheme: NavigationBarThemeData(
+        height: 72,
         backgroundColor: scheme.surface,
-        indicatorColor: scheme.primary.withValues(alpha: 0.15),
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: scheme.primary.withValues(alpha: 0.14),
+        elevation: 0,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        labelTextStyle: WidgetStatePropertyAll(AppTypography.caption),
+      ),
+
+      dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant.withValues(alpha: 0.5),
+        space: AppSpacing.xl,
       ),
     );
   }

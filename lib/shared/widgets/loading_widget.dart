@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 
-import '../../core/constants/app_constants.dart';
-
-/// A reusable, centered loading indicator.
+/// A reusable, centered loading indicator with an optional [message].
 ///
-/// Every screen that waits on the backend should show the *same* loading UI, so
-/// we define it once here rather than sprinkling `CircularProgressIndicator`s
-/// throughout the app. An optional [message] can explain what is loading.
+/// Every screen that waits on the backend shows this same loading UI, so we
+/// define it once instead of scattering `CircularProgressIndicator`s around.
 class LoadingWidget extends StatelessWidget {
   const LoadingWidget({super.key, this.message});
 
@@ -20,7 +18,7 @@ class LoadingWidget extends StatelessWidget {
         children: [
           const CircularProgressIndicator(),
           if (message != null) ...[
-            const SizedBox(height: AppConstants.spacingMd),
+            const Gap.v(AppSpacing.lg),
             Text(message!, style: Theme.of(context).textTheme.bodySmall),
           ],
         ],

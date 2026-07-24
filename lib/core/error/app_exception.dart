@@ -1,17 +1,10 @@
-/// A typed error model for ExplorerOS-Mobile.
+/// A typed error model for ExplorerOS.
 ///
-/// Instead of throwing raw `Exception`s or leaking backend-specific errors into
-/// the UI, the app converts everything into an [AppException]. This gives us a
-/// single, predictable error shape that widgets can display and that we can log
-/// consistently. The `type` field lets the UI react differently to, say, a
-/// network problem vs. an authentication problem.
-enum AppExceptionType {
-  network,
-  auth,
-  notFound,
-  server,
-  unknown,
-}
+/// Rather than leaking backend-specific errors into the UI, the app converts
+/// everything into an [AppException]. This gives one predictable error shape
+/// that widgets can render consistently, and the `type` lets the UI react
+/// differently (e.g. network vs. auth vs. not-found).
+enum AppExceptionType { network, auth, notFound, server, unknown }
 
 class AppException implements Exception {
   const AppException(
@@ -20,13 +13,13 @@ class AppException implements Exception {
     this.cause,
   });
 
-  /// A user-friendly message safe to show in the UI.
+  /// User-friendly message safe to show in the UI.
   final String message;
 
-  /// The category of failure, used to pick icons/retry behavior in the UI.
+  /// Category of failure — drives icon/retry choices in the UI.
   final AppExceptionType type;
 
-  /// The original error (e.g. a `PostgrestException`) kept for logging/debugging.
+  /// Original error, kept for logging/debugging.
   final Object? cause;
 
   @override

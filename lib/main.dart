@@ -2,32 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'app/app.dart';
-import 'core/constants/app_constants.dart';
-import 'services/supabase_service.dart';
+import 'package:explorer_os_mobile/app/app.dart';
+import 'package:explorer_os_mobile/core/config/env_config.dart';
+import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 
-/// Application entry point for ExplorerOS-Mobile.
+/// Application entry point for ExplorerOS.
 ///
-/// Responsibilities (kept deliberately small):
-///   1. Ensure Flutter bindings are ready before any async work.
+/// Kept deliberately small:
+///   1. Ensure Flutter bindings are ready before async work.
 ///   2. Load the `.env` file (optional) so backend config is available.
-///   3. Initialize the Supabase backend connection (no-ops safely if the
-///      SUPABASE_* config is not provided).
-///   4. Wrap the whole app in a Riverpod `ProviderScope` so any widget can read
-///      providers (this is the root of the state-management tree).
-///   5. Launch the root `ExplorerApp` widget.
+///   3. Initialize Supabase (no-ops safely if config is missing).
+///   4. Wrap the app in a Riverpod `ProviderScope` (root of state management).
+///   5. Launch the root `ExplorerApp`.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // `isOptional: true` means a missing `.env` won't crash the app — the app
-  // still boots and simply reports that the backend isn't configured.
-  await dotenv.load(fileName: AppConstants.envFileName, isOptional: true);
+  // `isOptional: true` → a missing `.env` won't crash the app; features simply
+  // report the backend isn't configured.
+  await dotenv.load(fileName: EnvConfig.fileName, isOptional: true);
 
   await SupabaseService.initialize();
 
-  runApp(
-    const ProviderScope(
-      child: ExplorerApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: ExplorerApp()));
 }
