@@ -42,6 +42,12 @@ class AppColors {
   static const Color success = Color(0xFF2E7D32);
   static const Color warning = Color(0xFFE08A00);
 
+  /// Soft light-green accent used for the greeting text over the hero photo.
+  static const Color heroAccent = Color(0xFFB6E3C6);
+
+  /// Amber used by the weather card's sun icon / temperature.
+  static const Color weatherAmber = Color(0xFFF2B33D);
+
   // --- Gradients (used by hero areas / feature cards) ----------------------
   /// Primary hero gradient — evokes a forest horizon at dusk.
   static const LinearGradient heroGradient = LinearGradient(

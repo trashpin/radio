@@ -17,6 +17,13 @@ class AppConstants {
   /// Tagline shown in hero/welcome areas.
   static const String appTagline = 'Your guide to the great outdoors';
 
+  /// Prompt shown under the hero greeting on the dashboard.
+  static const String appHeroPrompt = 'Ready for your next adventure?';
+
+  /// Placeholder explorer name used in the personalized greeting until real
+  /// user/session data is wired up (no fake account is implied).
+  static const String placeholderExplorerName = 'Explorer';
+
   /// Name of the read-only destinations table in Supabase.
   static const String destinationsTable = 'destinations';
 }

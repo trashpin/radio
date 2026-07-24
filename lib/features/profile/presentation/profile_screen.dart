@@ -29,7 +29,13 @@ class ProfileScreen extends StatelessWidget {
         ],
       ),
       body: ListView(
-        padding: AppSpacing.screenPadding,
+        // Extra bottom padding so the last tile clears the floating nav bar.
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          120,
+        ),
         children: const [
           _ProfileHeader(name: 'Explorer'),
           Gap.v(AppSpacing.xxl),

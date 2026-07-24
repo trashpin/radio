@@ -4,16 +4,15 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/shared/components/app_card.dart';
 
-/// A large, tappable dashboard tile (icon + title + subtitle + chevron).
+/// A large, tappable dashboard tile: a solid icon chip, a title, a two-line
+/// subtitle, and a trailing affordance (chevron by default).
 ///
-/// This is the primary building block of the Home dashboard. It composes
-/// [AppCard] and supports two looks:
-///   • standard  → surface background, brand-colored icon chip
-///   • featured  → a [gradient] background with white content (for highlights
-///     like Explorer Radio)
-///
-/// Keeping this as one reusable component means every dashboard entry looks and
-/// behaves identically, satisfying the "large cards, minimal clutter" goal.
+/// The primary building block of the Home dashboard. Composes the shared
+/// [AppCard] (white surface, soft shadow, press animation) so every dashboard
+/// entry looks and behaves identically — satisfying the "large cards, minimal
+/// clutter" design goal. The [accent] controls the icon-chip color so cards can
+/// be subtly differentiated, and [trailing] lets special cards (e.g. Explorer
+/// Radio) show a play button instead of a chevron.
 class DashboardCard extends StatelessWidget {
   const DashboardCard({
     super.key,
@@ -21,7 +20,7 @@ class DashboardCard extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.onTap,
-    this.gradient,
+    this.accent,
     this.trailing,
   });
 
@@ -30,42 +29,33 @@ class DashboardCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback? onTap;
 
-  /// When set, the card uses this gradient and white content (featured style).
-  final Gradient? gradient;
+  /// Icon-chip background color (defaults to the brand primary).
+  final Color? accent;
 
-  /// Optional custom trailing widget (defaults to a chevron).
+  /// Optional trailing widget (defaults to a chevron).
   final Widget? trailing;
-
-  bool get _isFeatured => gradient != null;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onColor =
-        _isFeatured ? AppColors.textOnPrimary : theme.colorScheme.onSurface;
-    final subColor = _isFeatured
-        ? AppColors.textOnPrimary.withValues(alpha: 0.85)
-        : theme.textTheme.bodySmall?.color;
-
     return AppCard(
       onTap: onTap,
-      gradient: gradient,
+      padding: const EdgeInsets.all(AppSpacing.lg),
       child: Row(
         children: [
-          _IconChip(icon: icon, featured: _isFeatured),
+          _IconChip(icon: icon, color: accent ?? theme.colorScheme.primary),
           const Gap.h(AppSpacing.lg),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleMedium?.copyWith(color: onColor),
-                ),
+                Text(title, style: theme.textTheme.titleMedium),
                 const Gap.v(AppSpacing.xs),
                 Text(
                   subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(color: subColor),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
                 ),
               ],
             ),
@@ -74,7 +64,7 @@ class DashboardCard extends StatelessWidget {
           trailing ??
               Icon(
                 Icons.chevron_right_rounded,
-                color: onColor.withValues(alpha: 0.7),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
               ),
         ],
       ),
@@ -82,26 +72,21 @@ class DashboardCard extends StatelessWidget {
   }
 }
 
-/// The rounded icon chip shown on the leading edge of a [DashboardCard].
+/// Solid rounded-square icon chip (colored background, white glyph) matching the
+/// premium dashboard style.
 class _IconChip extends StatelessWidget {
-  const _IconChip({required this.icon, required this.featured});
+  const _IconChip({required this.icon, required this.color});
 
   final IconData icon;
-  final bool featured;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bg = featured
-        ? AppColors.textOnPrimary.withValues(alpha: 0.18)
-        : theme.colorScheme.primary.withValues(alpha: 0.12);
-    final fg = featured ? AppColors.textOnPrimary : theme.colorScheme.primary;
-
     return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(color: bg, borderRadius: AppRadius.mdAll),
-      child: Icon(icon, color: fg, size: 26),
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(color: color, borderRadius: AppRadius.mdAll),
+      child: Icon(icon, color: AppColors.textOnPrimary, size: 28),
     );
   }
 }

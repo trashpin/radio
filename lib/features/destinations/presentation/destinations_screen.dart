@@ -79,7 +79,13 @@ class _DestinationList extends StatelessWidget {
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView.separated(
-        padding: AppSpacing.screenPadding,
+        // Extra bottom padding so the last card clears the floating nav bar.
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.xl,
+          AppSpacing.xl,
+          120,
+        ),
         itemCount: items.length,
         separatorBuilder: (_, _) => const Gap.v(AppSpacing.lg),
         itemBuilder: (context, index) =>
