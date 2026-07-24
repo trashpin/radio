@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/favorite_button.dart';
 import 'package:explorer_os_mobile/shared/components/app_card.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
@@ -49,10 +50,8 @@ class DestinationListTile extends StatelessWidget {
               destination.distanceLabel!,
               style: theme.textTheme.bodySmall
                   ?.copyWith(color: theme.colorScheme.primary),
-            )
-          else
-            Icon(Icons.chevron_right_rounded,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+            ),
+          FavoriteButton(destinationId: destination.id),
         ],
       ),
     );

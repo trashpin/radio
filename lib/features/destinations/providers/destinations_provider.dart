@@ -22,3 +22,17 @@ final destinationsProvider = FutureProvider<List<Destination>>((ref) async {
 
   return ref.watch(destinationRepositoryProvider).fetchDestinations();
 });
+
+/// Looks up a single destination by id from the loaded list.
+///
+/// Used by the Destination Details screen so it can be opened by id (a
+/// deep-link-friendly route) rather than passing the whole object around.
+/// Returns null if the destination isn't among the loaded results.
+final destinationByIdProvider =
+    Provider.family<Destination?, String>((ref, id) {
+  final all = ref.watch(destinationsProvider).value ?? const [];
+  for (final destination in all) {
+    if (destination.id == id) return destination;
+  }
+  return null;
+});

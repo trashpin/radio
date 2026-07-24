@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:explorer_os_mobile/core/theme/app_colors.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/favorite_button.dart';
 import 'package:explorer_os_mobile/shared/components/app_card.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
@@ -68,13 +69,17 @@ class FeaturedDestinationCard extends StatelessWidget {
               ),
             ),
             Positioned(
-              right: AppSpacing.md,
-              top: AppSpacing.md,
-              child: CircleAvatar(
-                radius: 16,
-                backgroundColor: Colors.black.withValues(alpha: 0.35),
-                child: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textOnPrimary),
+              right: AppSpacing.sm,
+              top: AppSpacing.sm,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.30),
+                  shape: BoxShape.circle,
+                ),
+                child: FavoriteButton(
+                  destinationId: destination.id,
+                  outlineColor: AppColors.textOnPrimary,
+                ),
               ),
             ),
           ],

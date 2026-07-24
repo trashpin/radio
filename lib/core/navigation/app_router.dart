@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/navigation/app_shell.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destinations_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/gps/presentation/gps_screen.dart';
@@ -43,6 +44,12 @@ class AppRouter {
       _route(AppRoute.stories.path, const StoriesScreen()),
       _route(AppRoute.wildlife.path, const WildlifeScreen()),
       _route(AppRoute.gps.path, const GpsScreen()),
+      GoRoute(
+        path: AppRoute.destinationDetails.path,
+        builder: (context, state) => DestinationDetailsScreen(
+          destinationId: state.pathParameters['id'] ?? '',
+        ),
+      ),
     ],
   );
 

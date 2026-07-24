@@ -17,8 +17,13 @@ enum AppRoute {
   downloads('/downloads'),
   stories('/stories'),
   wildlife('/wildlife'),
-  gps('/gps');
+  gps('/gps'),
+  destinationDetails('/destination/:id');
 
   const AppRoute(this.path);
   final String path;
+
+  /// Builds the concrete details path for a given destination id, e.g.
+  /// `AppRoute.destinationDetails.pathFor('42')` → `/destination/42`.
+  String pathFor(String id) => '/destination/$id';
 }

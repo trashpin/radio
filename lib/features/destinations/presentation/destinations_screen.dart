@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
+import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_filter_chips.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_list_tile.dart';
@@ -10,6 +12,7 @@ import 'package:explorer_os_mobile/features/destinations/presentation/widgets/de
 import 'package:explorer_os_mobile/features/destinations/presentation/widgets/featured_destination_card.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destination_filters.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/destinations/providers/favorites_provider.dart';
 import 'package:explorer_os_mobile/shared/components/section_header.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:explorer_os_mobile/shared/widgets/error_view.dart';
@@ -87,6 +90,7 @@ class _ExploreResults extends ConsumerWidget {
     final filtered = ref.watch(filteredDestinationsProvider);
     final hasFilter = ref.watch(destinationHasActiveFilterProvider);
     final featured = ref.watch(featuredDestinationProvider);
+    final favorites = ref.watch(favoriteDestinationsProvider);
 
     // Nothing loaded at all.
     if (featured == null) {
@@ -98,6 +102,9 @@ class _ExploreResults extends ConsumerWidget {
     final popular = hasFilter
         ? filtered
         : filtered.where((d) => d.id != featured.id).toList(growable: false);
+
+    void openDetails(Destination d) =>
+        context.push(AppRoute.destinationDetails.pathFor(d.id));
 
     return RefreshIndicator(
       onRefresh: () async => ref.refresh(destinationsProvider.future),
@@ -111,7 +118,10 @@ class _ExploreResults extends ConsumerWidget {
         children: [
           if (!hasFilter) ...[
             const SectionHeader(title: 'Featured Destinations'),
-            FeaturedDestinationCard(destination: featured),
+            FeaturedDestinationCard(
+              destination: featured,
+              onTap: () => openDetails(featured),
+            ),
             const Gap.v(AppSpacing.xxl),
             const SectionHeader(title: 'Popular Near You'),
           ] else
@@ -122,17 +132,33 @@ class _ExploreResults extends ConsumerWidget {
               child: _EmptyState(message: 'No destinations match your search.'),
             )
           else
-            ..._popularList(popular),
+            ..._tiles(popular, openDetails),
+
+          // Favorites section (only while browsing and when any exist).
+          if (!hasFilter && favorites.isNotEmpty) ...[
+            const Gap.v(AppSpacing.xxl),
+            const SectionHeader(title: 'Favorites'),
+            ..._tiles(favorites, openDetails),
+          ],
         ],
       ),
     );
   }
 
-  List<Widget> _popularList(List<Destination> items) {
+  /// Builds a spaced list of tappable destination tiles.
+  List<Widget> _tiles(
+    List<Destination> items,
+    void Function(Destination) onTap,
+  ) {
     final widgets = <Widget>[];
     for (var i = 0; i < items.length; i++) {
       if (i > 0) widgets.add(const Gap.v(AppSpacing.md));
-      widgets.add(DestinationListTile(destination: items[i]));
+      widgets.add(
+        DestinationListTile(
+          destination: items[i],
+          onTap: () => onTap(items[i]),
+        ),
+      );
     }
     return widgets;
   }
