@@ -52,3 +52,7 @@ Run from repo root (see Flutter docs for details):
   `SUPABASE_ANON_KEY` as secrets.
 - `.env` is declared as a Flutter **asset** in `pubspec.yaml`; it must exist for
   `flutter run`/`build` to succeed (hence the auto-copy above).
+- **Database schema + demo seed** live in `supabase/` (`migrations/0001_exploreros_schema.sql`,
+  `seed.sql`). Apply them in the Supabase SQL editor / CLI so the app has live
+  content. Table columns are the snake_case contract for the Dart models'
+  `fromJson`/`toJson` — keep them in sync when changing a model.
