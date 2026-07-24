@@ -73,3 +73,16 @@ Run from repo root (see Flutter docs for details):
   rows to `Song`s; `RadioStation.fromDestination` derives a station per
   destination). Radio playlists come from a destination's audio `media`, not a
   `radio_stations` table.
+- **Google Maps (Map tab).** The web build loads the Maps JavaScript API via a
+  `<script>` in `web/index.html` with the placeholder `__GOOGLE_MAPS_API_KEY__`
+  (the raw key is never committed). Inject the real key into the **built**
+  `build/web/index.html` (e.g. `sed -i "s/__GOOGLE_MAPS_API_KEY__/$GOOGLE_MAPS_API_KEY/" build/web/index.html`)
+  after `flutter build web`, before serving. It's a client-side key by design —
+  restrict it by HTTP referrer and enable "Maps JavaScript API" in Google Cloud
+  Console. The Map plots destinations with coordinates (`latitude`/`longitude`).
+- **Gotcha: after adding a web plugin, `flutter clean` before building.** Flutter
+  can reuse a cached `web_plugin_registrant.dart` that omits a newly added web
+  plugin. Symptom: `google_maps_flutter` throws `"TargetPlatform.linux is not
+  yet supported by the maps plugin"` on web even though the key/schema are fine.
+  Fix: `flutter clean && flutter pub get && flutter build web` so the registrant
+  regenerates with `GoogleMapsPlugin.registerWith`.

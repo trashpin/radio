@@ -31,6 +31,13 @@
 
   <title>explorer_os_mobile</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google Maps JavaScript API (web build only). The key is a client-side key
+       by design; it is injected at build/deploy time from GOOGLE_MAPS_API_KEY
+       (the placeholder below is replaced by the update/deploy script), so the
+       raw key is never committed. Restrict it by HTTP referrer in Google Cloud
+       Console. Requires the "Maps JavaScript API" enabled. -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__"></script>
 </head>
 <body>
   <!--

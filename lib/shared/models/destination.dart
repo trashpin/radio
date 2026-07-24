@@ -22,6 +22,8 @@ class Destination implements Model {
     this.category,
     this.featured = false,
     this.distanceLabel,
+    this.latitude,
+    this.longitude,
   });
 
   @override
@@ -29,6 +31,14 @@ class Destination implements Model {
   final String name;
   final String? description;
   final String? imageUrl;
+
+  /// Coordinates (Base44 `latitude`/`longitude`), used to plot the destination
+  /// on the map. Null when the backend omits them.
+  final double? latitude;
+  final double? longitude;
+
+  /// True when both coordinates are present (i.e. the destination is mappable).
+  bool get hasCoordinates => latitude != null && longitude != null;
 
   /// Human-readable location line (e.g. "Ocala, Florida"), shown as a subtitle.
   final String? location;
@@ -61,6 +71,8 @@ class Destination implements Model {
       category: (json['destination_type'] ?? json['category']) as String?,
       featured: (json['featured'] ?? json['is_featured'] ?? false) as bool,
       distanceLabel: json['distance_label'] as String?,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
     );
   }
 
