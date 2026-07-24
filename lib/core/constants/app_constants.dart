@@ -33,10 +33,18 @@ class AppConstants {
   static const double borderRadius = 12;
 
   // --- Backend configuration keys (NOT the secrets themselves) -------------
-  // The real Supabase URL / anon key are injected at build/run time via
-  // `--dart-define`, e.g.:
-  //   flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
-  // We only store the *names* of those variables here.
+  // The real Supabase URL / anon key live in a gitignored `.env` file that is
+  // loaded at runtime by `flutter_dotenv` (see `SupabaseService`). We only store
+  // the *names* of those keys here; the values are never hardcoded.
+  // Example `.env`:
+  //   SUPABASE_URL=https://xxxx.supabase.co
+  //   SUPABASE_ANON_KEY=eyJhbGciOi...
   static const String supabaseUrlEnvKey = 'SUPABASE_URL';
   static const String supabaseAnonKeyEnvKey = 'SUPABASE_ANON_KEY';
+
+  /// Name of the destinations table in Supabase (read-only source of content).
+  static const String destinationsTable = 'destinations';
+
+  /// Filename of the runtime environment file loaded by `flutter_dotenv`.
+  static const String envFileName = '.env';
 }

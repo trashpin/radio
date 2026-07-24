@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -10,30 +11,29 @@ import '../core/constants/app_constants.dart';
 /// app is a READ-ONLY client of destination content, so this service is the
 /// single doorway through which the app talks to Supabase.
 ///
-/// Configuration (URL + anon key) is injected at build/run time via
-/// `--dart-define` and read here — nothing is hardcoded. If the values are
-/// absent (e.g. running the UI locally without a backend), initialization is
-/// skipped gracefully so the app foundation still boots.
+/// Configuration (URL + anon key) is read at runtime from a `.env` file via
+/// `flutter_dotenv` — nothing is hardcoded and the file is gitignored. If the
+/// values are absent (e.g. running the UI without a backend), initialization is
+/// skipped gracefully so the app still boots and surfaces a friendly message.
 class SupabaseService {
   const SupabaseService._();
 
-  /// Read from `--dart-define=SUPABASE_URL=...`.
-  static const String _url =
-      String.fromEnvironment(AppConstants.supabaseUrlEnvKey);
+  /// Reads a value from the loaded `.env`, returning '' when unset so callers
+  /// can treat "missing" and "blank" the same way.
+  static String _env(String key) => dotenv.maybeGet(key) ?? '';
 
-  /// Read from `--dart-define=SUPABASE_ANON_KEY=...`.
-  static const String _anonKey =
-      String.fromEnvironment(AppConstants.supabaseAnonKeyEnvKey);
+  static String get _url => _env(AppConstants.supabaseUrlEnvKey);
+  static String get _anonKey => _env(AppConstants.supabaseAnonKeyEnvKey);
 
-  /// True only when both config values were provided at build time.
+  /// True only when both config values are present in `.env`.
   static bool get isConfigured => _url.isNotEmpty && _anonKey.isNotEmpty;
 
   /// Initializes Supabase. Call this once from `main()` before `runApp`.
   static Future<void> initialize() async {
     if (!isConfigured) {
       debugPrint(
-        'SupabaseService: SUPABASE_URL / SUPABASE_ANON_KEY not set — '
-        'running without a backend connection. Provide them via --dart-define.',
+        'SupabaseService: SUPABASE_URL / SUPABASE_ANON_KEY missing from .env — '
+        'running without a backend connection.',
       );
       return;
     }
