@@ -6,7 +6,7 @@ import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 
-/// Read repository for [RadioStation] content. Adds the destination query.
+/// Read repository for [RadioStation] content. Built on the generic base.
 class RadioStationRepository extends SupabaseReadRepository<RadioStation> {
   RadioStationRepository({
     required super.client,
@@ -20,8 +20,7 @@ class RadioStationRepository extends SupabaseReadRepository<RadioStation> {
       getWhere('destination_id', destinationId);
 }
 
-final radioStationRepositoryProvider =
-    Provider<RadioStationRepository>((ref) {
+final radioStationRepositoryProvider = Provider<RadioStationRepository>((ref) {
   return RadioStationRepository(
     client: ref.watch(supabaseClientProvider),
     connectivity: ref.watch(connectivityServiceProvider),

@@ -16,6 +16,9 @@ class SupabaseTables {
   static const String radioStations = 'radio_stations';
   static const String songs = 'songs';
   static const String narrations = 'narrations';
+  static const String announcements = 'announcements';
+  static const String stationRules = 'station_rules';
+  static const String gpsAudioTriggers = 'gps_audio_triggers';
 
   // User-owned data (writable, synced per user).
   static const String userFavorites = 'user_favorites';

@@ -6,7 +6,7 @@ import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/song.dart';
 
-/// Read repository for [Song] content. Adds the station (playlist) query.
+/// Read repository for [Song] content (a station's playlist).
 class SongRepository extends SupabaseReadRepository<Song> {
   SongRepository({
     required super.client,
