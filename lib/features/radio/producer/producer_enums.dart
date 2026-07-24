@@ -1,57 +1,8 @@
-/// Contextual enums the AI Producer reasons about.
+/// Environment enums the AI Producer reasons about.
 ///
-/// These describe the *environment* a decision is made in (time, season,
-/// weather). They let rules and future logic tailor selections — e.g. calmer
-/// ambient at night, seasonal music, or rain-appropriate content. Weather is a
-/// placeholder until a weather service is wired in.
+/// These are defined ONCE in `core/utils/temporal.dart` (so the GPS engine and
+/// the Producer share a single definition) and re-exported here for the radio
+/// feature's convenience.
 library;
 
-/// Coarse buckets of the day, derived from the clock.
-enum TimeOfDayBucket {
-  earlyMorning,
-  morning,
-  afternoon,
-  evening,
-  night;
-
-  static TimeOfDayBucket fromDateTime(DateTime time) {
-    final h = time.hour;
-    if (h < 5) return TimeOfDayBucket.night;
-    if (h < 9) return TimeOfDayBucket.earlyMorning;
-    if (h < 12) return TimeOfDayBucket.morning;
-    if (h < 17) return TimeOfDayBucket.afternoon;
-    if (h < 21) return TimeOfDayBucket.evening;
-    return TimeOfDayBucket.night;
-  }
-}
-
-/// Season (northern-hemisphere mapping by default).
-enum Season {
-  spring,
-  summer,
-  autumn,
-  winter;
-
-  static Season fromDateTime(DateTime time) {
-    switch (time.month) {
-      case 3:
-      case 4:
-      case 5:
-        return Season.spring;
-      case 6:
-      case 7:
-      case 8:
-        return Season.summer;
-      case 9:
-      case 10:
-      case 11:
-        return Season.autumn;
-      default:
-        return Season.winter;
-    }
-  }
-}
-
-/// Weather condition (PLACEHOLDER — always `unknown` until a weather service is
-/// integrated).
-enum WeatherCondition { unknown, clear, cloudy, rain, snow, fog }
+export 'package:explorer_os_mobile/core/utils/temporal.dart';
