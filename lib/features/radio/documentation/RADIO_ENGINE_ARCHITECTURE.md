@@ -115,22 +115,27 @@ it. Content repositories already cache + serve offline via the generic base.
 
 ---
 
-## 9. Background playback strategy
+## 9. Audio output & background playback
 
-`AudioFocusManager` holds audio-focus + volume/mute intent. A real
-implementation (via `audio_service`) runs playback in a background isolate/
-foreground service and owns the OS audio session — enabling lock-screen
-controls, Bluetooth, and continued play while backgrounded. The engine/events
-are unchanged.
+Playback intent → sound is handled by an `AudioPlayerPort`:
+- `JustAudioPlayerPort` — foreground playback (default).
+- `AudioServicePlayerPort` (+ `ExplorerAudioHandler`) — **implemented**
+  background playback via `audio_service`: lock-screen/notification controls,
+  Bluetooth, and continued play while backgrounded. `RadioAudioService` drives
+  the port from `RadioEvent`s and advances the engine on track completion; OS
+  controls (lock screen) flow back to the engine through the handler's
+  callbacks. Swap ports with zero engine changes. `RadioBackgroundAudio.init`
+  bootstraps it on mobile; Android declares the foreground media-playback
+  service, iOS declares the `audio` background mode.
 
 ---
 
-## 10. Future Android Auto & Apple CarPlay
+## 10. Android Auto & Apple CarPlay
 
 Both attach as presentation surfaces over the same `audio_service` media session
-and watch `radioEngineControllerProvider`. Browsing the station catalog maps to
-the media browser tree; transport controls call `play/pause/skip/changeStation`.
-No engine changes required.
+(the `ExplorerAudioHandler` already exposes transport controls + playback state).
+Browsing the station catalog maps to the media browser tree; transport controls
+call into the engine via the handler. No engine changes required.
 
 ---
 
