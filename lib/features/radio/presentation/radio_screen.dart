@@ -65,26 +65,32 @@ class _Player extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Station "cover".
-          AspectRatio(
-            aspectRatio: 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: AppColors.heroGradient,
-                borderRadius: AppRadius.xlAll,
-                image: (station.imageUrl != null && station.imageUrl!.isNotEmpty)
-                    ? DecorationImage(
-                        image: NetworkImage(station.imageUrl!),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
+          // Station "cover" (capped so controls stay visible on wide screens).
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 280, maxHeight: 280),
+              child: AspectRatio(
+                aspectRatio: 1,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: AppColors.heroGradient,
+                    borderRadius: AppRadius.xlAll,
+                    image: (station.imageUrl != null &&
+                            station.imageUrl!.isNotEmpty)
+                        ? DecorationImage(
+                            image: NetworkImage(station.imageUrl!),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                  ),
+                  child: station.imageUrl == null
+                      ? const Center(
+                          child: Icon(Icons.radio_rounded,
+                              size: 96, color: AppColors.textOnPrimary),
+                        )
+                      : null,
+                ),
               ),
-              child: station.imageUrl == null
-                  ? const Center(
-                      child: Icon(Icons.radio_rounded,
-                          size: 96, color: AppColors.textOnPrimary),
-                    )
-                  : null,
             ),
           ),
           const Gap.v(AppSpacing.xl),
@@ -105,15 +111,13 @@ class _Player extends ConsumerWidget {
                 onPressed: controller.previous,
                 icon: const Icon(Icons.skip_previous_rounded),
               ),
-              FilledButton(
+              // IconButton.filled sizes itself (circular) — avoids inheriting the
+              // theme's full-width FilledButton minimumSize.
+              IconButton.filled(
+                iconSize: 48,
                 onPressed: isPlaying ? controller.pause : controller.play,
-                style: FilledButton.styleFrom(
-                  shape: const CircleBorder(),
-                  padding: const EdgeInsets.all(AppSpacing.xl),
-                ),
-                child: Icon(
+                icon: Icon(
                   isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  size: 40,
                 ),
               ),
               IconButton(
