@@ -27,6 +27,17 @@ class SupabaseTables {
   static const String locationHistory = 'location_history';
   static const String travelSessions = 'travel_sessions';
 
+  // Music library.
+  static const String albums = 'albums';
+  static const String genres = 'genres';
+  static const String moods = 'moods';
+  static const String artworks = 'artworks';
+  static const String musicMetadata = 'music_metadata';
+  static const String playlists = 'playlists';
+  static const String stationAssignments = 'station_assignments';
+  static const String gpsMusicTriggers = 'gps_music_triggers';
+  static const String uploadJobs = 'upload_jobs';
+
   // User-owned data (writable, synced per user).
   static const String userFavorites = 'user_favorites';
   static const String downloads = 'downloads';

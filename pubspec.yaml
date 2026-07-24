@@ -41,6 +41,8 @@ dependencies:
   geolocator: ^14.0.3
   just_audio: ^0.10.6
   audio_service: ^0.18.19
+  csv: ^8.0.0
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:
