@@ -42,9 +42,13 @@ Run from repo root (see Flutter docs for details):
 - **Backend config is not committed.** Supabase URL/key are read at runtime from
   a gitignored `.env` file (loaded by `flutter_dotenv`). Copy `.env.example` to
   `.env` and fill in `SUPABASE_URL` / `SUPABASE_ANON_KEY` from the Supabase
-  dashboard. The startup update script auto-creates `.env` from `.env.example`
-  if missing, so builds never fail on the missing asset — but with blank values
-  the app boots, Settings shows "Not configured", and the Destinations tab shows
-  a friendly "cannot reach" message. This is expected until real keys are added.
+  dashboard. The startup update script generates `.env` automatically: if the
+  `SUPABASE_URL` / `SUPABASE_ANON_KEY` **environment variables** are set (e.g.
+  added as Cursor secrets) it writes them into `.env`; otherwise it copies
+  `.env.example`. So builds never fail on the missing asset — but with blank
+  values the app boots, Settings shows "Not configured", and the Destinations
+  tab shows a friendly "cannot reach" message. This is expected until real keys
+  are added. To connect for real in a cloud run, add `SUPABASE_URL` and
+  `SUPABASE_ANON_KEY` as secrets.
 - `.env` is declared as a Flutter **asset** in `pubspec.yaml`; it must exist for
   `flutter run`/`build` to succeed (hence the auto-copy above).
