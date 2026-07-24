@@ -4,19 +4,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
-import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_card.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_filter_chips.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_list_tile.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/destination_search_bar.dart';
+import 'package:explorer_os_mobile/features/destinations/presentation/widgets/featured_destination_card.dart';
+import 'package:explorer_os_mobile/features/destinations/providers/destination_filters.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/shared/components/section_header.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:explorer_os_mobile/shared/widgets/error_view.dart';
 import 'package:explorer_os_mobile/shared/widgets/loading_widget.dart';
 
-/// The Explore screen — the read-only list of ExplorerOS destinations loaded
-/// from the backend.
+/// The Explore screen — search, filter, and browse ExplorerOS destinations
+/// (all read from the backend).
 ///
-/// Pure presentation: it watches [destinationsProvider] and maps the async
-/// state to UI (loading / error / empty / data). No data-access or business
-/// logic lives here — that's in the repository and provider — which is the core
-/// "separate UI from logic" goal of the refactor.
+/// Pure presentation: a persistent search bar + category chips header, then an
+/// async body that maps [destinationsProvider] to loading / error / empty /
+/// data. All filtering/search logic lives in `destination_filters.dart`
+/// providers, so this widget only renders state — the core "separate UI from
+/// business logic" goal.
 class DestinationsScreen extends ConsumerWidget {
   const DestinationsScreen({super.key});
 
@@ -26,29 +32,111 @@ class DestinationsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Explore')),
-      body: destinations.when(
-        loading: () => const LoadingWidget(message: 'Loading destinations…'),
-        error: (error, stackTrace) => ErrorView(
-          exception: error is AppException
-              ? error
-              : ErrorHandler.from(error, stackTrace),
-          onRetry: () => ref.invalidate(destinationsProvider),
-        ),
-        data: (items) => items.isEmpty
-            ? const _EmptyState()
-            : _DestinationList(
-                items: items,
-                onRefresh: () async =>
-                    ref.refresh(destinationsProvider.future),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.xl,
+              0,
+              AppSpacing.xl,
+              AppSpacing.md,
+            ),
+            child: Column(
+              children: [
+                DestinationSearchBar(
+                  onChanged: (value) =>
+                      ref.read(destinationQueryProvider.notifier).state = value,
+                ),
+                const Gap.v(AppSpacing.md),
+                DestinationFilterChips(
+                  selected: ref.watch(destinationCategoryProvider),
+                  onSelected: (category) => ref
+                      .read(destinationCategoryProvider.notifier)
+                      .state = category,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: destinations.when(
+              loading: () =>
+                  const LoadingWidget(message: 'Loading destinations…'),
+              error: (error, stackTrace) => ErrorView(
+                exception: error is AppException
+                    ? error
+                    : ErrorHandler.from(error, stackTrace),
+                onRetry: () => ref.invalidate(destinationsProvider),
               ),
+              data: (_) => const _ExploreResults(),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// Shown when the backend returns zero destinations.
+/// The scrollable results body shown once destinations have loaded. Reads the
+/// derived filter providers to decide between the Featured + Popular layout and
+/// a flat search-results list.
+class _ExploreResults extends ConsumerWidget {
+  const _ExploreResults();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final filtered = ref.watch(filteredDestinationsProvider);
+    final hasFilter = ref.watch(destinationHasActiveFilterProvider);
+    final featured = ref.watch(featuredDestinationProvider);
+
+    // Nothing loaded at all.
+    if (featured == null) {
+      return const _EmptyState(message: 'No destinations found.');
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => ref.refresh(destinationsProvider.future),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(
+          AppSpacing.xl,
+          AppSpacing.sm,
+          AppSpacing.xl,
+          120,
+        ),
+        children: [
+          if (!hasFilter) ...[
+            const SectionHeader(title: 'Featured Destinations'),
+            FeaturedDestinationCard(destination: featured),
+            const Gap.v(AppSpacing.xxl),
+            const SectionHeader(title: 'Popular Near You'),
+          ] else
+            const SectionHeader(title: 'Results'),
+          if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.xxl),
+              child: _EmptyState(message: 'No destinations match your search.'),
+            )
+          else
+            ..._popularList(filtered),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _popularList(List<Destination> items) {
+    final widgets = <Widget>[];
+    for (var i = 0; i < items.length; i++) {
+      if (i > 0) widgets.add(const Gap.v(AppSpacing.md));
+      widgets.add(DestinationListTile(destination: items[i]));
+    }
+    return widgets;
+  }
+}
+
+/// Centered empty-state message.
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.message});
+
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -60,36 +148,8 @@ class _EmptyState extends StatelessWidget {
           Icon(Icons.travel_explore_outlined,
               size: 56, color: theme.colorScheme.primary),
           const Gap.v(AppSpacing.lg),
-          Text('No destinations found.', style: theme.textTheme.bodyMedium),
+          Text(message, style: theme.textTheme.bodyMedium),
         ],
-      ),
-    );
-  }
-}
-
-/// Pull-to-refresh list of destination cards.
-class _DestinationList extends StatelessWidget {
-  const _DestinationList({required this.items, required this.onRefresh});
-
-  final List<Destination> items;
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: ListView.separated(
-        // Extra bottom padding so the last card clears the floating nav bar.
-        padding: const EdgeInsets.fromLTRB(
-          AppSpacing.xl,
-          AppSpacing.xl,
-          AppSpacing.xl,
-          120,
-        ),
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const Gap.v(AppSpacing.lg),
-        itemBuilder: (context, index) =>
-            DestinationCard(destination: items[index]),
       ),
     );
   }
