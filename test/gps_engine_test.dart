@@ -171,6 +171,25 @@ void main() {
       await sub.cancel();
     });
 
+    test('surfaces route progress and distance remaining', () {
+      final engine = buildEngine();
+      engine.configure(
+        parks: const [_park],
+        routeId: 'r1',
+        routeStops: const [
+          AttractionPoint(
+              id: 'a', name: 'North Overlook', latitude: 40.02, longitude: -111),
+        ],
+      );
+
+      final ctx = engine.processLocation(fix(40, -111, speed: 10));
+
+      expect(ctx.routeProgress?.routeId, 'r1');
+      expect(ctx.routeProgress?.nextStopId, 'a');
+      expect(ctx.distanceRemainingMeters, isNotNull);
+      expect(ctx.distanceRemainingMeters! > 0, isTrue);
+    });
+
     test('markVisited emits DestinationVisited and updates stats', () async {
       final engine = buildEngine();
       final events = <GpsEvent>[];

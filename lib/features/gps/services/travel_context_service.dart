@@ -4,6 +4,7 @@ import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_heading.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
+import 'package:explorer_os_mobile/features/gps/models/route_progress.dart';
 import 'package:explorer_os_mobile/features/gps/models/speed_state.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_statistics.dart';
@@ -39,6 +40,8 @@ class TravelContextService {
     List<NearbyDestination> nearby = const [],
     List<UpcomingDestination> upcoming = const [],
     List<String> visited = const [],
+    RouteProgress? routeProgress,
+    double? distanceRemainingMeters,
     TravelStatistics statistics = TravelStatistics.empty,
     WeatherCondition weather = WeatherCondition.unknown,
   }) {
@@ -65,6 +68,8 @@ class TravelContextService {
       nearbyDestinations: nearby,
       upcomingDestinations: upcoming,
       visitedStopIds: visited,
+      routeProgress: routeProgress,
+      distanceRemainingMeters: distanceRemainingMeters,
       statistics: statistics,
       weather: weather,
     );

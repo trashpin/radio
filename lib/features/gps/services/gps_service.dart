@@ -166,6 +166,11 @@ class GPSService {
     geofenceService.evaluate(loc);
     final park = parkDetectionService.update(loc);
     final state = stateDetectionService.detect(loc);
+    final routeProgress = routeEngine.progress(
+      loc,
+      speedMps: speed.metersPerSecond,
+      visited: destinationDetectionService.visited.toSet(),
+    );
 
     final nearby = destinationDetectionService.nearby(loc);
     final upcoming = heading == null
@@ -212,6 +217,9 @@ class GPSService {
       nearby: nearby,
       upcoming: upcoming,
       visited: destinationDetectionService.visited,
+      routeProgress: routeProgress,
+      distanceRemainingMeters:
+          routeProgress.distanceToNextMeters ?? next?.distanceMeters,
       statistics: _stats,
     );
 

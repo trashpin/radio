@@ -143,7 +143,8 @@ route re-configured    → RouteChanged
 
 Contains everything the Radio Engine, AI Producer, and Story Engine need:
 current state/county/region/park/destination, nearest + upcoming + visited
-attractions, heading/bearing/speed/altitude, estimated arrival, travel &
+attractions, heading/bearing/speed/altitude, `routeProgress` (next stop, ETA,
+fraction complete) + `distanceRemainingMeters`, estimated arrival, travel &
 movement state, cumulative statistics, plus time-of-day/season (derived) and a
 weather placeholder.
 
@@ -225,3 +226,32 @@ weather placeholder.
   reconnect; a persistent cache store makes this durable across launches.
 - `LocationRepository` buffers `TravelSnapshot`s locally and syncs to Supabase
   when connectivity returns.
+
+---
+
+## 12. Background GPS
+
+- A background isolate / platform foreground-service hosts a real
+  `LocationProvider` and feeds fixes through the exact same
+  `processLocation` pipeline — the engine, events, and `TravelContext` are
+  unchanged whether running foreground or background.
+- Downstream consumers keep receiving `GpsEvent`s (e.g. `ApproachingDestination`)
+  while the app is backgrounded, which is what lets Explorer Radio keep making
+  location-aware audio decisions during a drive.
+- Android Auto / Apple CarPlay attach as additional presentation surfaces that
+  watch `gpsControllerProvider`; they require no engine changes.
+
+---
+
+## 13. Caching
+
+- **In-memory** (`GPSCacheService`): a capped rolling buffer of
+  `LocationSnapshot`s for last-known-position continuity and distance/visited
+  reasoning.
+- **Content** (`ParkBoundaryRepository`, `StateBoundaryRepository`, reused
+  destination/park repos): the generic repository base caches results and serves
+  them offline, refreshing on reconnect.
+- **Persistent history** (`LocationRepository`): `TravelSnapshot`s buffered
+  locally and synced to Supabase.
+- Swapping any cache for a persistent store (Hive/Isar/Drift) requires no
+  changes to services or the engine — they depend on the cache interfaces only.

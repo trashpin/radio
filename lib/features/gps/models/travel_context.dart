@@ -4,6 +4,7 @@ import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_heading.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
+import 'package:explorer_os_mobile/features/gps/models/route_progress.dart';
 import 'package:explorer_os_mobile/features/gps/models/speed_state.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_statistics.dart';
 import 'package:explorer_os_mobile/features/gps/models/upcoming_destination.dart';
@@ -47,6 +48,8 @@ class TravelContext {
     this.nearbyDestinations = const [],
     this.upcomingDestinations = const [],
     this.visitedStopIds = const [],
+    this.routeProgress,
+    this.distanceRemainingMeters,
     this.statistics = TravelStatistics.empty,
     this.weather = WeatherCondition.unknown,
   });
@@ -85,6 +88,12 @@ class TravelContext {
 
   // What's been seen.
   final List<String> visitedStopIds;
+
+  // Journey progress.
+  final RouteProgress? routeProgress;
+
+  /// Distance remaining to the next stop/attraction (route-aware), when known.
+  final double? distanceRemainingMeters;
 
   // Cumulative trip stats.
   final TravelStatistics statistics;
