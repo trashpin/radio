@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_shadows.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 
 /// The persistent shell hosting the floating bottom navigation bar.
 ///
@@ -13,12 +14,20 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 /// `extendBody` lets screen content flow underneath the floating bar for the
 /// premium edge-to-edge look.
 ///
-/// Tab order (fixed): Home, Explore, Map, Radio, Profile. To change tabs, keep
-/// this bar and the branch list in `AppRouter` index-aligned.
+/// Tab order (fixed): Home, Radio, AI Ranger, Stories, Map, More. To change
+/// tabs, keep this bar and the branch list in `AppRouter` index-aligned.
+///
+/// The bar is styled as a dark, floating pill with a gold active state (a
+/// premium National-Geographic feel) regardless of the app's light/dark mode,
+/// so it matches the immersive Radio/Map screens.
 class AppShell extends StatelessWidget {
   const AppShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
+
+  static const Color _barColor = Color(0xFF141C18);
+  static const Color _gold = Color(0xFFF2B33D);
+  static const Color _inactive = Color(0xFF8B978F);
 
   void _goToBranch(int index) {
     navigationShell.goBranch(
@@ -29,6 +38,27 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final navTheme = NavigationBarThemeData(
+      height: 68,
+      backgroundColor: _barColor,
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: _gold.withValues(alpha: 0.18),
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      iconTheme: WidgetStateProperty.resolveWith(
+        (states) => IconThemeData(
+          size: 24,
+          color: states.contains(WidgetState.selected) ? _gold : _inactive,
+        ),
+      ),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (states) => AppTypography.caption.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: states.contains(WidgetState.selected) ? _gold : _inactive,
+        ),
+      ),
+    );
+
     return Scaffold(
       extendBody: true,
       body: navigationShell,
@@ -47,36 +77,44 @@ class AppShell extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: AppRadius.xlAll,
-              child: NavigationBar(
-                selectedIndex: navigationShell.currentIndex,
-                onDestinationSelected: _goToBranch,
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.home_outlined),
-                    selectedIcon: Icon(Icons.home_rounded),
-                    label: 'Home',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.explore_outlined),
-                    selectedIcon: Icon(Icons.explore_rounded),
-                    label: 'Explore',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.map_outlined),
-                    selectedIcon: Icon(Icons.map_rounded),
-                    label: 'Map',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.podcasts_outlined),
-                    selectedIcon: Icon(Icons.podcasts_rounded),
-                    label: 'Radio',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.person_outline_rounded),
-                    selectedIcon: Icon(Icons.person_rounded),
-                    label: 'Profile',
-                  ),
-                ],
+              child: NavigationBarTheme(
+                data: navTheme,
+                child: NavigationBar(
+                  selectedIndex: navigationShell.currentIndex,
+                  onDestinationSelected: _goToBranch,
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home_rounded),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.podcasts_outlined),
+                      selectedIcon: Icon(Icons.podcasts_rounded),
+                      label: 'Radio',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.smart_toy_outlined),
+                      selectedIcon: Icon(Icons.smart_toy_rounded),
+                      label: 'AI Ranger',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.menu_book_outlined),
+                      selectedIcon: Icon(Icons.menu_book_rounded),
+                      label: 'Stories',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.map_outlined),
+                      selectedIcon: Icon(Icons.map_rounded),
+                      label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.more_horiz_rounded),
+                      selectedIcon: Icon(Icons.more_horiz_rounded),
+                      label: 'More',
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
