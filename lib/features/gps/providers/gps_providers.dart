@@ -5,13 +5,14 @@ import 'package:explorer_os_mobile/features/gps/services/bearing_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/county_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_provider.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_tracking_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/nearby_search_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/nearby_destination_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/offline_location_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/park_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/route_engine.dart';
@@ -42,6 +43,7 @@ final bearingServiceProvider =
     Provider<BearingService>((ref) => const BearingService());
 final distanceServiceProvider =
     Provider<DistanceService>((ref) => const DistanceService());
+final etaServiceProvider = Provider<ETAService>((ref) => const ETAService());
 final routeEngineProvider = Provider<RouteEngine>((ref) => RouteEngine());
 final geofenceServiceProvider =
     Provider<GeofenceService>((ref) => GeofenceService());
@@ -51,15 +53,16 @@ final countyDetectionServiceProvider =
     Provider<CountyDetectionService>((ref) => CountyDetectionService());
 final stateDetectionServiceProvider =
     Provider<StateDetectionService>((ref) => StateDetectionService());
-final nearbySearchServiceProvider =
-    Provider<NearbySearchService>((ref) => const NearbySearchService());
+final nearbyDestinationServiceProvider =
+    Provider<NearbyDestinationService>(
+        (ref) => const NearbyDestinationService());
 final upcomingDestinationServiceProvider =
     Provider<UpcomingDestinationService>(
         (ref) => const UpcomingDestinationService());
 final destinationDetectionServiceProvider =
     Provider<DestinationDetectionService>((ref) {
   return DestinationDetectionService(
-    nearbySearch: ref.watch(nearbySearchServiceProvider),
+    nearbySearch: ref.watch(nearbyDestinationServiceProvider),
     upcomingSearch: ref.watch(upcomingDestinationServiceProvider),
   );
 });
@@ -87,6 +90,7 @@ final gpsServiceProvider = Provider<GPSService>((ref) {
     headingService: ref.watch(headingServiceProvider),
     bearingService: ref.watch(bearingServiceProvider),
     distanceService: ref.watch(distanceServiceProvider),
+    etaService: ref.watch(etaServiceProvider),
     routeEngine: ref.watch(routeEngineProvider),
     geofenceService: ref.watch(geofenceServiceProvider),
     parkDetectionService: ref.watch(parkDetectionServiceProvider),

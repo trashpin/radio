@@ -5,8 +5,8 @@ import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 /// A focused view (distinct from the nearby/upcoming lists) that the UI and
 /// audio engines use to answer "where is the user right now, and what's their
 /// relationship to it?" — including [arrivalStatus] and when they arrived.
-class CurrentDestination {
-  const CurrentDestination({
+class DestinationContext {
+  const DestinationContext({
     required this.id,
     required this.arrivalStatus,
     this.name,

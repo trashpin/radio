@@ -2,7 +2,7 @@ import 'package:explorer_os_mobile/features/gps/models/attraction_point.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
 import 'package:explorer_os_mobile/features/gps/models/upcoming_destination.dart';
-import 'package:explorer_os_mobile/features/gps/services/nearby_search_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/nearby_destination_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_service.dart';
 
 /// Coordinates destination detection: holds the candidate attractions + visited
@@ -15,11 +15,11 @@ import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_se
 /// the Explorer/Map screens. This service is what the engine talks to.
 class DestinationDetectionService {
   DestinationDetectionService({
-    this.nearbySearch = const NearbySearchService(),
+    this.nearbySearch = const NearbyDestinationService(),
     this.upcomingSearch = const UpcomingDestinationService(),
   });
 
-  final NearbySearchService nearbySearch;
+  final NearbyDestinationService nearbySearch;
   final UpcomingDestinationService upcomingSearch;
 
   final List<AttractionPoint> _candidates = [];

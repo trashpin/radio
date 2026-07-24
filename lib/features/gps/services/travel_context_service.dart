@@ -1,5 +1,5 @@
 import 'package:explorer_os_mobile/core/utils/temporal.dart';
-import 'package:explorer_os_mobile/features/gps/models/current_destination.dart';
+import 'package:explorer_os_mobile/features/gps/models/destination_context.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_heading.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
@@ -29,7 +29,7 @@ class TravelContextService {
     String? countyName,
     String? parkId,
     String? destinationId,
-    CurrentDestination? currentDestination,
+    DestinationContext? currentDestination,
     ArrivalStatus? arrivalStatus,
     GPSHeading? heading,
     double? bearingDegrees,

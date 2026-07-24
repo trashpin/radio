@@ -84,13 +84,14 @@ movement) plus explicit signals (`markVisited`, `reportSignalLost`,
 - **LocationProvider** — positioning abstraction (multi-provider seam).
 - **SpeedService** — speed → movement + travel mode.
 - **HeadingService** — direction of travel; **BearingService** — bearing to a target.
-- **DistanceService** — distance + ETA.
+- **DistanceService** — great-circle distance; **ETAService** — arrival-time estimation.
 - **RouteEngine** — distance travelled + next-stop progress/ETA.
 - **GeofenceService** — enter/exit transition primitive.
 - **ParkDetectionService** — current park + arrival state machine.
 - **CountyDetectionService / StateDetectionService** — current county/state.
-- **NearbySearchService / UpcomingDestinationService** — stateless spatial search
-  (composed by **DestinationDetectionService**, which owns candidates + visited).
+- **NearbyDestinationService / UpcomingDestinationService** — stateless spatial
+  search (composed by **DestinationDetectionService**, which owns candidates +
+  visited).
 - **TravelContextService** — assembles the `TravelContext`.
 - **TravelSessionService** — start/stop/reset trip sessions + cumulative stats.
 - **BatteryOptimizationService** — recommends sampling cadence/distance filter.
@@ -114,16 +115,16 @@ movement) plus explicit signals (`markVisited`, `reportSignalLost`,
 so they share per-fix state). `gpsControllerProvider` (`Notifier<TravelContext>`)
 watches the engine's stream. `locationProviderProvider` is the single override
 point to go live (swap `SimulatedLocationProvider` for a real provider).
-`destinationDetectionServiceProvider` injects `nearbySearchServiceProvider` +
-`upcomingDestinationServiceProvider`; `offlineLocationServiceProvider` wraps
+`destinationDetectionServiceProvider` injects `nearbyDestinationServiceProvider`
++ `upcomingDestinationServiceProvider`; `offlineLocationServiceProvider` wraps
 `gpsCacheServiceProvider`.
 
 ---
 
 ## 7. Repository responsibilities
 
-- **ParkBoundaryRepository / StateBoundaryRepository / CountyBoundaryRepository**
-  — read-only geometry for detection (generic base).
+- **ParkBoundaryRepository / StateRepository / CountyBoundaryRepository** —
+  read-only geometry for detection (generic base).
 - **LocationRepository** — user location history (`TravelSnapshot`, sync).
 - **TravelRepository** — user trip sessions (`TravelSession`, sync).
 - Destination/park **content** (`DestinationRepository`, `ParkRepository`) is
@@ -203,3 +204,13 @@ changes.
   bearing, nearby/upcoming pins, route progress, and travelled path (cache).
 - **Explorer / Destination screens** — use nearby/upcoming + distance to sort and
   badge destinations ("2 mi ahead", "visited").
+
+### Future integrations
+- **Android Auto / Apple CarPlay** — attach as presentation surfaces that watch
+  `gpsControllerProvider`; the background `LocationProvider` keeps events flowing
+  during a drive. No engine changes required.
+- **Future AI integration** — the AI Producer/Ranger consume `TravelContext` +
+  events to decide narration/music; richer AI (LLM story generation, predictive
+  ETA/route intent) plugs in downstream of the event bus without altering the
+  engine. `currentRadioStationId`/weather placeholders are the wiring points a
+  GPS↔Radio↔AI coordinator will populate.

@@ -8,8 +8,8 @@ import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 /// WHY THIS EXISTS: proximity search is a focused, reusable concern (also useful
 /// to the Explorer/Map screens independently of tracking). It's a pure function
 /// over a candidate list, so it's trivially testable and has no state.
-class NearbySearchService {
-  const NearbySearchService();
+class NearbyDestinationService {
+  const NearbyDestinationService();
 
   List<NearbyDestination> search(
     List<AttractionPoint> candidates,

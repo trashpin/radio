@@ -16,11 +16,4 @@ class DistanceService {
   /// Meters between raw coordinate pairs.
   double betweenCoords(double lat1, double lng1, double lat2, double lng2) =>
       GeoMath.distanceMeters(lat1, lng1, lat2, lng2);
-
-  /// Estimated time of arrival given a distance and a speed. Null when the user
-  /// isn't moving (speed <= 0) — an ETA would be meaningless.
-  Duration? eta(double distanceMeters, double? speedMps) {
-    if (speedMps == null || speedMps <= 0) return null;
-    return Duration(seconds: (distanceMeters / speedMps).round());
-  }
 }

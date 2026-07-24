@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:explorer_os_mobile/features/gps/events/gps_event.dart';
 import 'package:explorer_os_mobile/features/gps/models/attraction_point.dart';
 import 'package:explorer_os_mobile/features/gps/models/county_boundary.dart';
-import 'package:explorer_os_mobile/features/gps/models/current_destination.dart';
+import 'package:explorer_os_mobile/features/gps/models/destination_context.dart';
 import 'package:explorer_os_mobile/features/gps/models/geofence_region.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
@@ -20,6 +20,7 @@ import 'package:explorer_os_mobile/features/gps/services/bearing_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/county_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
@@ -52,6 +53,7 @@ class GPSService {
     required this.headingService,
     required this.bearingService,
     required this.distanceService,
+    required this.etaService,
     required this.routeEngine,
     required this.geofenceService,
     required this.parkDetectionService,
@@ -70,6 +72,7 @@ class GPSService {
   final HeadingService headingService;
   final BearingService bearingService;
   final DistanceService distanceService;
+  final ETAService etaService;
   final RouteEngine routeEngine;
   final GeofenceService geofenceService;
   final ParkDetectionService parkDetectionService;
@@ -236,7 +239,7 @@ class GPSService {
 
     final currentDestination = park.parkId == null
         ? null
-        : CurrentDestination(
+        : DestinationContext(
             id: park.parkId!,
             arrivalStatus: park.arrivalStatus,
             parkId: park.parkId,
@@ -309,7 +312,7 @@ class GPSService {
       distanceService.between(a, b);
 
   Duration? calculateETA(double distanceMeters, double? speedMps) =>
-      distanceService.eta(distanceMeters, speedMps);
+      etaService.estimate(distanceMeters, speedMps);
 
   /// The current compass travel direction, if a heading is known.
   CardinalDirection? calculateTravelDirection() => _current.heading?.direction;

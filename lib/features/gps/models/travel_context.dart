@@ -1,5 +1,5 @@
 import 'package:explorer_os_mobile/core/utils/temporal.dart';
-import 'package:explorer_os_mobile/features/gps/models/current_destination.dart';
+import 'package:explorer_os_mobile/features/gps/models/destination_context.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_heading.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
@@ -68,7 +68,7 @@ class TravelContext {
   final String? currentRegion; // placeholder
   final String? currentParkId;
   final String? currentDestinationId;
-  final CurrentDestination? currentDestination;
+  final DestinationContext? currentDestination;
   final String? currentRoad; // placeholder (reverse-geocoding not implemented)
 
   // How.
