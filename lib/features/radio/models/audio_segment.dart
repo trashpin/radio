@@ -14,6 +14,42 @@ enum AudioSegmentType {
   emergencyAlert,
   gpsNarration,
   ambient,
+  weather,
+  wildlifeAlert,
+  commercial,
+  specialEvent,
+  parkAnnouncement,
+  emergencyBroadcast,
+}
+
+/// A coarse grouping over [AudioSegmentType] for analytics, ducking rules, and
+/// preference toggles (e.g. "mute all commercials").
+enum AudioCategory { music, spokenWord, alert, ambient, commercial }
+
+extension AudioSegmentTypeCategory on AudioSegmentType {
+  AudioCategory get category {
+    switch (this) {
+      case AudioSegmentType.music:
+        return AudioCategory.music;
+      case AudioSegmentType.ambient:
+        return AudioCategory.ambient;
+      case AudioSegmentType.commercial:
+        return AudioCategory.commercial;
+      case AudioSegmentType.safetyWarning:
+      case AudioSegmentType.emergencyAlert:
+      case AudioSegmentType.emergencyBroadcast:
+      case AudioSegmentType.wildlifeAlert:
+      case AudioSegmentType.weather:
+        return AudioCategory.alert;
+      case AudioSegmentType.narration:
+      case AudioSegmentType.announcement:
+      case AudioSegmentType.stationIdentification:
+      case AudioSegmentType.gpsNarration:
+      case AudioSegmentType.specialEvent:
+      case AudioSegmentType.parkAnnouncement:
+        return AudioCategory.spokenWord;
+    }
+  }
 }
 
 /// A normalized, playable unit of audio — the ONLY thing the engine reasons

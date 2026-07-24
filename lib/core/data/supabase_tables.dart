@@ -18,7 +18,9 @@ class SupabaseTables {
   static const String narrations = 'narrations';
   static const String announcements = 'announcements';
   static const String stationRules = 'station_rules';
+  static const String stationProfiles = 'station_profiles';
   static const String gpsAudioTriggers = 'gps_audio_triggers';
+  static const String playbackHistory = 'playback_history';
   static const String parkBoundaries = 'park_boundaries';
   static const String stateBoundaries = 'state_boundaries';
   static const String countyBoundaries = 'county_boundaries';

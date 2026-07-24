@@ -1,14 +1,24 @@
+import 'dart:async';
+
+import 'package:explorer_os_mobile/features/radio/events/radio_event.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_queue.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/history_manager.dart';
+import 'package:explorer_os_mobile/features/radio/services/music_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio/services/offline_playback_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/playback_controller.dart';
 import 'package:explorer_os_mobile/features/radio/services/queue_manager_service.dart';
+import 'package:explorer_os_mobile/features/radio/services/station_identification_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/station_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/story_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/user_preference_manager.dart';
+import 'package:explorer_os_mobile/shared/models/radio_station.dart';
+import 'package:explorer_os_mobile/shared/models/song.dart';
 
 /// The BRAIN of Explorer Radio — an intelligent decision engine, NOT an audio
 /// player.
@@ -39,7 +49,13 @@ class RadioEngineService {
     required this.gps,
     required this.history,
     required this.preferences,
-  });
+    this.musicScheduler = const MusicScheduler(),
+    AudioFocusManager? audioFocus,
+    OfflinePlaybackService? offline,
+    StationIdentificationService? stationIds,
+  })  : audioFocus = audioFocus ?? AudioFocusManager(),
+        offline = offline ?? OfflinePlaybackService(),
+        stationIds = stationIds ?? StationIdentificationService();
 
   final QueueManagerService queue;
   final PlaybackController playback;
@@ -49,6 +65,17 @@ class RadioEngineService {
   final GPSAudioScheduler gps;
   final HistoryManager history;
   final UserPreferenceManager preferences;
+  final MusicScheduler musicScheduler;
+  final AudioFocusManager audioFocus;
+  final OfflinePlaybackService offline;
+  final StationIdentificationService stationIds;
+
+  final StreamController<RadioEvent> _events =
+      StreamController<RadioEvent>.broadcast();
+
+  /// Events other systems subscribe to (segment/station/playback changes).
+  Stream<RadioEvent> get events => _events.stream;
+  void _emit(RadioEvent event) => _events.add(event);
 
   /// A fresh, immutable snapshot of what the engine intends right now.
   PlaybackState get state => PlaybackState(
@@ -71,6 +98,7 @@ class RadioEngineService {
       return;
     }
     playback.play(next);
+    _emit(SegmentStarted(DateTime.now(), next.segment));
   }
 
   /// The core "what plays next" decision:
@@ -80,7 +108,7 @@ class RadioEngineService {
     final queued = queue.skip();
     if (queued != null) return queued;
 
-    final music = station.nextMusicSegment();
+    final music = musicScheduler.next(station);
     if (music == null) return null;
     if (!preferences.allowsTags(music.tags)) return _takeNext();
 
@@ -97,10 +125,12 @@ class RadioEngineService {
     final finished = playback.current;
     if (finished != null) {
       history.record(finished.segment);
+      _emit(SegmentCompleted(DateTime.now(), finished.segment));
 
       // If an interruption just ended, restore the music it displaced.
-      if (finished.segment.resumeAfter) {
+      if (finished.segment.resumeAfter && queue.pausedMusic != null) {
         queue.resumeMusic();
+        _emit(MusicResumed(DateTime.now()));
       }
 
       // After a music track, schedulers may inject scheduled content.
@@ -129,11 +159,23 @@ class RadioEngineService {
       if (current.segment.type == AudioSegmentType.music) {
         queue.pauseMusic(current);
       }
+      _emit(SegmentInterrupted(DateTime.now(), current.segment));
       playback.complete();
       queue.insertPriority(segment, origin: QueueOrigin.insertPriority);
       playNext();
     } else {
       queue.insertPriority(segment, origin: QueueOrigin.insertPriority);
+    }
+  }
+
+  // --- Public control surface (all intent-level; no audio I/O) -------------
+
+  /// Starts or resumes playback.
+  void play() {
+    if (playback.status == PlaybackStatus.paused) {
+      resume();
+    } else if (playback.current == null) {
+      playNext();
     }
   }
 
@@ -143,15 +185,93 @@ class RadioEngineService {
     playNext();
   }
 
-  /// Pauses/resumes the current item (intent only).
-  void pause() => playback.pause();
-  void resume() => playback.resume();
+  /// Replays the most recently played segment (from history).
+  void previous() {
+    final last = history.snapshot.last;
+    if (last == null) return;
+    queue.insertNext(last, origin: QueueOrigin.insertNext);
+    playback.complete();
+    playNext();
+  }
 
-  /// Stops the engine entirely.
+  void pause() {
+    playback.pause();
+    _emit(PlaybackPaused(DateTime.now()));
+  }
+
+  void resume() {
+    playback.resume();
+    _emit(PlaybackResumed(DateTime.now()));
+  }
+
+  /// Stops the engine entirely and clears the queue.
   void stop() {
     playback.stop();
     queue.clear();
+    _emit(PlaybackStopped(DateTime.now()));
   }
+
+  // Queue operations (delegate to the queue manager).
+  void enqueue(AudioSegment segment) => queue.enqueue(segment);
+  PlaybackQueueItem? dequeue() => queue.skip();
+  void insertPriority(AudioSegment segment) => queue.insertPriority(segment);
+  void clearQueue() {
+    queue.clear();
+    _emit(QueueCleared(DateTime.now()));
+  }
+
+  /// Re-inserts the stashed music at the front and plays it.
+  void resumeMusic() {
+    if (queue.resumeMusic() != null) {
+      _emit(MusicResumed(DateTime.now()));
+      if (playback.current == null) playNext();
+    }
+  }
+
+  /// Stashes the current music (if any) and pauses.
+  void pauseMusic() {
+    final current = playback.current;
+    if (current != null && current.segment.type == AudioSegmentType.music) {
+      queue.pauseMusic(current);
+    }
+    pause();
+  }
+
+  /// Switches to a different station, reloading its playlist/rules/IDs.
+  void changeStation(
+    RadioStation newStation, {
+    List<Song> songs = const [],
+    List<AudioSegment> stationIdSegments = const [],
+  }) {
+    playback.stop();
+    queue.clear();
+    station.load(station: newStation, playlist: songs);
+    _emit(StationChanged(DateTime.now(), newStation.id));
+    playNext();
+  }
+
+  // Volume / mute (via the audio-focus manager).
+  void setVolume(double volume) {
+    audioFocus.setVolume(volume);
+    _emit(VolumeChanged(DateTime.now(), audioFocus.volume));
+  }
+
+  void mute() {
+    audioFocus.mute();
+    _emit(MuteChanged(DateTime.now(), true));
+  }
+
+  void unmute() {
+    audioFocus.unmute();
+    _emit(MuteChanged(DateTime.now(), false));
+  }
+
+  // Getters.
+  RadioStation? getCurrentStation() => station.station;
+  PlaybackState getPlaybackState() => state;
+  PlaybackQueue getCurrentQueue() => queue.snapshot;
+
+  void dispose() => _events.close();
 
   void _injectScheduledContent() {
     final due = <AudioSegment>[];

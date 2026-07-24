@@ -10,12 +10,13 @@
 /// playing.
 enum PlaybackPriority {
   emergencyAlert(0),
-  safetyWarning(1),
-  gpsNarration(2),
+  safetyWarning(1), // "Critical Safety"
+  gpsNarration(2), // "GPS Story"
   scheduledAnnouncement(3),
   stationIdentification(4),
   music(5),
-  ambientAudio(6);
+  ambientAudio(6),
+  lowPriority(7);
 
   const PlaybackPriority(this.rank);
 
@@ -25,3 +26,8 @@ enum PlaybackPriority {
   /// True if `this` should win over [other].
   bool isHigherThan(PlaybackPriority other) => rank < other.rank;
 }
+
+/// Canonical alias used across the Radio feature (the spec's "AudioPriority").
+/// Same type as [PlaybackPriority] — kept as an alias to avoid duplicating the
+/// ladder while matching the requested vocabulary.
+typedef AudioPriority = PlaybackPriority;

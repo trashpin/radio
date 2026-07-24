@@ -1,4 +1,5 @@
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_queue.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
 
 /// Owns the ordered list of upcoming [PlaybackQueueItem]s and the "paused music"
@@ -19,6 +20,10 @@ class QueueManagerService {
 
   /// Immutable snapshot of the queue (highest priority first).
   List<PlaybackQueueItem> get items => List.unmodifiable(_queue);
+
+  /// Read-only value snapshot of the whole queue (items + stashed music).
+  PlaybackQueue get snapshot =>
+      PlaybackQueue(items: items, pausedMusic: _pausedMusic);
 
   /// Music stashed by [pauseMusic], awaiting [resumeMusic].
   PlaybackQueueItem? get pausedMusic => _pausedMusic;

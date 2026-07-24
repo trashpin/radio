@@ -1,4 +1,5 @@
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_history.dart';
 
 /// Remembers what has already played this session.
 ///
@@ -11,6 +12,9 @@ class HistoryManager {
 
   /// Most-recent-last list of everything played.
   List<AudioSegment> get all => List.unmodifiable(_history);
+
+  /// Immutable value snapshot (for UI / PlaybackRepository).
+  PlaybackHistory get snapshot => PlaybackHistory(items: all);
 
   void record(AudioSegment segment) => _history.add(segment);
 
