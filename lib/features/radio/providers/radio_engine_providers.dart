@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
+import 'package:explorer_os_mobile/features/radio/services/audio_player_port.dart';
+import 'package:explorer_os_mobile/features/radio/services/radio_audio_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/history_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/music_scheduler.dart';
@@ -80,4 +82,24 @@ final radioEngineServiceProvider = Provider<RadioEngineService>((ref) {
   );
   ref.onDispose(engine.dispose);
   return engine;
+});
+
+/// The production audio output (real `just_audio`). Override with a fake in
+/// tests, or an `audio_service`-backed port for full background/CarPlay later.
+final audioPlayerPortProvider = Provider<AudioPlayerPort>((ref) {
+  final port = JustAudioPlayerPort();
+  ref.onDispose(port.dispose);
+  return port;
+});
+
+/// Bridges the engine's playback intent to real audio. Reading this provider
+/// attaches the adapter so decisions become sound.
+final radioAudioServiceProvider = Provider<RadioAudioService>((ref) {
+  final service = RadioAudioService(
+    engine: ref.watch(radioEngineServiceProvider),
+    port: ref.watch(audioPlayerPortProvider),
+  );
+  service.attach();
+  ref.onDispose(service.dispose);
+  return service;
 });
