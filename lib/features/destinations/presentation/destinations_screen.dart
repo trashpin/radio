@@ -93,6 +93,12 @@ class _ExploreResults extends ConsumerWidget {
       return const _EmptyState(message: 'No destinations found.');
     }
 
+    // When browsing (no active filter), the featured item headlines its own
+    // section, so drop it from the "Popular" list to avoid duplication.
+    final popular = hasFilter
+        ? filtered
+        : filtered.where((d) => d.id != featured.id).toList(growable: false);
+
     return RefreshIndicator(
       onRefresh: () async => ref.refresh(destinationsProvider.future),
       child: ListView(
@@ -110,13 +116,13 @@ class _ExploreResults extends ConsumerWidget {
             const SectionHeader(title: 'Popular Near You'),
           ] else
             const SectionHeader(title: 'Results'),
-          if (filtered.isEmpty)
+          if (popular.isEmpty && hasFilter)
             const Padding(
               padding: EdgeInsets.only(top: AppSpacing.xxl),
               child: _EmptyState(message: 'No destinations match your search.'),
             )
           else
-            ..._popularList(filtered),
+            ..._popularList(popular),
         ],
       ),
     );
