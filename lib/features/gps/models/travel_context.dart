@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
 import 'package:explorer_os_mobile/features/gps/models/route_progress.dart';
 import 'package:explorer_os_mobile/features/gps/models/speed_state.dart';
+import 'package:explorer_os_mobile/features/gps/models/travel_session.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_statistics.dart';
 import 'package:explorer_os_mobile/features/gps/models/upcoming_destination.dart';
 
@@ -51,6 +52,8 @@ class TravelContext {
     this.routeProgress,
     this.distanceRemainingMeters,
     this.statistics = TravelStatistics.empty,
+    this.travelSession,
+    this.currentRadioStationId,
     this.weather = WeatherCondition.unknown,
   });
 
@@ -95,10 +98,14 @@ class TravelContext {
   /// Distance remaining to the next stop/attraction (route-aware), when known.
   final double? distanceRemainingMeters;
 
-  // Cumulative trip stats.
+  // Cumulative trip stats + the owning session.
   final TravelStatistics statistics;
+  final TravelSession? travelSession;
 
-  // Environment.
+  // Environment / cross-system placeholders.
+  /// The active Explorer Radio station (placeholder; set by the coordinator that
+  /// bridges GPS ↔ Radio, so downstream systems can read it from context).
+  final String? currentRadioStationId;
   final WeatherCondition weather;
 
   bool get isMoving => movementState == MovementState.moving;

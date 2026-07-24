@@ -9,6 +9,10 @@ import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/geofence_region.dart';
 import 'package:explorer_os_mobile/features/gps/models/park_boundary.dart';
 import 'package:explorer_os_mobile/features/gps/models/state_boundary.dart';
+import 'package:explorer_os_mobile/features/gps/models/county_boundary.dart';
+import 'package:explorer_os_mobile/features/gps/services/battery_optimization_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/bearing_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/county_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
@@ -17,11 +21,13 @@ import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_provider.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_tracking_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/offline_location_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/park_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/route_engine.dart';
 import 'package:explorer_os_mobile/features/gps/services/speed_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/state_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/travel_context_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/travel_session_service.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,19 +39,37 @@ GPSLocation fix(double lat, double lng, {double? speed, DateTime? t}) =>
       speedMps: speed,
     );
 
-GPSService buildEngine() => GPSService(
-      tracking: LocationTrackingService(SimulatedLocationProvider()),
-      speedService: const SpeedService(),
-      headingService: const HeadingService(),
-      distanceService: const DistanceService(),
-      routeEngine: RouteEngine(),
-      geofenceService: GeofenceService(),
-      parkDetectionService: ParkDetectionService(),
-      destinationDetectionService: DestinationDetectionService(),
-      stateDetectionService: StateDetectionService(),
-      travelContextService: const TravelContextService(),
-      cache: GPSCacheService(),
-    );
+GPSService buildEngine() {
+  final cache = GPSCacheService();
+  return GPSService(
+    tracking: LocationTrackingService(SimulatedLocationProvider()),
+    speedService: const SpeedService(),
+    headingService: const HeadingService(),
+    bearingService: const BearingService(),
+    distanceService: const DistanceService(),
+    routeEngine: RouteEngine(),
+    geofenceService: GeofenceService(),
+    parkDetectionService: ParkDetectionService(),
+    countyDetectionService: CountyDetectionService(),
+    destinationDetectionService: DestinationDetectionService(),
+    stateDetectionService: StateDetectionService(),
+    travelContextService: const TravelContextService(),
+    sessionService: TravelSessionService(),
+    batteryOptimizationService: const BatteryOptimizationService(),
+    offlineLocationService: OfflineLocationService(cache),
+    cache: cache,
+  );
+}
+
+const _county = CountyBoundary(
+  id: 'c1',
+  name: 'Marion',
+  stateCode: 'UT',
+  minLatitude: 39.5,
+  maxLatitude: 40.5,
+  minLongitude: -111.5,
+  maxLongitude: -110.5,
+);
 
 const _park = ParkBoundary(
   id: 'b1',
@@ -201,6 +225,49 @@ void main() {
       expect(events.whereType<DestinationVisited>().single.destinationId, 'a');
       expect(engine.getTravelStatistics().attractionsVisited, 1);
       await sub.cancel();
+    });
+
+    test('detects county and emits EnteredCounty', () async {
+      final engine = buildEngine();
+      engine.configure(counties: const [_county]);
+
+      final events = <GpsEvent>[];
+      final sub = engine.events.listen(events.add);
+
+      final ctx = engine.processLocation(fix(40, -111));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(ctx.currentCounty, 'Marion');
+      expect(events.whereType<EnteredCounty>().single.name, 'Marion');
+      await sub.cancel();
+    });
+
+    test('tracks a travel session and reset starts a new one', () {
+      final engine = buildEngine();
+      engine.configure(parks: const [_park]);
+      engine.processLocation(fix(40, -111));
+
+      final ctx = engine.getTravelContext();
+      expect(ctx.travelSession, isNull); // session starts on startTracking
+
+      engine.resetTravelSession();
+      expect(engine.getTravelStatistics().attractionsVisited, 0);
+    });
+  });
+
+  group('CountyDetectionService', () {
+    test('detects containing county', () {
+      final svc = CountyDetectionService()..setCounties(const [_county]);
+      expect(svc.detect(fix(40, -111))?.name, 'Marion');
+      expect(svc.detect(fix(0, 0)), isNull);
+    });
+  });
+
+  group('BearingService', () {
+    test('bearing to a target point has a compass direction', () {
+      const svc = BearingService();
+      final b = svc.to(fix(40, -111), 41, -111); // due north
+      expect(b.degrees, closeTo(0, 0.5));
     });
   });
 }

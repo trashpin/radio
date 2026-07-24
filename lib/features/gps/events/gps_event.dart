@@ -31,6 +31,18 @@ class ExitedState extends GpsEvent {
   final String name;
 }
 
+class EnteredCounty extends GpsEvent {
+  const EnteredCounty(super.at, this.countyId, this.name);
+  final String countyId;
+  final String name;
+}
+
+class ExitedCounty extends GpsEvent {
+  const ExitedCounty(super.at, this.countyId, this.name);
+  final String countyId;
+  final String name;
+}
+
 class EnteredPark extends GpsEvent {
   const EnteredPark(super.at, this.parkId);
   final String parkId;
@@ -51,6 +63,11 @@ class ArrivedAtDestination extends GpsEvent {
   final String destinationId;
 }
 
+class VisitingDestination extends GpsEvent {
+  const VisitingDestination(super.at, this.destinationId);
+  final String destinationId;
+}
+
 class LeavingDestination extends GpsEvent {
   const LeavingDestination(super.at, this.destinationId);
   final String destinationId;
@@ -61,8 +78,18 @@ class DestinationVisited extends GpsEvent {
   final String destinationId;
 }
 
+class NearbyDestinationDetected extends GpsEvent {
+  const NearbyDestinationDetected(super.at, this.destinationId);
+  final String destinationId;
+}
+
 class RouteChanged extends GpsEvent {
   const RouteChanged(super.at);
+}
+
+class HeadingChanged extends GpsEvent {
+  const HeadingChanged(super.at, this.degrees);
+  final double degrees;
 }
 
 class SpeedChanged extends GpsEvent {
@@ -84,4 +111,12 @@ class GpsLost extends GpsEvent {
 
 class GpsRecovered extends GpsEvent {
   const GpsRecovered(super.at);
+}
+
+class BackgroundTrackingStarted extends GpsEvent {
+  const BackgroundTrackingStarted(super.at);
+}
+
+class BackgroundTrackingStopped extends GpsEvent {
+  const BackgroundTrackingStopped(super.at);
 }

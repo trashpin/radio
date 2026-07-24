@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
 import 'package:explorer_os_mobile/features/gps/models/route_progress.dart';
 import 'package:explorer_os_mobile/features/gps/models/speed_state.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
+import 'package:explorer_os_mobile/features/gps/models/travel_session.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_statistics.dart';
 import 'package:explorer_os_mobile/features/gps/models/upcoming_destination.dart';
 
@@ -25,6 +26,7 @@ class TravelContextService {
     GPSLocation? location,
     String? stateCode,
     String? stateName,
+    String? countyName,
     String? parkId,
     String? destinationId,
     CurrentDestination? currentDestination,
@@ -43,6 +45,8 @@ class TravelContextService {
     RouteProgress? routeProgress,
     double? distanceRemainingMeters,
     TravelStatistics statistics = TravelStatistics.empty,
+    TravelSession? travelSession,
+    String? currentRadioStationId,
     WeatherCondition weather = WeatherCondition.unknown,
   }) {
     return TravelContext(
@@ -50,6 +54,7 @@ class TravelContextService {
       location: location,
       currentStateCode: stateCode,
       currentStateName: stateName,
+      currentCounty: countyName,
       currentParkId: parkId,
       currentDestinationId: destinationId,
       currentDestination: currentDestination,
@@ -71,6 +76,8 @@ class TravelContextService {
       routeProgress: routeProgress,
       distanceRemainingMeters: distanceRemainingMeters,
       statistics: statistics,
+      travelSession: travelSession,
+      currentRadioStationId: currentRadioStationId,
       weather: weather,
     );
   }
