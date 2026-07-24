@@ -2,11 +2,11 @@ import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/park_boundary.dart';
 
-/// The park (if any) the user is in/near, plus their arrival state.
+/// The park (if any) the user is in/near, plus their arrival status.
 class ParkDetectionResult {
-  const ParkDetectionResult({this.parkId, required this.arrivalState});
+  const ParkDetectionResult({this.parkId, required this.arrivalStatus});
   final String? parkId;
-  final ArrivalState arrivalState;
+  final ArrivalStatus arrivalStatus;
 }
 
 /// Determines the current park and drives the arrival state machine
@@ -15,8 +15,9 @@ class ParkDetectionResult {
 /// WHY THIS EXISTS: "which park am I in, and am I just arriving or leaving?" is a
 /// core signal for audio (welcome messages on arrival, wrap-ups on departure).
 /// This service owns that stateful interpretation so the rest of the engine
-/// stays stateless about parks.
-class ParkDetector {
+/// stays stateless about parks. Its transitions become Entered/ExitedPark and
+/// arrival events.
+class ParkDetectionService {
   final List<ParkBoundary> _parks = [];
   String? _currentParkId;
 
@@ -38,8 +39,8 @@ class ParkDetector {
       _currentParkId = inside.parkId;
       return ParkDetectionResult(
         parkId: inside.parkId,
-        arrivalState:
-            isNewArrival ? ArrivalState.arrived : ArrivalState.visiting,
+        arrivalStatus:
+            isNewArrival ? ArrivalStatus.arrived : ArrivalStatus.visiting,
       );
     }
 
@@ -49,7 +50,7 @@ class ParkDetector {
       _currentParkId = null;
       return ParkDetectionResult(
         parkId: departedPark,
-        arrivalState: ArrivalState.departing,
+        arrivalStatus: ArrivalStatus.departing,
       );
     }
 
@@ -61,11 +62,11 @@ class ParkDetector {
     if (approaching != null) {
       return ParkDetectionResult(
         parkId: approaching.parkId,
-        arrivalState: ArrivalState.approaching,
+        arrivalStatus: ArrivalStatus.approaching,
       );
     }
 
-    return const ParkDetectionResult(arrivalState: ArrivalState.left);
+    return const ParkDetectionResult(arrivalStatus: ArrivalStatus.left);
   }
 
   T? _firstWhereOrNull<T>(List<T> items, bool Function(T) test) {

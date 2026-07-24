@@ -9,8 +9,9 @@ import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 ///
 /// WHY THIS EXISTS: this is the spatial reasoning that turns a raw position into
 /// "there are 3 attractions near you; the next one on your route is 800 m
-/// ahead." The Producer relies on "upcoming" to pre-load location audio.
-class DestinationDetector {
+/// ahead." The Producer relies on "upcoming" to pre-load location audio, and
+/// visited-tracking drives DestinationVisited events.
+class DestinationDetectionService {
   final List<AttractionPoint> _candidates = [];
   final Set<String> _visited = {};
 
@@ -21,6 +22,7 @@ class DestinationDetector {
   }
 
   List<String> get visited => List.unmodifiable(_visited);
+  bool isVisited(String id) => _visited.contains(id);
   void markVisited(String id) => _visited.add(id);
 
   /// Attractions within [radiusMeters], nearest first.

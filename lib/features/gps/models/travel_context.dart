@@ -1,9 +1,11 @@
 import 'package:explorer_os_mobile/core/utils/temporal.dart';
+import 'package:explorer_os_mobile/features/gps/models/current_destination.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_heading.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/nearby_destination.dart';
 import 'package:explorer_os_mobile/features/gps/models/speed_state.dart';
+import 'package:explorer_os_mobile/features/gps/models/travel_statistics.dart';
 import 'package:explorer_os_mobile/features/gps/models/upcoming_destination.dart';
 
 /// THE published output of the GPS Intelligence Engine.
@@ -23,14 +25,20 @@ class TravelContext {
     this.location,
     this.currentStateCode,
     this.currentStateName,
+    this.currentCity,
+    this.currentCounty,
+    this.currentRegion,
     this.currentParkId,
     this.currentDestinationId,
+    this.currentDestination,
     this.currentRoad,
     this.heading,
+    this.bearingDegrees,
+    this.altitudeMeters,
     this.speed,
     this.travelMode = TravelMode.stationary,
     this.movementState = MovementState.idle,
-    this.arrivalState,
+    this.arrivalStatus,
     this.isParked = false,
     this.distanceTravelledMeters = 0,
     this.nearestAttraction,
@@ -39,6 +47,7 @@ class TravelContext {
     this.nearbyDestinations = const [],
     this.upcomingDestinations = const [],
     this.visitedStopIds = const [],
+    this.statistics = TravelStatistics.empty,
     this.weather = WeatherCondition.unknown,
   });
 
@@ -48,16 +57,22 @@ class TravelContext {
   final GPSLocation? location;
   final String? currentStateCode;
   final String? currentStateName;
+  final String? currentCity; // placeholder (reverse-geocoding not implemented)
+  final String? currentCounty; // placeholder
+  final String? currentRegion; // placeholder
   final String? currentParkId;
   final String? currentDestinationId;
+  final CurrentDestination? currentDestination;
   final String? currentRoad; // placeholder (reverse-geocoding not implemented)
 
   // How.
   final GPSHeading? heading;
+  final double? bearingDegrees;
+  final double? altitudeMeters;
   final SpeedState? speed;
   final TravelMode travelMode;
   final MovementState movementState;
-  final ArrivalState? arrivalState;
+  final ArrivalStatus? arrivalStatus;
   final bool isParked;
   final double distanceTravelledMeters;
 
@@ -70,6 +85,9 @@ class TravelContext {
 
   // What's been seen.
   final List<String> visitedStopIds;
+
+  // Cumulative trip stats.
+  final TravelStatistics statistics;
 
   // Environment.
   final WeatherCondition weather;

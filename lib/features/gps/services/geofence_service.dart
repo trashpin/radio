@@ -14,10 +14,11 @@ class GeofenceEvent {
 /// user moves.
 ///
 /// WHY THIS EXISTS: enter/exit detection is the primitive that powers park
-/// arrival, attraction proximity, and (later) GPS-triggered audio. Centralizing
-/// the "was inside / now inside" bookkeeping here keeps detectors simple and
-/// avoids duplicating membership tracking.
-class GeofenceEngine {
+/// arrival, attraction proximity, and GPS-triggered audio. Centralizing the
+/// "was inside / now inside" bookkeeping here keeps detectors simple and avoids
+/// duplicating membership tracking. It is the source of the Entered/Exited
+/// events the engine publishes.
+class GeofenceService {
   final List<GeofenceRegion> _regions = [];
   final Set<String> _inside = {};
 
@@ -35,7 +36,8 @@ class GeofenceEngine {
   List<GeofenceEvent> evaluate(GPSLocation location) {
     final events = <GeofenceEvent>[];
     for (final region in _regions) {
-      final isInsideNow = region.contains(location.latitude, location.longitude);
+      final isInsideNow =
+          region.contains(location.latitude, location.longitude);
       final wasInside = _inside.contains(region.id);
       if (isInsideNow && !wasInside) {
         _inside.add(region.id);

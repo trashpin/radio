@@ -5,7 +5,7 @@ library;
 enum TravelMode { walking, driving, biking, stationary }
 
 /// The user's relationship to a destination/park over time.
-enum ArrivalState { approaching, arrived, visiting, departing, left }
+enum ArrivalStatus { approaching, arrived, visiting, departing, left }
 
 /// Whether the user is currently in motion.
 enum MovementState { moving, stopped, idle }
