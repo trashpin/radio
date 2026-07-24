@@ -10,6 +10,10 @@ class SupabaseTables {
   static const String destinations = 'destinations';
   static const String parks = 'parks';
   static const String stops = 'stops';
+
+  /// Base44 media table (audio/photo/video). Audio rows (`file_url` in the
+  /// `mp3` bucket) are the real source for Explorer Radio playback.
+  static const String media = 'media';
   static const String stories = 'stories';
   static const String wildlife = 'wildlife';
   static const String plants = 'plants';

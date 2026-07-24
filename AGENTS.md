@@ -56,3 +56,20 @@ Run from repo root (see Flutter docs for details):
   `seed.sql`). Apply them in the Supabase SQL editor / CLI so the app has live
   content. Table columns are the snake_case contract for the Dart models'
   `fromJson`/`toJson` — keep them in sync when changing a model.
+- **Client key MUST be the publishable key.** Supabase rejects `sb_secret_…`
+  keys from browser clients with HTTP 401 `"Forbidden use of secret API key in
+  browser"` (server-side `curl` still works, which is misleading). Flutter web is
+  a browser client, so `SUPABASE_ANON_KEY` must be the `sb_publishable_…` (anon)
+  key from Project Settings → API. A secret key will 401 every query even though
+  the URL/schema are correct.
+- **The live project uses Base44's schema, not the app's original tables.** The
+  connected Supabase project is managed by Base44 Admin: content lives in
+  `destinations`, `media` (audio/photo/video; audio `file_url` resolves against
+  the public **`mp3`** Storage bucket), `stops`, and `stories`. The app's older
+  `songs` / `radio_stations` / `music_*` tables do NOT exist there. Mapping is
+  handled in `Destination.fromJson` (Base44 columns: `destination_id`,
+  `hero_image`, `destination_type`, `state_province`/`country`) and in
+  `features/media/` (`MediaRepository.songsForDestination` maps audio `media`
+  rows to `Song`s; `RadioStation.fromDestination` derives a station per
+  destination). Radio playlists come from a destination's audio `media`, not a
+  `radio_stations` table.

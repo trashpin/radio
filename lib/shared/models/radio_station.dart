@@ -1,4 +1,5 @@
 import 'package:explorer_os_mobile/core/data/model.dart';
+import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// An Explorer Radio station, optionally scoped to a [Destination].
 ///
@@ -30,5 +31,15 @@ class RadioStation implements Model {
         description: json['description'] as String?,
         imageUrl: json['image_url'] as String?,
         streamUrl: json['stream_url'] as String?,
+      );
+
+  /// Synthesizes a station from a [Destination]. Base44 has no `radio_stations`
+  /// table — each destination *is* a station, powered by its audio `media`.
+  factory RadioStation.fromDestination(Destination destination) => RadioStation(
+        id: destination.id,
+        name: '${destination.name} Radio',
+        destinationId: destination.id,
+        description: destination.description,
+        imageUrl: destination.imageUrl,
       );
 }

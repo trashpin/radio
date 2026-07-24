@@ -46,16 +46,31 @@ class Destination implements Model {
 
   /// Builds a [Destination] from a backend JSON map. Missing/renamed keys are
   /// handled defensively so one malformed row cannot crash the app.
+  ///
+  /// Maps the Base44 `destinations` schema (source of truth): `destination_id`,
+  /// `hero_image`, `destination_type`, `state_province`/`country`, `featured`.
+  /// Legacy keys (`id`, `image_url`, `location`, `category`, `is_featured`) are
+  /// kept as fallbacks so seed/preview data still loads unchanged.
   factory Destination.fromJson(Map<String, dynamic> json) {
     return Destination(
-      id: json['id']?.toString() ?? '',
+      id: (json['destination_id'] ?? json['id'])?.toString() ?? '',
       name: (json['name'] ?? '') as String,
       description: json['description'] as String?,
-      imageUrl: json['image_url'] as String?,
-      location: json['location'] as String?,
-      category: json['category'] as String?,
+      imageUrl: (json['hero_image'] ?? json['image_url']) as String?,
+      location: (json['location'] as String?) ?? _composeLocation(json),
+      category: (json['destination_type'] ?? json['category']) as String?,
       featured: (json['featured'] ?? json['is_featured'] ?? false) as bool,
       distanceLabel: json['distance_label'] as String?,
     );
+  }
+
+  /// Builds a human-readable location line from Base44's separate
+  /// `state_province` / `country` columns (e.g. "Florida, USA").
+  static String? _composeLocation(Map<String, dynamic> json) {
+    final parts = [json['state_province'], json['country']]
+        .whereType<String>()
+        .where((s) => s.trim().isNotEmpty)
+        .toList(growable: false);
+    return parts.isEmpty ? null : parts.join(', ');
   }
 }

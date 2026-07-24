@@ -1,37 +1,45 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
-import 'package:explorer_os_mobile/features/music/repositories/music_repository.dart';
+import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
+import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
-import 'package:explorer_os_mobile/features/radio/repositories/radio_station_repository.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 
-/// Bootstraps a listening session: attaches audio output, loads the current
-/// station's playlist from the backend (Supabase, via the Music library), and
-/// loads it into the engine WITHOUT auto-playing (the UI's Play button starts
-/// it, per web autoplay rules).
+/// Bootstraps a listening session: attaches audio output, derives the active
+/// station from Base44 content (a destination that has audio `media`), loads
+/// that destination's audio playlist, and hands it to the engine WITHOUT
+/// auto-playing (the UI's Play button starts it, per web autoplay rules).
 ///
-/// This is the glue that finally makes the radio audible: it connects
-/// content (Music/Supabase) → engine → audio adapter. Returns the active
-/// station for the UI; surfaces a friendly error when the backend isn't
-/// configured or has no stations.
+/// This is the glue that makes the radio audible against the real Base44
+/// schema: `destinations` → station, `media` (audio in the `mp3` bucket) →
+/// playlist → engine → audio adapter. Returns the active station for the UI;
+/// surfaces a friendly error when there is no audio content yet.
 final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Attach the audio adapter (engine intent → real sound via just_audio).
   ref.read(radioAudioServiceProvider);
 
-  final stations = await ref.watch(radioStationsProvider.future);
-  if (stations.isEmpty) {
+  final media = ref.read(mediaRepositoryProvider);
+  final destinations =
+      await ref.watch(destinationRepositoryProvider).fetchDestinations();
+  if (destinations.isEmpty) {
     throw const AppException(
-      'No radio stations are available yet. Add stations in the backend to '
-      'start listening.',
+      'No destinations are available yet. Add a destination (and audio media) '
+      'in Base44 to start listening.',
       type: AppExceptionType.notFound,
     );
   }
 
-  final station = stations.first;
-  final songs =
-      await ref.read(musicRepositoryProvider).songsForStation(station.id);
+  // Prefer a destination that actually has audio media so the station can play.
+  final withAudio = await media.destinationIdsWithAudio();
+  final destination = destinations.firstWhere(
+    (d) => withAudio.contains(d.id),
+    orElse: () => destinations.first,
+  );
+
+  final station = RadioStation.fromDestination(destination);
+  final songs = await media.songsForDestination(destination.id);
 
   ref
       .read(radioEngineServiceProvider)
