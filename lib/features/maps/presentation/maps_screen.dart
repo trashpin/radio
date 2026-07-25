@@ -8,7 +8,9 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
+import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/sightings/models/explorer_sighting.dart';
@@ -46,13 +48,25 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   BitmapDescriptor? _pinIcon;
   BitmapDescriptor? _sightingIcon;
   BitmapDescriptor? _locationIcon;
-  LatLng _center = MapsScreen._fallbackCenter;
+  final Map<String, BitmapDescriptor> _categoryIcons = {};
+  bool _centerInitialized = false;
+
+  static const _nearbyCategoryTokens = [
+    'mammals', 'birds', 'reptiles', 'amphibians', 'fish', 'plants', 'trees',
+    'wildflowers', 'mushrooms', 'springs', 'waterfalls', 'scenic_overlooks',
+    'historic_sites', 'trails', 'campgrounds', 'visitor_centers',
+    'ranger_stations', 'fishing_areas', 'boat_ramps',
+  ];
 
   @override
   void initState() {
     super.initState();
     _buildIcons();
   }
+
+  BitmapDescriptor _iconFor(String category) =>
+      _categoryIcons[category] ??
+      BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
 
   /// Renders circular icon markers to bitmaps (green = parks, blue = locations,
   /// amber = sightings) so pins look like the design.
@@ -64,11 +78,17 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           Icons.place_rounded, const Color(0xFF3F8FD0));
       final sighting = await _circleIconMarker(
           Icons.visibility_rounded, _MapPalette.gold);
+      final cats = <String, BitmapDescriptor>{};
+      for (final token in _nearbyCategoryTokens) {
+        final style = nearbyStyle(token);
+        cats[token] = await _circleIconMarker(style.icon, style.color, size: 96);
+      }
       if (mounted) {
         setState(() {
           _pinIcon = pin;
           _locationIcon = location;
           _sightingIcon = sighting;
+          _categoryIcons.addAll(cats);
         });
       }
     } catch (_) {
@@ -102,28 +122,6 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         await recorder.endRecording().toImage(size.toInt(), size.toInt());
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
-  }
-
-  double _distanceMiles(LatLng a, LatLng b) {
-    const earthKm = 6371.0;
-    final dLat = _rad(b.latitude - a.latitude);
-    final dLng = _rad(b.longitude - a.longitude);
-    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_rad(a.latitude)) *
-            math.cos(_rad(b.latitude)) *
-            math.sin(dLng / 2) *
-            math.sin(dLng / 2);
-    final km = earthKm * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
-    return km * 0.621371;
-  }
-
-  double _rad(double deg) => deg * math.pi / 180;
-
-  Destination? _nearest(List<Destination> mappable) {
-    if (mappable.isEmpty) return null;
-    mappable.sort((a, b) => _distanceMiles(_center, LatLng(a.latitude!, a.longitude!))
-        .compareTo(_distanceMiles(_center, LatLng(b.latitude!, b.longitude!))));
-    return mappable.first;
   }
 
   // --- Marker detail sheets (tap a marker to explore) ----------------------
@@ -242,6 +240,24 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final stops = ref.watch(allStopsProvider).value ?? const [];
     final layers = ref.watch(mapLayersProvider);
 
+    // Establish the user's location (device GPS on hardware; a simulated
+    // center — the first destination — on web) once, so nearby search runs.
+    if (!_centerInitialized) {
+      final seed = mappable.isNotEmpty
+          ? LatLng(mappable.first.latitude!, mappable.first.longitude!)
+          : MapsScreen._fallbackCenter;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ref.read(mapCenterProvider) == null) {
+          ref.read(mapCenterProvider.notifier).set(seed);
+        }
+      });
+      _centerInitialized = true;
+    }
+
+    final userLocation = ref.watch(mapCenterProvider);
+    final hits = ref.watch(nearbyItemsProvider);
+    final radius = ref.watch(searchRadiusProvider);
+
     final markers = <Marker>{
       if (layers.contains(MapLayer.parks))
         for (final d in mappable)
@@ -271,6 +287,24 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                     BitmapDescriptor.hueOrange),
             onTap: () => _openSightingSheet(s),
           ),
+      // Real-time "Around Me" discovery markers (from map_locations), within
+      // the selected radius, one icon per category.
+      for (final hit in hits)
+        Marker(
+          markerId: MarkerId('nearby_${hit.item.id}'),
+          position: LatLng(hit.item.latitude, hit.item.longitude),
+          icon: _iconFor(hit.item.category),
+          onTap: () => _openNearbySheet(hit),
+        ),
+      // User location (blue dot).
+      if (userLocation != null)
+        Marker(
+          markerId: const MarkerId('_user'),
+          position: userLocation,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueAzure),
+          infoWindow: const InfoWindow(title: 'You are here'),
+        ),
     };
 
     // Park boundaries (approximate circles until real polygons/geojson exist).
@@ -285,12 +319,21 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             strokeWidth: 2,
             fillColor: _MapPalette.green.withValues(alpha: 0.08),
           ),
+      // GPS accuracy ring around the user.
+      if (userLocation != null)
+        Circle(
+          circleId: const CircleId('_accuracy'),
+          center: userLocation,
+          radius: 60,
+          strokeColor: const Color(0xFF3F8FD0),
+          strokeWidth: 1,
+          fillColor: const Color(0x223F8FD0),
+        ),
     };
 
     final initialTarget = mappable.isNotEmpty
         ? LatLng(mappable.first.latitude!, mappable.first.longitude!)
         : MapsScreen._fallbackCenter;
-    final nearest = _nearest([...mappable]);
 
     return Scaffold(
       backgroundColor: _MapPalette.bg,
@@ -310,22 +353,215 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
                   onMapCreated: (c) => _controller = c,
-                  onCameraMove: (pos) => _center = pos.target,
-                  onCameraIdle: () => setState(() {}),
                 ),
-                _controls(initialTarget),
+                _controls(initialTarget, userLocation),
                 _layerChips(layers),
-                if (nearest != null)
-                  _NearestCard(
-                    destination: nearest,
-                    miles: _distanceMiles(
-                        _center, LatLng(nearest.latitude!, nearest.longitude!)),
-                  ),
+                _radiusSelector(radius),
+                _aroundMeButton(hits.length),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// Search-radius pill (top-right, below the controls) with a menu of radii.
+  Widget _radiusSelector(SearchRadius radius) {
+    return Positioned(
+      top: 150,
+      right: AppSpacing.lg,
+      child: PopupMenuButton<SearchRadius>(
+        tooltip: 'Search radius',
+        onSelected: (r) {
+          ref.read(searchRadiusProvider.notifier).set(r);
+          WidgetsBinding.instance.addPostFrameCallback((_) => _fitToNearby());
+        },
+        itemBuilder: (context) => [
+          for (final r in SearchRadius.values)
+            PopupMenuItem(value: r, child: Text(r.label)),
+        ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: _MapPalette.control,
+            borderRadius: AppRadius.pillAll,
+            boxShadow: const [
+              BoxShadow(color: Color(0x66000000), blurRadius: 8)
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.radar_rounded,
+                  color: _MapPalette.gold, size: 16),
+              const SizedBox(width: 6),
+              Text(radius.label,
+                  style: const TextStyle(
+                      color: _MapPalette.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              const Icon(Icons.arrow_drop_down_rounded,
+                  color: _MapPalette.textSecondary, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Floating "Around Me" button with a live count of nearby items.
+  Widget _aroundMeButton(int count) {
+    return Positioned(
+      left: AppSpacing.lg,
+      bottom: 110,
+      child: FloatingActionButton.extended(
+        heroTag: 'aroundMe',
+        backgroundColor: _MapPalette.gold,
+        foregroundColor: Colors.black,
+        onPressed: _openAroundMe,
+        icon: const Icon(Icons.explore_rounded),
+        label: Text('Around Me ($count)'),
+      ),
+    );
+  }
+
+  void _fitToNearby() {
+    final center = ref.read(mapCenterProvider);
+    final hits = ref.read(nearbyItemsProvider);
+    if (center == null || _controller == null) return;
+    if (hits.isEmpty) {
+      _controller!.animateCamera(CameraUpdate.newLatLngZoom(center, 13));
+      return;
+    }
+    var minLat = center.latitude, maxLat = center.latitude;
+    var minLng = center.longitude, maxLng = center.longitude;
+    for (final h in hits) {
+      minLat = math.min(minLat, h.item.latitude);
+      maxLat = math.max(maxLat, h.item.latitude);
+      minLng = math.min(minLng, h.item.longitude);
+      maxLng = math.max(maxLng, h.item.longitude);
+    }
+    _controller!.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      ),
+      64,
+    ));
+  }
+
+  /// The draggable "Around Me" panel: categories (grouped) with counts, each
+  /// expanding into nearby items sorted by distance.
+  void _openAroundMe() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _MapPalette.control,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        minChildSize: 0.3,
+        maxChildSize: 0.92,
+        builder: (context, scrollController) {
+          final hits = ref.read(nearbyItemsProvider);
+          final groups = <String, List<NearbyHit>>{};
+          for (final h in hits) {
+            groups.putIfAbsent(nearbyStyle(h.item.category).group, () => []).add(h);
+          }
+          final groupNames = groups.keys.toList()
+            ..sort((a, b) => groups[b]!.length.compareTo(groups[a]!.length));
+          return ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xl),
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
+                  decoration: BoxDecoration(
+                    color: _MapPalette.textSecondary,
+                    borderRadius: AppRadius.pillAll,
+                  ),
+                ),
+              ),
+              Text('Around Me',
+                  style: const TextStyle(
+                      color: _MapPalette.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800)),
+              Text('${hits.length} nearby · ${ref.read(searchRadiusProvider).label}',
+                  style: const TextStyle(color: _MapPalette.textSecondary)),
+              const Gap.v(AppSpacing.md),
+              if (hits.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                  child: Text('Nothing within range — widen the radius.',
+                      style: TextStyle(color: _MapPalette.textSecondary)),
+                ),
+              for (final name in groupNames)
+                _AroundMeGroup(
+                  title: name,
+                  hits: groups[name]!,
+                  onSelect: (hit) {
+                    Navigator.of(context).maybePop();
+                    _controller?.animateCamera(CameraUpdate.newLatLngZoom(
+                        LatLng(hit.item.latitude, hit.item.longitude), 15));
+                    _openNearbySheet(hit);
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _openNearbySheet(NearbyHit hit) {
+    final style = nearbyStyle(hit.item.category);
+    _showDetail(
+      title: hit.item.name,
+      subtitle: '${formatDistance(hit.meters)}'
+          '${hit.item.description != null ? ' · ${hit.item.description}' : ''}',
+      imageUrl: hit.item.imageUrl,
+      icon: style.icon,
+      color: style.color,
+      actions: [_nearbyActionRow()],
+    );
+  }
+
+  Widget _nearbyActionRow() {
+    const items = <(String, IconData)>[
+      ('Navigate', Icons.navigation_rounded),
+      ('Play Audio', Icons.volume_up_rounded),
+      ('Gallery', Icons.photo_library_rounded),
+      ('Favorite', Icons.favorite_border_rounded),
+      ('Journal', Icons.book_rounded),
+      ('Ask AI Ranger', Icons.smart_toy_rounded),
+    ];
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final (label, icon) in items)
+          OutlinedButton.icon(
+            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$label — coming soon')),
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 40),
+              foregroundColor: _MapPalette.textPrimary,
+              side: const BorderSide(color: Color(0xFF2E3A34)),
+            ),
+            icon: Icon(icon, size: 16),
+            label: Text(label),
+          ),
+      ],
     );
   }
 
@@ -392,16 +628,16 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     );
   }
 
-  Widget _controls(LatLng recenterTarget) {
+  Widget _controls(LatLng fallbackTarget, LatLng? userLocation) {
     return Positioned(
       top: AppSpacing.lg,
       right: AppSpacing.lg,
       child: Column(
         children: [
           _controlButton(
-            Icons.near_me_rounded,
-            () => _controller?.animateCamera(
-                CameraUpdate.newLatLngZoom(recenterTarget, 9)),
+            Icons.my_location_rounded,
+            () => _controller?.animateCamera(CameraUpdate.newLatLngZoom(
+                userLocation ?? fallbackTarget, 14)),
           ),
           const Gap.v(AppSpacing.md),
           _controlButton(
@@ -475,79 +711,56 @@ class _LayerChip extends StatelessWidget {
   }
 }
 
-/// Bottom card showing the destination nearest the current map center.
-class _NearestCard extends StatelessWidget {
-  const _NearestCard({required this.destination, required this.miles});
+/// A collapsible category group in the Around Me panel.
+class _AroundMeGroup extends StatelessWidget {
+  const _AroundMeGroup({
+    required this.title,
+    required this.hits,
+    required this.onSelect,
+  });
 
-  final Destination destination;
-  final double miles;
+  final String title;
+  final List<NearbyHit> hits;
+  final void Function(NearbyHit) onSelect;
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: AppSpacing.lg,
-      right: AppSpacing.lg,
-      bottom: 96,
-      child: Container(
-        padding: const EdgeInsets.all(AppSpacing.md),
-        decoration: BoxDecoration(
-          color: _MapPalette.control,
-          borderRadius: AppRadius.lgAll,
-          boxShadow: const [
-            BoxShadow(
-                color: Color(0x66000000),
-                blurRadius: 20,
-                offset: Offset(0, 8)),
-          ],
+    final style = nearbyStyle(hits.first.item.category);
+    return Theme(
+      data: Theme.of(context).copyWith(
+        dividerColor: Colors.transparent,
+        listTileTheme: const ListTileThemeData(dense: true),
+      ),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: AppSpacing.sm),
+        iconColor: _MapPalette.textSecondary,
+        collapsedIconColor: _MapPalette.textSecondary,
+        leading: CircleAvatar(
+          radius: 16,
+          backgroundColor: style.color.withValues(alpha: 0.2),
+          child: Icon(style.icon, color: style.color, size: 18),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(
-                color: _MapPalette.green,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.park_rounded,
-                  color: Colors.white, size: 22),
+        title: Text('$title (${hits.length})',
+            style: const TextStyle(
+                color: _MapPalette.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 15)),
+        children: [
+          for (final h in hits)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              title: Text(h.item.name,
+                  style: const TextStyle(
+                      color: _MapPalette.textPrimary, fontSize: 14)),
+              trailing: Text(formatDistance(h.meters),
+                  style: const TextStyle(
+                      color: _MapPalette.gold,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+              onTap: () => onSelect(h),
             ),
-            const Gap.h(AppSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    destination.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _MapPalette.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700),
-                  ),
-                  Text(
-                    destination.location ?? destination.category ?? 'Destination',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _MapPalette.textSecondary, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-            const Gap.h(AppSpacing.sm),
-            Text(
-              '${miles.toStringAsFixed(miles < 10 ? 1 : 0)} mi',
-              style: const TextStyle(
-                  color: _MapPalette.gold,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: _MapPalette.textSecondary),
-          ],
-        ),
+        ],
       ),
     );
   }

@@ -17,6 +17,9 @@ class SupabaseTables {
   /// Master natural-history catalog (plants, trees, birds, mammals, …).
   static const String species = 'species';
 
+  /// Geolocated points (all categories) for the real-time "Around Me" map.
+  static const String mapLocations = 'map_locations';
+
   /// Base44 media table (audio/photo/video). Audio rows (`file_url` in the
   /// `mp3` bucket) are the real source for Explorer Radio playback.
   static const String media = 'media';
