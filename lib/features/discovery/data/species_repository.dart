@@ -55,6 +55,10 @@ final speciesRepositoryProvider = Provider<SpeciesRepository>((ref) {
   );
 });
 
+/// All species (used by admin tooling, e.g. image matching).
+final allSpeciesProvider =
+    FutureProvider<List<Species>>((ref) => ref.watch(speciesRepositoryProvider).getAll());
+
 /// Species in a given category (e.g. 'plants', 'birds', 'mammals').
 final speciesByCategoryProvider =
     FutureProvider.family<List<Species>, String>((ref, category) {
