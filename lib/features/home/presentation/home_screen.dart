@@ -71,6 +71,14 @@ class HomeScreen extends StatelessWidget {
                     ),
                     const Gap.v(AppSpacing.lg),
                     DashboardCard(
+                      icon: Icons.travel_explore_rounded,
+                      title: 'I See Something',
+                      subtitle: 'What did you discover today?',
+                      accent: AppColors.secondary,
+                      onTap: () => context.push(AppRoute.discover.path),
+                    ),
+                    const Gap.v(AppSpacing.lg),
+                    DashboardCard(
                       icon: Icons.podcasts_rounded,
                       title: 'Explorer Radio',
                       subtitle: 'Ranger stories • Continue listening',

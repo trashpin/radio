@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/core/navigation/app_shell.dart';
 import 'package:explorer_os_mobile/features/companion/presentation/ai_ranger_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destinations_screen.dart';
+import 'package:explorer_os_mobile/features/discovery/presentation/discovery_categories_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/gps/presentation/gps_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
@@ -45,6 +46,7 @@ class AppRouter {
         ],
       ),
       // Pushed / full-screen routes reachable from Home, More, and detail links.
+      _route(AppRoute.discover.path, const DiscoveryCategoriesScreen()),
       _route(AppRoute.explore.path, const DestinationsScreen()),
       _route(AppRoute.profile.path, const ProfileScreen()),
       _route(AppRoute.settings.path, const SettingsScreen()),

@@ -15,6 +15,7 @@ enum AppRoute {
   more('/more'),
 
   // Pushed routes (reachable from Home / the More tab / detail links).
+  discover('/discover'),
   explore('/explore'),
   profile('/profile'),
   settings('/settings'),
