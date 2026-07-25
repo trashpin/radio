@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/admin_connection.dart';
 import 'package:explorer_os_mobile/features/admin/admin_stats.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
@@ -90,6 +91,8 @@ class DashboardPage extends ConsumerWidget {
           ],
         ),
         const Gap.v(AppSpacing.xl),
+        const _ConnectionPanel(),
+        const Gap.v(AppSpacing.xl),
         if (statsAsync.isLoading) const LinearProgressIndicator(),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -142,6 +145,177 @@ class DashboardPage extends ConsumerWidget {
         ),
         const Gap.v(AppSpacing.xxl),
       ],
+    );
+  }
+}
+
+/// Live Supabase connection health: prompts for missing config, warns about an
+/// unsafe (secret) key, and shows per-table/bucket status.
+class _ConnectionPanel extends ConsumerWidget {
+  const _ConnectionPanel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(adminConnectionProvider);
+
+    return AdminSectionCard(
+      child: async.when(
+        loading: () => const Row(
+          children: [
+            SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            Gap.h(AppSpacing.md),
+            Text('Checking Supabase connection…'),
+          ],
+        ),
+        error: (e, _) => _banner(
+          theme,
+          Icons.error_outline_rounded,
+          const Color(0xFFC0392B),
+          'Connection check failed',
+          '$e',
+        ),
+        data: (report) {
+          if (!report.configured) {
+            return _banner(
+              theme,
+              Icons.link_off_rounded,
+              const Color(0xFF8A6D00),
+              'Not connected to Supabase',
+              'Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (the sb_publishable_ '
+                  'anon key) so the admin reads live data.',
+            );
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    report.allOk
+                        ? Icons.check_circle_rounded
+                        : Icons.warning_amber_rounded,
+                    color: report.allOk
+                        ? const Color(0xFF2E7D32)
+                        : const Color(0xFF8A6D00),
+                    size: 20,
+                  ),
+                  const Gap.h(AppSpacing.sm),
+                  Text('Supabase connection',
+                      style: theme.textTheme.titleMedium),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Re-check',
+                    onPressed: () => ref.invalidate(adminConnectionProvider),
+                    icon: const Icon(Icons.refresh_rounded, size: 18),
+                  ),
+                ],
+              ),
+              if (report.keyWarning != null) ...[
+                const Gap.v(AppSpacing.sm),
+                _banner(theme, Icons.lock_outline_rounded,
+                    const Color(0xFF8A6D00), 'Unsafe key', report.keyWarning!),
+              ],
+              const Gap.v(AppSpacing.md),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  for (final c in report.checks)
+                    _CheckChip(
+                      label: c.name,
+                      ok: c.ok,
+                      kind: c.kind,
+                      detail: c.detail,
+                    ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _banner(ThemeData theme, IconData icon, Color color, String title,
+      String message) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: AppRadius.mdAll,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const Gap.h(AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(message, style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckChip extends StatelessWidget {
+  const _CheckChip({
+    required this.label,
+    required this.ok,
+    required this.kind,
+    required this.detail,
+  });
+
+  final String label;
+  final bool ok;
+  final CheckKind kind;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = ok ? const Color(0xFF2E7D32) : const Color(0xFFC0392B);
+    return Tooltip(
+      message: detail,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: AppRadius.pillAll,
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              kind == CheckKind.bucket
+                  ? Icons.folder_rounded
+                  : Icons.table_rows_rounded,
+              size: 13,
+              color: color,
+            ),
+            const SizedBox(width: 6),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            Icon(ok ? Icons.check_rounded : Icons.close_rounded,
+                size: 13, color: color),
+          ],
+        ),
+      ),
     );
   }
 }

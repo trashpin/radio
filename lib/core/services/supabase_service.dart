@@ -25,6 +25,14 @@ class SupabaseService {
       );
       return;
     }
+    if (EnvConfig.usingSecretKey) {
+      debugPrint(
+        'SupabaseService: WARNING — a SECRET key (sb_secret_/service_role) is '
+        'configured. Supabase blocks secret keys in browsers (HTTP 401). Set '
+        'SUPABASE_PUBLISHABLE_KEY to the sb_publishable_ (anon) key for the web '
+        'admin.',
+      );
+    }
     // The anon key is Supabase's publishable client key (old `anonKey` param is
     // deprecated in favor of `publishableKey`).
     await Supabase.initialize(
