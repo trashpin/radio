@@ -13,7 +13,13 @@ class StoryRepository extends SupabaseReadRepository<Story> {
     super.connectivity,
   }) : super(table: SupabaseTables.stories, fromJson: Story.fromJson);
 
-  Future<List<Story>> byPark(String parkId) => getWhere('park_id', parkId);
+  /// Stories within a destination (Base44 `destination_id`).
+  Future<List<Story>> byDestination(String destinationId) =>
+      getWhere('destination_id', destinationId);
+
+  /// Backwards-compatible alias — Base44 keys stories on `destination_id`.
+  Future<List<Story>> byPark(String destinationId) =>
+      byDestination(destinationId);
   Future<List<Story>> byStop(String stopId) => getWhere('stop_id', stopId);
 }
 
@@ -24,8 +30,11 @@ final storyRepositoryProvider = Provider<StoryRepository>((ref) {
   );
 });
 
-/// Stories for a given park id.
-final storiesByParkProvider =
-    FutureProvider.family<List<Story>, String>((ref, parkId) {
-  return ref.watch(storyRepositoryProvider).byPark(parkId);
+/// Stories for a given destination id.
+final storiesByDestinationProvider =
+    FutureProvider.family<List<Story>, String>((ref, destinationId) {
+  return ref.watch(storyRepositoryProvider).byDestination(destinationId);
 });
+
+/// Backwards-compatible alias (destinations are the app's "parks").
+final storiesByParkProvider = storiesByDestinationProvider;

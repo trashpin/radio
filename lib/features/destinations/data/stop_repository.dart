@@ -13,8 +13,13 @@ class StopRepository extends SupabaseReadRepository<Stop> {
     super.connectivity,
   }) : super(table: SupabaseTables.stops, fromJson: Stop.fromJson);
 
-  /// Stops within a park.
-  Future<List<Stop>> byPark(String parkId) => getWhere('park_id', parkId);
+  /// Stops within a destination (Base44 `destination_id`).
+  Future<List<Stop>> byDestination(String destinationId) =>
+      getWhere('destination_id', destinationId);
+
+  /// Backwards-compatible alias — Base44 keys stops on `destination_id`.
+  Future<List<Stop>> byPark(String destinationId) =>
+      byDestination(destinationId);
 }
 
 final stopRepositoryProvider = Provider<StopRepository>((ref) {
@@ -24,8 +29,11 @@ final stopRepositoryProvider = Provider<StopRepository>((ref) {
   );
 });
 
-/// Stops for a given park id.
-final stopsByParkProvider =
-    FutureProvider.family<List<Stop>, String>((ref, parkId) {
-  return ref.watch(stopRepositoryProvider).byPark(parkId);
+/// Stops for a given destination id.
+final stopsByDestinationProvider =
+    FutureProvider.family<List<Stop>, String>((ref, destinationId) {
+  return ref.watch(stopRepositoryProvider).byDestination(destinationId);
 });
+
+/// Backwards-compatible alias (destinations are the app's "parks").
+final stopsByParkProvider = stopsByDestinationProvider;
