@@ -18,12 +18,16 @@ set -euo pipefail
 FLUTTER_VERSION="${FLUTTER_VERSION:-stable}"
 FLUTTER_TARGET="${FLUTTER_TARGET:-lib/main.dart}"
 
-# Client-side defaults so the deploy works even if Vercel env vars aren't set.
-# These are public by design (the anon/publishable key is RLS-protected; the
-# Maps JS key is a client key — restrict it by HTTP referrer). Vercel env vars,
-# when present, override these.
-: "${SUPABASE_URL:=https://qqeyvhcgirmfokoftiuz.supabase.co}"
-: "${SUPABASE_PUBLISHABLE_KEY:=sb_publishable_Wy5BuUdp4uQBFKPgy2ksBA_-dPjdJ-o}"
+# Client-side defaults so the deploy works even if Vercel env vars are unset,
+# empty, or mistyped. These are public by design (the anon/publishable key is
+# RLS-protected; the Maps JS key is a client key — restrict it by HTTP
+# referrer). A valid-looking Vercel env var still overrides these.
+if [[ "${SUPABASE_URL:-}" != https://* ]]; then
+  SUPABASE_URL="https://qqeyvhcgirmfokoftiuz.supabase.co"
+fi
+if [[ "${SUPABASE_PUBLISHABLE_KEY:-}" != sb_publishable_* ]]; then
+  SUPABASE_PUBLISHABLE_KEY="sb_publishable_Wy5BuUdp4uQBFKPgy2ksBA_-dPjdJ-o"
+fi
 : "${GOOGLE_MAPS_API_KEY:=AIzaSyA_cvKWWUAcZ-g_G1_B4CaMHzy3BUiI0tg}"
 
 # 1. Fetch Flutter (cached between builds when Vercel preserves the workdir).
