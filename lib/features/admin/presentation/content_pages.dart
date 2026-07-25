@@ -22,17 +22,10 @@ class ParksPage extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        AdminPageHeader(
+        const AdminPageHeader(
           title: 'Parks',
-          subtitle: 'Destinations in the ExplorerOS catalog',
-          actions: [
-            FilledButton.icon(
-              onPressed: () => _comingSoon(context, 'Create park'),
-              style: _headerButtonStyle,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New park'),
-            ),
-          ],
+          subtitle: 'Destinations in the ExplorerOS catalog · edited in Base44',
+          actions: [OpenInBase44Button(entity: 'Parks')],
         ),
         const Gap.v(AppSpacing.xl),
         async.when(
@@ -80,9 +73,9 @@ class ParksPage extends ConsumerWidget {
                             ? BadgeStatus.published
                             : BadgeStatus.draft)),
                         DataCell(IconButton(
-                          icon: const Icon(Icons.edit_rounded, size: 18),
-                          onPressed: () =>
-                              _comingSoon(context, 'Edit ${d.name}'),
+                          tooltip: 'Edit in Base44',
+                          icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                          onPressed: () => _managedInBase44(context, d.name),
                         )),
                       ]),
                   ],
@@ -106,17 +99,10 @@ class MediaLibraryPage extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        AdminPageHeader(
+        const AdminPageHeader(
           title: 'Media Library',
-          subtitle: 'Photos, video, and audio in the mp3 bucket',
-          actions: [
-            FilledButton.icon(
-              onPressed: () => _comingSoon(context, 'Upload media'),
-              style: _headerButtonStyle,
-              icon: const Icon(Icons.upload_rounded, size: 18),
-              label: const Text('Upload'),
-            ),
-          ],
+          subtitle: 'Photos, video, and audio in the mp3 bucket · edited in Base44',
+          actions: [OpenInBase44Button(entity: 'Media')],
         ),
         const Gap.v(AppSpacing.xl),
         async.when(
@@ -239,17 +225,10 @@ class StoriesPage extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        AdminPageHeader(
+        const AdminPageHeader(
           title: 'Stories',
-          subtitle: 'Narrations, scripts, and GPS triggers',
-          actions: [
-            FilledButton.icon(
-              onPressed: () => _comingSoon(context, 'Create story'),
-              style: _headerButtonStyle,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New story'),
-            ),
-          ],
+          subtitle: 'Narrations, scripts, and GPS triggers · edited in Base44',
+          actions: [OpenInBase44Button(entity: 'Stories')],
         ),
         const Gap.v(AppSpacing.xl),
         async.when(
@@ -345,15 +324,8 @@ class ModulePlaceholder extends StatelessWidget {
   }
 }
 
-/// Header action buttons must not inherit the theme's full-width
-/// `minimumSize` (which would collapse the page title beside them).
-final ButtonStyle _headerButtonStyle = FilledButton.styleFrom(
-  minimumSize: const Size(0, 44),
-  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
-);
-
-void _comingSoon(BuildContext context, String label) {
+void _managedInBase44(BuildContext context, String name) {
   ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('$label — coming soon')),
+    SnackBar(content: Text('"$name" is edited in Base44 Admin')),
   );
 }

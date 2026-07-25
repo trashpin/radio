@@ -155,6 +155,63 @@ class AdminSectionCard extends StatelessWidget {
   }
 }
 
+/// Small pill indicating content is authored in Base44 (this admin is a
+/// read-only monitoring console; Base44 remains the editor / system of record).
+class Base44Badge extends StatelessWidget {
+  const Base44Badge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurface;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.06),
+        borderRadius: AppRadius.pillAll,
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.lock_outline_rounded,
+              size: 13, color: color.withValues(alpha: 0.7)),
+          const SizedBox(width: 6),
+          Text('Edited in Base44',
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+/// A read-only page action: reminds the user that editing happens in Base44.
+/// Sets an explicit `minimumSize` so it never inherits the theme's full-width
+/// button size (which would collapse the page title beside it).
+class OpenInBase44Button extends StatelessWidget {
+  const OpenInBase44Button({super.key, this.entity = 'content'});
+
+  final String entity;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$entity is edited in Base44 Admin')),
+        );
+      },
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+      ),
+      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+      label: const Text('Open in Base44'),
+    );
+  }
+}
+
 /// Consistent empty-state panel.
 class AdminEmptyState extends StatelessWidget {
   const AdminEmptyState({super.key, required this.message, this.icon});

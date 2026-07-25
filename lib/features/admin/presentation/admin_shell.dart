@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
+import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
 /// The admin control center: responsive layout with a left sidebar, a top bar
 /// (global search, notifications, quick actions, theme toggle, profile), a
@@ -291,6 +292,10 @@ class _TopBar extends ConsumerWidget {
                     ),
                   ),
                   const Gap.h(AppSpacing.sm),
+                  if (wide) ...[
+                    const Base44Badge(),
+                    const Gap.h(AppSpacing.sm),
+                  ],
                   _QuickActions(),
                   IconButton(
                     tooltip: 'Notifications',
@@ -325,15 +330,15 @@ class _QuickActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<AdminModule>(
-      tooltip: 'Quick create',
-      icon: const Icon(Icons.add_circle_outline_rounded),
+      tooltip: 'Quick navigate',
+      icon: const Icon(Icons.bolt_rounded),
       onSelected: (m) =>
           ref.read(adminSelectedModuleProvider.notifier).select(m),
       itemBuilder: (context) => const [
-        PopupMenuItem(value: AdminModule.parks, child: Text('New park')),
+        PopupMenuItem(value: AdminModule.parks, child: Text('Go to Parks')),
         PopupMenuItem(
-            value: AdminModule.mediaLibrary, child: Text('Upload media')),
-        PopupMenuItem(value: AdminModule.stories, child: Text('New story')),
+            value: AdminModule.mediaLibrary, child: Text('Go to Media')),
+        PopupMenuItem(value: AdminModule.stories, child: Text('Go to Stories')),
       ],
     );
   }

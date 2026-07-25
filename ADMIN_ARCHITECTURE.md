@@ -15,6 +15,14 @@ data layer.
 - **App root:** `lib/features/admin/admin_app.dart` (own `MaterialApp`, light+dark).
 - The consumer mobile app (`lib/main.dart`) is untouched.
 
+### Editing model: Base44 remains the editor
+**Base44 Admin stays the content editor / system of record.** This in-repo admin
+is a **read-only monitoring console** over the *same* Supabase backend Base44
+writes to — it surfaces content, KPIs, and health, and points users to Base44
+for edits (an "Open in Base44" action + an "Edited in Base44" indicator). No
+create/update/delete is performed here. If that changes later, all writes would
+route through `SupabaseSyncRepository` behind role checks.
+
 ## Folder structure
 
 ```
