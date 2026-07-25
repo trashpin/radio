@@ -1,0 +1,76 @@
+{
+  "voices": [
+    {
+      "name": "Rachel",
+      "voice_id": "21m00Tcm4TlvDq8ikWAM",
+      "description": "Calm, warm American female \u2014 natural fit for nature narration.",
+      "gender": "female",
+      "style": "calm",
+      "suggested_category": "animals",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/21m00Tcm4TlvDq8ikWAM.mp3"
+    },
+    {
+      "name": "Adam",
+      "voice_id": "pNInz6obpgDQGcFmaJgB",
+      "description": "Deep American male \u2014 documentary & history.",
+      "gender": "male",
+      "style": "deep",
+      "suggested_category": "historic_sites",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/pNInz6obpgDQGcFmaJgB.mp3"
+    },
+    {
+      "name": "Antoni",
+      "voice_id": "ErXwobaYiN019PkySvjV",
+      "description": "Well-rounded American male \u2014 friendly guide.",
+      "gender": "male",
+      "style": "friendly",
+      "suggested_category": "trails",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/ErXwobaYiN019PkySvjV.mp3"
+    },
+    {
+      "name": "Bella",
+      "voice_id": "EXAVITQu4vr4xnSDxMaL",
+      "description": "Soft American female \u2014 gentle, family tone.",
+      "gender": "female",
+      "style": "soft",
+      "suggested_category": "plants",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/EXAVITQu4vr4xnSDxMaL.mp3"
+    },
+    {
+      "name": "Josh",
+      "voice_id": "TxGEqnHWrfWFTfGW9XjX",
+      "description": "Young American male \u2014 adventurous.",
+      "gender": "male",
+      "style": "energetic",
+      "suggested_category": "scenic_views",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/TxGEqnHWrfWFTfGW9XjX.mp3"
+    },
+    {
+      "name": "Arnold",
+      "voice_id": "VR6AewLTigWG4xSOukaG",
+      "description": "Crisp American male \u2014 authoritative ranger.",
+      "gender": "male",
+      "style": "authoritative",
+      "suggested_category": "reptiles",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/VR6AewLTigWG4xSOukaG.mp3"
+    },
+    {
+      "name": "Elli",
+      "voice_id": "MF3mGyEYCl7XYWbV9V6O",
+      "description": "Youthful American female \u2014 great for kids.",
+      "gender": "female",
+      "style": "youthful",
+      "suggested_category": "birds",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/MF3mGyEYCl7XYWbV9V6O.mp3"
+    },
+    {
+      "name": "Domi",
+      "voice_id": "AZnzlk1XvdvUeBnXmlld",
+      "description": "Strong American female \u2014 energetic.",
+      "gender": "female",
+      "style": "strong",
+      "suggested_category": "fish",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/AZnzlk1XvdvUeBnXmlld.mp3"
+    }
+  ]
+}

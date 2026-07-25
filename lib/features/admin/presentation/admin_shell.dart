@@ -9,6 +9,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dar
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/voice_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
@@ -51,6 +52,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const ImageMatchingPage();
       case AdminModule.narrationStudio:
         return const NarrationStudioPage();
+      case AdminModule.voiceManager:
+        return const VoiceManagerPage();
       default:
         return ModulePlaceholder(module: module);
     }

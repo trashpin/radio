@@ -45,6 +45,7 @@ Future<void> main(List<String> args) async {
   final parkCode = _arg(args, 'park', 'ocala');
   final limit = int.tryParse(_arg(args, 'limit', '0')) ?? 0; // 0 = all
   final voiceId = _arg(args, 'voice', _defaultVoiceId);
+  final voiceName = _arg(args, 'voice-name', 'Rachel');
   final dryRun = args.contains('--dry-run');
   final force = args.contains('--force');
 
@@ -186,6 +187,33 @@ Future<void> main(List<String> args) async {
         final mRes = await mReq.close();
         final mBody = await mRes.transform(utf8.decoder).join();
         if (mRes.statusCode >= 300) throw 'media insert ${mRes.statusCode}: $mBody';
+
+        // Best-effort: also record the narration (with voice + script) in the
+        // narrations table so voice_name/voice_id persist per narration. Ignored
+        // if the table isn't present yet (run migration 0007_narrations.sql).
+        try {
+          final nReq = await http.postUrl(Uri.parse('$url/rest/v1/narrations'));
+          sbh.forEach(nReq.headers.set);
+          nReq.headers.set('Prefer', 'return=minimal');
+          nReq.headers.set('resolution', 'merge-duplicates'); // harmless if unsupported
+          nReq.headers.contentType = ContentType.json;
+          nReq.add(utf8.encode(jsonEncode({
+            'content_id': s.id,
+            'content_type': 'species',
+            'park_id': destId,
+            'title': s.commonName,
+            'narration_type': 'standard_ranger',
+            'voice_name': voiceName,
+            'voice_id': voiceId,
+            'script': script,
+            'audio_url': publicUrl,
+            'duration': _composer.estimateSeconds(script),
+            'status': 'published',
+            'approved': true,
+          })));
+          final nRes = await nReq.close();
+          await nRes.drain<void>();
+        } catch (_) {/* narrations table not present yet */}
 
         generated++;
         stdout.writeln('  ✓ ${s.commonName} (${(bytes.length / 1024).round()} KB) -> $path');
