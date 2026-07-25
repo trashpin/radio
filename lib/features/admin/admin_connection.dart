@@ -72,16 +72,14 @@ class SupabaseDiagnosticsService {
         results.add(ConnectionCheck(t, CheckKind.table, false, _msg(e)));
       }
     }
-    try {
-      final list = await _client.storage.listBuckets();
-      final names = list.map((b) => b.name).toSet();
-      for (final b in buckets) {
-        final present = names.contains(b);
-        results.add(ConnectionCheck(
-            b, CheckKind.bucket, present, present ? 'present' : 'missing'));
-      }
-    } catch (e) {
-      for (final b in buckets) {
+    // Probe each bucket by listing its objects. `listBuckets()` isn't available
+    // to the anon/publishable key (returns empty), so list objects instead —
+    // a public bucket responds without throwing.
+    for (final b in buckets) {
+      try {
+        await _client.storage.from(b).list();
+        results.add(ConnectionCheck(b, CheckKind.bucket, true, 'reachable'));
+      } catch (e) {
         results.add(ConnectionCheck(b, CheckKind.bucket, false, _msg(e)));
       }
     }
