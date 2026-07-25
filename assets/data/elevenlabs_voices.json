@@ -87,6 +87,17 @@
       "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/AZnzlk1XvdvUeBnXmlld.mp3",
       "language": "English",
       "active": true
+    },
+    {
+      "name": "Brittney",
+      "voice_id": "kPzsL2i3teMYv0FxEYQ6",
+      "description": "Warm, friendly American female \u2014 from your ElevenLabs collection.",
+      "gender": "female",
+      "style": "warm",
+      "suggested_category": "campgrounds",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/kPzsL2i3teMYv0FxEYQ6.mp3",
+      "language": "English",
+      "active": true
     }
   ]
 }
