@@ -9,8 +9,13 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
+import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
+import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
+import 'package:explorer_os_mobile/features/sightings/models/explorer_sighting.dart';
 import 'package:explorer_os_mobile/features/sightings/providers/sighting_providers.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
+import 'package:explorer_os_mobile/shared/models/radio_station.dart';
+import 'package:explorer_os_mobile/shared/models/stop.dart';
 
 /// Palette for the immersive (dark) Map screen.
 class _MapPalette {
@@ -121,6 +126,113 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     return mappable.first;
   }
 
+  // --- Marker detail sheets (tap a marker to explore) ----------------------
+
+  void _openParkSheet(Destination d) => _showDetail(
+        title: d.name,
+        subtitle: d.location ?? d.category ?? 'Park',
+        imageUrl: d.imageUrl,
+        icon: Icons.forest_rounded,
+        color: _MapPalette.green,
+        actions: [
+          FilledButton.icon(
+            onPressed: () {
+              ref
+                  .read(selectedStationProvider.notifier)
+                  .select(RadioStation.fromDestination(d));
+              ref.invalidate(radioSessionProvider);
+              Navigator.of(context).maybePop();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content:
+                    Text('Tuned to ${d.name} Radio — open the Radio tab'),
+              ));
+            },
+            icon: const Icon(Icons.podcasts_rounded, size: 18),
+            label: const Text('Tune Radio'),
+          ),
+        ],
+      );
+
+  void _openStopSheet(Stop s) => _showDetail(
+        title: s.name,
+        subtitle: s.stopType ?? 'Location',
+        imageUrl: s.imageUrl,
+        icon: Icons.place_rounded,
+        color: const Color(0xFF3F8FD0),
+      );
+
+  void _openSightingSheet(ExplorerSighting s) => _showDetail(
+        title: s.species ?? s.category.label,
+        subtitle: 'Sighting · ${s.category.label}'
+            '${s.notes != null ? ' · ${s.notes}' : ''}',
+        icon: s.category.icon,
+        color: _MapPalette.gold,
+      );
+
+  void _showDetail({
+    required String title,
+    String? subtitle,
+    String? imageUrl,
+    required IconData icon,
+    required Color color,
+    List<Widget> actions = const [],
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: _MapPalette.control,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.xl)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg, 0, AppSpacing.lg, AppSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ClipRRect(
+              borderRadius: AppRadius.lgAll,
+              child: SizedBox(
+                height: 150,
+                child: (imageUrl != null && imageUrl.isNotEmpty)
+                    ? Image.network(imageUrl, fit: BoxFit.cover)
+                    : Container(
+                        color: color.withValues(alpha: 0.2),
+                        child: Icon(icon, color: color, size: 48),
+                      ),
+              ),
+            ),
+            const Gap.v(AppSpacing.md),
+            Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const Gap.h(AppSpacing.sm),
+                Expanded(
+                  child: Text(title,
+                      style: const TextStyle(
+                          color: _MapPalette.textPrimary,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w700)),
+                ),
+              ],
+            ),
+            if (subtitle != null) ...[
+              const Gap.v(AppSpacing.xs),
+              Text(subtitle,
+                  style: const TextStyle(
+                      color: _MapPalette.textSecondary, fontSize: 13)),
+            ],
+            if (actions.isNotEmpty) ...[
+              const Gap.v(AppSpacing.lg),
+              ...actions,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final destinations = ref.watch(destinationsProvider).value ?? const [];
@@ -137,7 +249,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             markerId: MarkerId('park_${d.id}'),
             position: LatLng(d.latitude!, d.longitude!),
             icon: _pinIcon ?? BitmapDescriptor.defaultMarker,
-            infoWindow: InfoWindow(title: d.name, snippet: d.location),
+            onTap: () => _openParkSheet(d),
           ),
       if (layers.contains(MapLayer.locations))
         for (final s in stops.where((s) => s.latitude != null && s.longitude != null))
@@ -147,8 +259,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             icon: _locationIcon ??
                 BitmapDescriptor.defaultMarkerWithHue(
                     BitmapDescriptor.hueAzure),
-            infoWindow: InfoWindow(
-                title: s.name, snippet: s.stopType ?? 'Location'),
+            onTap: () => _openStopSheet(s),
           ),
       if (layers.contains(MapLayer.sightings))
         for (final s in sightings.where((s) => s.hasCoordinates))
@@ -158,10 +269,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             icon: _sightingIcon ??
                 BitmapDescriptor.defaultMarkerWithHue(
                     BitmapDescriptor.hueOrange),
-            infoWindow: InfoWindow(
-              title: s.species ?? s.category.label,
-              snippet: 'Sighting · ${s.category.label}',
-            ),
+            onTap: () => _openSightingSheet(s),
           ),
     };
 
