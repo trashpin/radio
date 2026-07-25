@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -11,6 +12,7 @@ import 'package:explorer_os_mobile/features/destinations/providers/destinations_
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
+import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/sightings/models/explorer_sighting.dart';
@@ -50,6 +52,119 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   BitmapDescriptor? _locationIcon;
   final Map<String, BitmapDescriptor> _categoryIcons = {};
   bool _centerInitialized = false;
+
+  // Explorer Mode + simulated drive + GPS story triggers.
+  bool _explorerMode = true;
+  Timer? _drive;
+  int _driveIndex = 0;
+  List<LatLng> _route = const [];
+  final Set<String> _notified = {}; // notified once per approach
+  final Set<String> _inZone = {}; // items whose trigger zone we're inside
+  ({String text, IconData icon, Color color})? _banner;
+  Timer? _bannerTimer;
+
+  static const double _notifyMeters = 180;
+  static const double _triggerMeters = 120;
+  static const _triggerCategories = {'springs', 'historic_sites', 'waterfalls'};
+
+  @override
+  void dispose() {
+    _drive?.cancel();
+    _bannerTimer?.cancel();
+    super.dispose();
+  }
+
+  double _metersBetween(LatLng a, LatLng b) {
+    const earth = 6371000.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(a.latitude * math.pi / 180) *
+            math.cos(b.latitude * math.pi / 180) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return earth * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
+  }
+
+  /// Start/stop a simulated drive (stands in for live device GPS on web). The
+  /// user dot follows the route; proximity + story triggers fire en route.
+  void _toggleDrive() {
+    if (_drive != null) {
+      _drive!.cancel();
+      setState(() => _drive = null);
+      return;
+    }
+    final start = ref.read(mapCenterProvider) ?? MapsScreen._fallbackCenter;
+    // Route heading toward the farthest seeded points (e.g. Juniper Spring).
+    _route = [
+      for (var i = 0; i <= 12; i++)
+        LatLng(start.latitude + 0.02 * (i / 12),
+            start.longitude + 0.001 * (i / 12)),
+    ];
+    _driveIndex = 0;
+    _notified.clear();
+    _inZone.clear();
+    setState(() {});
+    _drive = Timer.periodic(const Duration(milliseconds: 1400), (t) {
+      if (_driveIndex >= _route.length) {
+        t.cancel();
+        if (mounted) setState(() => _drive = null);
+        return;
+      }
+      final loc = _route[_driveIndex++];
+      ref.read(mapCenterProvider.notifier).set(loc);
+      _controller?.animateCamera(CameraUpdate.newLatLngZoom(loc, 14));
+      _scanProximity(loc);
+    });
+  }
+
+  /// Explorer Mode: notify on approach; fire GPS story triggers once per entry.
+  void _scanProximity(LatLng loc) {
+    final all = ref.read(mapLocationsProvider).value ?? const [];
+    for (final item in all) {
+      final m = _metersBetween(loc, LatLng(item.latitude, item.longitude));
+      final style = nearbyStyle(item.category);
+      final isTrigger = _triggerCategories.contains(item.category);
+
+      // GPS story trigger (enter zone once): pause Radio → narration → resume.
+      if (isTrigger) {
+        if (m <= _triggerMeters && !_inZone.contains(item.id)) {
+          _inZone.add(item.id);
+          _fireStoryTrigger(item.name, style);
+        } else if (m > _triggerMeters * 1.6) {
+          _inZone.remove(item.id); // left the zone → can re-trigger later
+        }
+      }
+
+      // Explorer Mode proximity notification (once per approach).
+      if (_explorerMode &&
+          m <= _notifyMeters &&
+          !_notified.contains(item.id) &&
+          !isTrigger) {
+        _notified.add(item.id);
+        _showBanner('${item.name} nearby', style.icon, style.color);
+      }
+    }
+  }
+
+  void _fireStoryTrigger(String name, NearbyStyle style) {
+    // Pause Explorer Radio, "play" the narration, resume afterwards.
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    radio.pause();
+    _showBanner('Now playing: $name narration', Icons.play_circle_rounded,
+        _MapPalette.gold);
+    Timer(const Duration(seconds: 5), () {
+      if (mounted) radio.resume();
+    });
+  }
+
+  void _showBanner(String text, IconData icon, Color color) {
+    _bannerTimer?.cancel();
+    setState(() => _banner = (text: text, icon: icon, color: color));
+    _bannerTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) setState(() => _banner = null);
+    });
+  }
 
   static const _nearbyCategoryTokens = [
     'mammals', 'birds', 'reptiles', 'amphibians', 'fish', 'plants', 'trees',
@@ -357,7 +472,9 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                 _controls(initialTarget, userLocation),
                 _layerChips(layers),
                 _radiusSelector(radius),
+                _explorerModeToggle(),
                 _aroundMeButton(hits.length),
+                if (_banner != null) _bannerOverlay(),
               ],
             ),
           ),
@@ -369,8 +486,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   /// Search-radius pill (top-right, below the controls) with a menu of radii.
   Widget _radiusSelector(SearchRadius radius) {
     return Positioned(
-      top: 150,
-      right: AppSpacing.lg,
+      top: 56,
+      left: AppSpacing.lg,
       child: PopupMenuButton<SearchRadius>(
         tooltip: 'Search radius',
         onSelected: (r) {
@@ -645,12 +762,21 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           const Gap.v(AppSpacing.sm),
           _controlButton(Icons.remove_rounded,
               () => _controller?.animateCamera(CameraUpdate.zoomOut())),
+          const Gap.v(AppSpacing.md),
+          _controlButton(
+            _drive != null
+                ? Icons.stop_rounded
+                : Icons.directions_car_rounded,
+            _toggleDrive,
+            tint: _drive != null ? _MapPalette.gold : _MapPalette.textPrimary,
+          ),
         ],
       ),
     );
   }
 
-  Widget _controlButton(IconData icon, VoidCallback onTap) {
+  Widget _controlButton(IconData icon, VoidCallback onTap,
+      {Color tint = _MapPalette.textPrimary}) {
     return Material(
       color: _MapPalette.control,
       shape: const CircleBorder(),
@@ -661,7 +787,83 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Icon(icon, color: _MapPalette.textPrimary, size: 22),
+          child: Icon(icon, color: tint, size: 22),
+        ),
+      ),
+    );
+  }
+
+  /// Explorer Mode pill (top-right, below the radius selector).
+  Widget _explorerModeToggle() {
+    return Positioned(
+      top: 102,
+      left: AppSpacing.lg,
+      child: GestureDetector(
+        onTap: () => setState(() => _explorerMode = !_explorerMode),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: _explorerMode ? _MapPalette.gold : _MapPalette.control,
+            borderRadius: AppRadius.pillAll,
+            boxShadow: const [
+              BoxShadow(color: Color(0x66000000), blurRadius: 8)
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.auto_awesome_rounded,
+                  size: 15,
+                  color: _explorerMode ? Colors.black : _MapPalette.textSecondary),
+              const SizedBox(width: 6),
+              Text('Explorer Mode',
+                  style: TextStyle(
+                      color:
+                          _explorerMode ? Colors.black : _MapPalette.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A subtle, auto-dismissing notification banner (never blocks navigation).
+  Widget _bannerOverlay() {
+    final b = _banner!;
+    return Positioned(
+      top: 60,
+      left: AppSpacing.lg,
+      right: AppSpacing.lg,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+            decoration: BoxDecoration(
+              color: _MapPalette.control.withValues(alpha: 0.96),
+              borderRadius: AppRadius.pillAll,
+              border: Border.all(color: b.color.withValues(alpha: 0.7)),
+              boxShadow: const [
+                BoxShadow(color: Color(0x88000000), blurRadius: 14)
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(b.icon, color: b.color, size: 18),
+                const Gap.h(AppSpacing.sm),
+                Flexible(
+                  child: Text(b.text,
+                      style: const TextStyle(
+                          color: _MapPalette.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
