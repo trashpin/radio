@@ -42,13 +42,30 @@ flutter config --enable-web
 printf 'SUPABASE_URL=%s\nSUPABASE_PUBLISHABLE_KEY=%s\n' \
   "${SUPABASE_URL:-}" "${SUPABASE_PUBLISHABLE_KEY:-}" > .env
 
-# 3. Build.
+# 3. Build BOTH apps into one output: traveler app at /, Admin at /admin/.
 flutter pub get
-flutter build web --release --target "$FLUTTER_TARGET"
 
-# 4. Inject the Google Maps JS key into the built index.html.
+SITE="$(mktemp -d)"
+
+# Traveler app (root).
+flutter build web --release --target "$FLUTTER_TARGET" --base-href /
+cp -r build/web/. "$SITE/"
+
+# Admin app (served under /admin/).
+flutter build web --release --target lib/main_admin.dart --base-href /admin/
+mkdir -p "$SITE/admin"
+cp -r build/web/. "$SITE/admin/"
+
+# Reassemble the combined site into build/web (the Output Directory).
+rm -rf build/web
+mkdir -p build/web
+cp -r "$SITE/." build/web/
+
+# 4. Inject the Google Maps JS key into both index.html files.
 if [ -n "${GOOGLE_MAPS_API_KEY:-}" ]; then
-  sed -i "s/__GOOGLE_MAPS_API_KEY__/${GOOGLE_MAPS_API_KEY}/" build/web/index.html
+  for f in build/web/index.html build/web/admin/index.html; do
+    [ -f "$f" ] && sed -i "s/__GOOGLE_MAPS_API_KEY__/${GOOGLE_MAPS_API_KEY}/" "$f"
+  done
 fi
 
-echo "Flutter web build complete -> build/web"
+echo "Build complete -> build/web (app at /, admin at /admin/)"
