@@ -60,6 +60,21 @@ class SelectedVoice extends Notifier<Voice?> {
 final selectedVoiceProvider =
     NotifierProvider<SelectedVoice, Voice?>(SelectedVoice.new);
 
+/// Admin-editable friendly labels for voices (voice_id -> label), e.g.
+/// renaming "Rachel" to "Ranger Sarah". Defaults to each voice's real name.
+class VoiceLabels extends Notifier<Map<String, String>> {
+  @override
+  Map<String, String> build() => {};
+
+  void setLabel(String voiceId, String label) =>
+      state = {...state, voiceId: label};
+
+  String labelFor(String voiceId, String fallback) => state[voiceId] ?? fallback;
+}
+
+final voiceLabelsProvider =
+    NotifierProvider<VoiceLabels, Map<String, String>>(VoiceLabels.new);
+
 /// Default voice per content category (category token -> voice_id).
 class CategoryVoices extends Notifier<Map<String, String>> {
   @override

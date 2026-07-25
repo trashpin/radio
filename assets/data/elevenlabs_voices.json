@@ -7,7 +7,9 @@
       "gender": "female",
       "style": "calm",
       "suggested_category": "animals",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/21m00Tcm4TlvDq8ikWAM.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/21m00Tcm4TlvDq8ikWAM.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Adam",
@@ -16,7 +18,9 @@
       "gender": "male",
       "style": "deep",
       "suggested_category": "historic_sites",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/pNInz6obpgDQGcFmaJgB.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/pNInz6obpgDQGcFmaJgB.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Antoni",
@@ -25,7 +29,9 @@
       "gender": "male",
       "style": "friendly",
       "suggested_category": "trails",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/ErXwobaYiN019PkySvjV.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/ErXwobaYiN019PkySvjV.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Bella",
@@ -34,7 +40,9 @@
       "gender": "female",
       "style": "soft",
       "suggested_category": "plants",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/EXAVITQu4vr4xnSDxMaL.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/EXAVITQu4vr4xnSDxMaL.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Josh",
@@ -43,7 +51,9 @@
       "gender": "male",
       "style": "energetic",
       "suggested_category": "scenic_views",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/TxGEqnHWrfWFTfGW9XjX.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/TxGEqnHWrfWFTfGW9XjX.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Arnold",
@@ -52,7 +62,9 @@
       "gender": "male",
       "style": "authoritative",
       "suggested_category": "reptiles",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/VR6AewLTigWG4xSOukaG.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/VR6AewLTigWG4xSOukaG.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Elli",
@@ -61,7 +73,9 @@
       "gender": "female",
       "style": "youthful",
       "suggested_category": "birds",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/MF3mGyEYCl7XYWbV9V6O.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/MF3mGyEYCl7XYWbV9V6O.mp3",
+      "language": "English",
+      "active": true
     },
     {
       "name": "Domi",
@@ -70,7 +84,9 @@
       "gender": "female",
       "style": "strong",
       "suggested_category": "fish",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/AZnzlk1XvdvUeBnXmlld.mp3"
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/AZnzlk1XvdvUeBnXmlld.mp3",
+      "language": "English",
+      "active": true
     }
   ]
 }

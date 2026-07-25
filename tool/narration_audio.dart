@@ -44,8 +44,10 @@ String _arg(List<String> a, String n, String d) {
 Future<void> main(List<String> args) async {
   final parkCode = _arg(args, 'park', 'ocala');
   final limit = int.tryParse(_arg(args, 'limit', '0')) ?? 0; // 0 = all
-  final voiceId = _arg(args, 'voice', _defaultVoiceId);
-  final voiceName = _arg(args, 'voice-name', 'Rachel');
+  var voiceId = _arg(args, 'voice', _defaultVoiceId);
+  var voiceName = _arg(args, 'voice-name', 'Rachel');
+  final voiceExplicit = args.contains('--voice');
+  final category = _arg(args, 'category', ''); // filter species by category
   final dryRun = args.contains('--dry-run');
   final force = args.contains('--force');
 
@@ -101,13 +103,27 @@ Future<void> main(List<String> args) async {
       stdout.writeln('bucket "$_bucket": ${cRes.statusCode == 200 ? 'created' : 'exists/ok (${cRes.statusCode})'}');
     }
 
-    // Load species for this park.
-    final rows = await getJson(
-            '$url/rest/v1/species?select=*&destination_id=eq.$destId&order=common_name')
-        as List;
+    // Resolve the category's assigned default voice (unless --voice was given).
+    if (!voiceExplicit && category.isNotEmpty) {
+      try {
+        final va = await getJson(
+            '$url/rest/v1/voice_assignments?category=eq.$category&select=default_voice_name,default_voice_id') as List;
+        if (va.isNotEmpty && va.first['default_voice_id'] != null) {
+          voiceId = va.first['default_voice_id'].toString();
+          voiceName = (va.first['default_voice_name'] ?? voiceName).toString();
+          stdout.writeln('using assigned voice for "$category": $voiceName ($voiceId)');
+        }
+      } catch (_) {/* voice_assignments table not present — use default */}
+    }
+
+    // Load species for this park (optionally filtered by category).
+    var q = '$url/rest/v1/species?select=*&destination_id=eq.$destId';
+    if (category.isNotEmpty) q += '&category=eq.$category';
+    final rows = await getJson('$q&order=common_name') as List;
     var species = rows.map((r) => Species.fromJson(r)).toList();
     if (limit > 0 && species.length > limit) species = species.sublist(0, limit);
-    stdout.writeln('species to process: ${species.length}');
+    stdout.writeln('species to process: ${species.length}'
+        '${category.isNotEmpty ? ' (category=$category)' : ''}');
 
     var generated = 0, skipped = 0, failed = 0;
     for (final s in species) {
@@ -210,6 +226,7 @@ Future<void> main(List<String> args) async {
             'duration': _composer.estimateSeconds(script),
             'status': 'published',
             'approved': true,
+            'generated_at': DateTime.now().toUtc().toIso8601String(),
           })));
           final nRes = await nReq.close();
           await nRes.drain<void>();

@@ -4,13 +4,15 @@ import 'package:just_audio/just_audio.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
-import 'package:explorer_os_mobile/features/discovery/models/discovery_category.dart';
+import 'package:explorer_os_mobile/features/narration/data/voice_assignment_repository.dart';
 import 'package:explorer_os_mobile/features/narration/data/voice_repository.dart';
+import 'package:explorer_os_mobile/features/narration/models/narration_category.dart';
 import 'package:explorer_os_mobile/features/narration/models/voice.dart';
 
-/// Admin → Voice Manager: browse ElevenLabs voices, preview them, pick a default
-/// per content category, and set the voice that "Generate Audio" uses. Selected
-/// voice name + id are stored with each generated narration by the pipeline.
+/// Admin → Voice Manager: browse ElevenLabs voices, preview them, rename them,
+/// pick the default voice, and assign a default voice per content category
+/// (persisted to `voice_assignments`). Audio generation uses the assigned voice
+/// automatically — no manual voice-ID entry.
 class VoiceManagerPage extends ConsumerStatefulWidget {
   const VoiceManagerPage({super.key});
 
@@ -20,7 +22,9 @@ class VoiceManagerPage extends ConsumerStatefulWidget {
 
 class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
   final AudioPlayer _player = AudioPlayer();
-  String? _previewing; // voice_id currently playing
+  String? _previewing;
+  final Map<String, String> _assignments = {}; // category token -> voice_id
+  bool _seeded = false;
 
   @override
   void initState() {
@@ -58,18 +62,70 @@ class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
     }
   }
 
+  void _assign(String category, Voice v) {
+    setState(() => _assignments[category] = v.voiceId);
+    final label =
+        ref.read(voiceLabelsProvider.notifier).labelFor(v.voiceId, v.name);
+    // Persist (best-effort — needs migration 0008).
+    ref
+        .read(voiceAssignmentRepositoryProvider)
+        .assign(category, label, v.voiceId)
+        .catchError((_) {});
+  }
+
+  Future<void> _editLabel(Voice v) async {
+    final current =
+        ref.read(voiceLabelsProvider.notifier).labelFor(v.voiceId, v.name);
+    final controller = TextEditingController(text: current);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Edit label — ${v.name}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+              labelText: 'Display label', hintText: 'e.g. Ranger Sarah'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      ref.read(voiceLabelsProvider.notifier).setLabel(v.voiceId, result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(voicesProvider);
     final selected = ref.watch(selectedVoiceProvider);
+    ref.watch(voiceLabelsProvider); // rebuild on label changes
+    final labels = ref.read(voiceLabelsProvider.notifier);
+
+    // Seed the assignment table from persisted assignments (once).
+    final loaded = ref.watch(voiceAssignmentsProvider).value;
+    if (!_seeded && loaded != null) {
+      _seeded = true;
+      for (final e in loaded.entries) {
+        if (e.value.defaultVoiceId != null) {
+          _assignments[e.key] = e.value.defaultVoiceId!;
+        }
+      }
+    }
 
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
         AdminPageHeader(
           title: 'Voice Manager',
-          subtitle: 'ElevenLabs voices — preview, assign, and set the '
-              'default used by Generate Audio',
+          subtitle: 'ElevenLabs voices — preview, rename, and assign a default '
+              'voice per content category',
           actions: [
             FilledButton.icon(
               onPressed: () => refreshVoices(ref),
@@ -78,7 +134,7 @@ class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: AppSpacing.lg)),
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: const Text('Refresh'),
+              label: const Text('Refresh Voices'),
             ),
           ],
         ),
@@ -89,7 +145,8 @@ class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
               const Icon(Icons.record_voice_over_rounded, color: Colors.teal),
               const Gap.h(AppSpacing.md),
               Expanded(
-                child: Text('Generate Audio will use: ${selected.name}',
+                child: Text(
+                    'Default voice: ${labels.labelFor(selected.voiceId, selected.name)}',
                     style: Theme.of(context)
                         .textTheme
                         .titleMedium
@@ -106,66 +163,79 @@ class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
               child: AdminEmptyState(
                   icon: Icons.error_outline_rounded,
                   message: 'Could not load voices.\n$e')),
-          data: (voices) => LayoutBuilder(builder: (context, c) {
-            final cols = (c.maxWidth / 320).floor().clamp(1, 4);
-            return GridView.count(
-              crossAxisCount: cols,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: AppSpacing.md,
-              crossAxisSpacing: AppSpacing.md,
-              childAspectRatio: 1.35,
-              children: [
-                for (final v in voices)
-                  _VoiceCard(
-                    voice: v,
-                    selected: selected?.voiceId == v.voiceId,
-                    playing: _previewing == v.voiceId,
-                    onPreview: () => _preview(v),
-                    onUseDefault: () =>
-                        ref.read(selectedVoiceProvider.notifier).select(v),
-                    onAssign: (cat) => ref
-                        .read(categoryVoicesProvider.notifier)
-                        .assign(cat, v.voiceId),
-                  ),
-              ],
-            );
-          }),
+          data: (voices) => Column(children: [
+            LayoutBuilder(builder: (context, c) {
+              final cols = (c.maxWidth / 320).floor().clamp(1, 4);
+              return GridView.count(
+                crossAxisCount: cols,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: AppSpacing.md,
+                crossAxisSpacing: AppSpacing.md,
+                childAspectRatio: 1.2,
+                children: [
+                  for (final v in voices)
+                    _VoiceCard(
+                      voice: v,
+                      label: labels.labelFor(v.voiceId, v.name),
+                      selected: selected?.voiceId == v.voiceId,
+                      playing: _previewing == v.voiceId,
+                      onPreview: () => _preview(v),
+                      onSelectDefault: () =>
+                          ref.read(selectedVoiceProvider.notifier).select(v),
+                      onEditLabel: () => _editLabel(v),
+                    ),
+                ],
+              );
+            }),
+            const Gap.v(AppSpacing.lg),
+            _assignmentTable(voices, labels),
+          ]),
         ),
-        const Gap.v(AppSpacing.lg),
-        _categoryDefaults(),
       ],
     );
   }
 
-  Widget _categoryDefaults() {
-    final map = ref.watch(categoryVoicesProvider);
-    final voices = ref.watch(voicesProvider).value ?? const [];
-    if (voices.isEmpty) return const SizedBox.shrink();
-    String nameFor(String id) =>
-        voices.firstWhere((v) => v.voiceId == id, orElse: () => voices.first)
-            .name;
-    final assigned = discoveryCategories
-        .where((c) => map.containsKey(c.token))
-        .toList();
+  Widget _assignmentTable(List<Voice> voices, VoiceLabels labels) {
+    final theme = Theme.of(context);
     return AdminSectionCard(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Default voice per category',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
+        Text('Voice assignment by content type',
+            style: theme.textTheme.titleMedium
                 ?.copyWith(fontWeight: FontWeight.w700)),
-        const Gap.v(AppSpacing.sm),
-        if (assigned.isEmpty)
-          const Text('No category defaults yet — use "Assign to category" on a voice.')
-        else
-          Wrap(spacing: AppSpacing.md, runSpacing: AppSpacing.sm, children: [
-            for (final c in assigned)
-              Chip(
-                avatar: Icon(c.icon, size: 16, color: c.color),
-                label: Text('${c.label}: ${nameFor(map[c.token]!)}'),
+        Text('Generate Audio uses these automatically.',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+        const Gap.v(AppSpacing.md),
+        for (final cat in narrationCategories)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              SizedBox(
+                  width: 180,
+                  child: Text(cat.label,
+                      style: theme.textTheme.bodyMedium
+                          ?.copyWith(fontWeight: FontWeight.w600))),
+              Expanded(
+                child: DropdownButton<String>(
+                  isExpanded: true,
+                  value: _assignments[cat.token],
+                  hint: const Text('— choose default voice —'),
+                  onChanged: (id) {
+                    if (id == null) return;
+                    _assign(cat.token,
+                        voices.firstWhere((v) => v.voiceId == id));
+                  },
+                  items: [
+                    for (final v in voices)
+                      DropdownMenuItem(
+                        value: v.voiceId,
+                        child: Text(labels.labelFor(v.voiceId, v.name)),
+                      ),
+                  ],
+                ),
               ),
-          ]),
+            ]),
+          ),
       ]),
     );
   }
@@ -174,18 +244,20 @@ class _VoiceManagerPageState extends ConsumerState<VoiceManagerPage> {
 class _VoiceCard extends StatelessWidget {
   const _VoiceCard({
     required this.voice,
+    required this.label,
     required this.selected,
     required this.playing,
     required this.onPreview,
-    required this.onUseDefault,
-    required this.onAssign,
+    required this.onSelectDefault,
+    required this.onEditLabel,
   });
   final Voice voice;
+  final String label;
   final bool selected;
   final bool playing;
   final VoidCallback onPreview;
-  final VoidCallback onUseDefault;
-  final void Function(String category) onAssign;
+  final VoidCallback onSelectDefault;
+  final VoidCallback onEditLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +278,9 @@ class _VoiceCard extends StatelessWidget {
         children: [
           Row(children: [
             Expanded(
-              child: Text(voice.name,
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.w700)),
             ),
@@ -214,53 +288,56 @@ class _VoiceCard extends StatelessWidget {
               const Icon(Icons.check_circle_rounded,
                   color: Colors.teal, size: 20),
           ]),
-          if (voice.gender != null || voice.style != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 4),
-              child: Wrap(spacing: 6, children: [
-                for (final t in [voice.gender, voice.style].whereType<String>())
-                  Text('#$t',
-                      style: theme.textTheme.bodySmall
-                          ?.copyWith(color: theme.hintColor)),
-              ]),
-            ),
+          if (label != voice.name)
+            Text(voice.name,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor)),
+          Row(children: [
+            Icon(Icons.circle,
+                size: 9,
+                color: voice.active ? Colors.green : Colors.grey),
+            const SizedBox(width: 4),
+            Text(voice.active ? 'Active' : 'Inactive',
+                style: theme.textTheme.bodySmall),
+            const SizedBox(width: 10),
+            Icon(Icons.language_rounded, size: 12, color: theme.hintColor),
+            const SizedBox(width: 3),
+            Text(voice.language, style: theme.textTheme.bodySmall),
+          ]),
           if (voice.description != null)
-            Expanded(
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text(voice.description!,
-                  maxLines: 3,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall),
             ),
-          const Gap.v(AppSpacing.sm),
+          const Spacer(),
           Text('ID: ${voice.voiceId}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace', color: theme.hintColor)),
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(fontFamily: 'monospace', color: theme.hintColor)),
           const Gap.v(AppSpacing.sm),
           Row(children: [
             OutlinedButton.icon(
               onPressed: onPreview,
               style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12)),
+                  minimumSize: const Size(0, 34),
+                  padding: const EdgeInsets.symmetric(horizontal: 10)),
               icon: Icon(playing ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                  size: 18),
+                  size: 16),
               label: Text(playing ? 'Stop' : 'Preview'),
             ),
             const Spacer(),
+            IconButton(
+              tooltip: 'Edit label',
+              onPressed: onEditLabel,
+              icon: const Icon(Icons.edit_rounded, size: 18),
+            ),
             if (!selected)
               TextButton(
-                  onPressed: onUseDefault, child: const Text('Use')),
-            PopupMenuButton<String>(
-              tooltip: 'Assign to category',
-              icon: const Icon(Icons.more_vert_rounded, size: 18),
-              onSelected: onAssign,
-              itemBuilder: (_) => [
-                for (final c in discoveryCategories)
-                  PopupMenuItem(value: c.token, child: Text('→ ${c.label}')),
-              ],
-            ),
+                  onPressed: onSelectDefault,
+                  child: const Text('Select as Default')),
           ]),
         ],
       ),

@@ -8,6 +8,8 @@ class Voice {
     this.style,
     this.suggestedCategory,
     this.previewUrl,
+    this.language = 'English',
+    this.active = true,
   });
 
   final String voiceId;
@@ -21,6 +23,8 @@ class Voice {
 
   /// Public sample clip URL (plays without the API key).
   final String? previewUrl;
+  final String language;
+  final bool active;
 
   factory Voice.fromJson(Map<String, dynamic> j) => Voice(
         voiceId: (j['voice_id'] ?? '') as String,
@@ -30,5 +34,7 @@ class Voice {
         style: j['style'] as String?,
         suggestedCategory: j['suggested_category'] as String?,
         previewUrl: j['preview_url'] as String?,
+        language: (j['language'] ?? 'English') as String,
+        active: (j['active'] ?? true) as bool,
       );
 }
