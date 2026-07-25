@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/discovery/models/discovery_category.dart';
+import 'package:explorer_os_mobile/features/discovery/presentation/category_species_screen.dart';
 
 /// 👀 I See Something — the Discovery Categories screen.
 ///
@@ -65,7 +66,7 @@ class DiscoveryCategoriesScreen extends StatelessWidget {
                       category: c,
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
-                          builder: (_) => _CategoryPlaceholder(category: c),
+                          builder: (_) => CategorySpeciesScreen(category: c),
                         ),
                       ),
                     ),
@@ -218,47 +219,3 @@ class _PopularInPark extends StatelessWidget {
   }
 }
 
-/// Placeholder for a category's species list (next screen to design/build).
-class _CategoryPlaceholder extends StatelessWidget {
-  const _CategoryPlaceholder({required this.category});
-  final DiscoveryCategory category;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DiscoveryCategoriesScreen._bg,
-      appBar: AppBar(
-        backgroundColor: DiscoveryCategoriesScreen._bg,
-        surfaceTintColor: Colors.transparent,
-        foregroundColor: DiscoveryCategoriesScreen._textPrimary,
-        title: Text(category.label),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                color: category.color.withValues(alpha: 0.18),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(category.icon, color: category.color, size: 44),
-            ),
-            const Gap.v(AppSpacing.lg),
-            Text('${category.label} guide',
-                style: const TextStyle(
-                    color: DiscoveryCategoriesScreen._textPrimary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700)),
-            const Gap.v(AppSpacing.sm),
-            const Text('Species list, search, and detail pages coming next.',
-                style:
-                    TextStyle(color: DiscoveryCategoriesScreen._textSecondary)),
-          ],
-        ),
-      ),
-    );
-  }
-}

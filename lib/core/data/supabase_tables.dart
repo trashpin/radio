@@ -14,6 +14,9 @@ class SupabaseTables {
   /// Base44 AI Ranger knowledge articles (linked to destinations/stops).
   static const String knowledgeArticles = 'knowledge_articles';
 
+  /// Master natural-history catalog (plants, trees, birds, mammals, …).
+  static const String species = 'species';
+
   /// Base44 media table (audio/photo/video). Audio rows (`file_url` in the
   /// `mp3` bucket) are the real source for Explorer Radio playback.
   static const String media = 'media';
