@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/discovery/data/species_repository.dart';
 import 'package:explorer_os_mobile/features/discovery/models/discovery_category.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
+import 'package:explorer_os_mobile/features/discovery/presentation/species_detail_screen.dart';
 
 /// Species list for one discovery category (e.g. Plants). Reads the master
 /// `species` table from Supabase; search filters the loaded list.
@@ -133,10 +134,20 @@ class _CategorySpeciesScreenState extends ConsumerState<CategorySpeciesScreen> {
         ),
       );
 
+  void _openDetail(Species s, {bool autoPlay = false}) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SpeciesDetailScreen(
+          species: s, category: widget.category, autoPlay: autoPlay),
+    ));
+  }
+
   Widget _speciesCard(Species s) {
     final fav = _favorites.contains(s.id);
     final img = s.heroImageUrl;
-    return Container(
+    return InkWell(
+      onTap: () => _openDetail(s),
+      borderRadius: AppRadius.lgAll,
+      child: Container(
       decoration: BoxDecoration(
         color: _card,
         borderRadius: AppRadius.lgAll,
@@ -206,10 +217,7 @@ class _CategorySpeciesScreenState extends ConsumerState<CategorySpeciesScreen> {
                   ),
                 ),
                 InkWell(
-                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Quick Listen — narration coming soon')),
-                  ),
+                  onTap: () => _openDetail(s, autoPlay: true),
                   child: const Icon(Icons.volume_up_rounded,
                       color: _accent, size: 20),
                 ),
@@ -217,6 +225,7 @@ class _CategorySpeciesScreenState extends ConsumerState<CategorySpeciesScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

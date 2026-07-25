@@ -47,6 +47,17 @@ class MediaRepository extends SupabaseReadRepository<MediaItem> {
         .toList(growable: false);
   }
 
+  /// Narration audio URL for a species, if a linked audio media row exists.
+  /// Returns the resolved, playable URL (or null when the species has no audio
+  /// file yet — callers can fall back to text-to-speech on the narration text).
+  Future<String?> narrationUrlForSpecies(String speciesId) async {
+    final rows = await getWhere('species_id', speciesId);
+    final audio = rows.where((m) => m.isAudio && m.published).toList()
+      ..sort((a, b) => (a.sortOrder ?? 0).compareTo(b.sortOrder ?? 0));
+    if (audio.isEmpty) return null;
+    return resolveUrl(audio.first.fileUrl);
+  }
+
   /// Destination ids that have at least one playable audio media row — used to
   /// surface only destinations that can actually power a radio station.
   Future<Set<String>> destinationIdsWithAudio() async {

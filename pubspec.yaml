@@ -44,6 +44,7 @@ dependencies:
   csv: ^8.0.0
   archive: ^4.0.9
   google_maps_flutter: ^2.18.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

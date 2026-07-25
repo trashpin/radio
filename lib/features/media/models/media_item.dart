@@ -13,6 +13,7 @@ class MediaItem implements Model {
     required this.mediaType,
     this.destinationId,
     this.stopId,
+    this.speciesId,
     this.title,
     this.fileUrl,
     this.thumbnailUrl,
@@ -28,6 +29,9 @@ class MediaItem implements Model {
   final String mediaType;
   final String? destinationId;
   final String? stopId;
+
+  /// Links this media to a `species` row (e.g. narration audio for a plant).
+  final String? speciesId;
   final String? title;
 
   /// Playable/loadable source. Absolute URL, or a storage path resolved against
@@ -55,6 +59,7 @@ class MediaItem implements Model {
         mediaType: (json['media_type'] ?? '') as String,
         destinationId: json['destination_id']?.toString(),
         stopId: json['stop_id']?.toString(),
+        speciesId: json['species_id']?.toString(),
         title: json['title'] as String?,
         fileUrl: (json['file_url'] ?? json['url']) as String?,
         thumbnailUrl: json['thumbnail_url'] as String?,
