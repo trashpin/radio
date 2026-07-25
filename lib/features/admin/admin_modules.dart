@@ -70,6 +70,11 @@ enum AdminModule {
   downloads('Downloads', Icons.download_rounded, AdminGroup.assets,
       description: 'Offline packages per park.', table: 'downloads'),
 
+  explorerSightings('Explorer Sightings', Icons.visibility_rounded,
+      AdminGroup.platform,
+      ready: true,
+      description: 'Citizen-science observations from "I See Something".',
+      table: 'explorer_sightings'),
   users('Users', Icons.group_rounded, AdminGroup.platform,
       description: 'Accounts and roles.', table: 'profiles'),
   subscriptions('Subscriptions', Icons.card_membership_rounded,

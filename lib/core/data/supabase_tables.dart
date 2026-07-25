@@ -48,4 +48,7 @@ class SupabaseTables {
   // User-owned data (writable, synced per user).
   static const String userFavorites = 'user_favorites';
   static const String downloads = 'downloads';
+
+  /// Citizen-science observations from "I See Something".
+  static const String explorerSightings = 'explorer_sightings';
 }

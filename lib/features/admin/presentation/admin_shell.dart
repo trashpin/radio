@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
 /// The admin control center: responsive layout with a left sidebar, a top bar
@@ -42,6 +43,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const MediaLibraryPage();
       case AdminModule.stories:
         return const StoriesPage();
+      case AdminModule.explorerSightings:
+        return const SightingsAdminPage();
       default:
         return ModulePlaceholder(module: module);
     }

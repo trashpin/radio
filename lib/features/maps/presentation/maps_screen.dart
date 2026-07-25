@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/sightings/providers/sighting_providers.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// Palette for the immersive (dark) Map screen.
@@ -37,23 +38,29 @@ class MapsScreen extends ConsumerStatefulWidget {
 class _MapsScreenState extends ConsumerState<MapsScreen> {
   GoogleMapController? _controller;
   BitmapDescriptor? _pinIcon;
+  BitmapDescriptor? _sightingIcon;
   LatLng _center = MapsScreen._fallbackCenter;
 
   @override
   void initState() {
     super.initState();
-    _buildPinIcon();
+    _buildIcons();
   }
 
-  /// Renders a circular icon marker (white ring + green fill + glyph) to a
-  /// bitmap so the pins look like the design instead of default teardrops.
-  Future<void> _buildPinIcon() async {
+  /// Renders circular icon markers to bitmaps (green = destinations, amber =
+  /// sightings) so pins look like the design instead of default teardrops.
+  Future<void> _buildIcons() async {
     try {
-      final icon = await _circleIconMarker(
-        Icons.forest_rounded,
-        _MapPalette.green,
-      );
-      if (mounted) setState(() => _pinIcon = icon);
+      final pin =
+          await _circleIconMarker(Icons.forest_rounded, _MapPalette.green);
+      final sighting = await _circleIconMarker(
+          Icons.visibility_rounded, _MapPalette.gold);
+      if (mounted) {
+        setState(() {
+          _pinIcon = pin;
+          _sightingIcon = sighting;
+        });
+      }
     } catch (_) {
       // Fall back to the default marker if bitmap rendering is unavailable.
     }
@@ -115,7 +122,22 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final mappable =
         destinations.where((d) => d.hasCoordinates).toList(growable: false);
 
+    final sightings = ref.watch(recentSightingsProvider).value ?? const [];
+
     final markers = <Marker>{
+      for (final s in sightings.where((s) => s.hasCoordinates))
+        Marker(
+          markerId: MarkerId('sighting_${s.id}'),
+          position: LatLng(s.latitude!, s.longitude!),
+          icon: _sightingIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(
+                  BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(
+            title: s.species ?? s.category.label,
+            snippet: 'Sighting · ${s.category.label}'
+                '${s.notes != null ? ' · ${s.notes}' : ''}',
+          ),
+        ),
       for (final d in mappable)
         Marker(
           markerId: MarkerId(d.id),
