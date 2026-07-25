@@ -8,6 +8,8 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/discovery/models/discovery_category.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
+import 'package:explorer_os_mobile/features/narration/data/narration_repository.dart';
+import 'package:explorer_os_mobile/features/narration/services/narration_script_composer.dart';
 
 /// Full species page: hero image, natural-history detail, and narration.
 ///
@@ -62,20 +64,13 @@ class _SpeciesDetailScreenState extends ConsumerState<SpeciesDetailScreen> {
     super.dispose();
   }
 
-  String get _narrationText {
-    final s = widget.species;
-    final parts = <String>[
-      s.commonName,
-      if (s.description != null && s.description!.isNotEmpty) s.description!,
-      if ((s.description == null || s.description!.isEmpty) &&
-          s.funFacts != null &&
-          s.funFacts!.isNotEmpty)
-        s.funFacts!,
-    ];
-    final text = parts.join('. ');
-    return text.isEmpty
-        ? '${s.commonName}. A species found in this park.'
-        : text;
+  /// Best script to read aloud: a stored, human-edited narration script if one
+  /// exists, else a freshly composed tour-guide script from the record's data.
+  String _scriptFor(String? storedScript) {
+    if (storedScript != null && storedScript.trim().isNotEmpty) {
+      return storedScript;
+    }
+    return const NarrationScriptComposer().composeForSpecies(widget.species);
   }
 
   Future<void> _toggleNarration() async {
@@ -87,7 +82,18 @@ class _SpeciesDetailScreenState extends ConsumerState<SpeciesDetailScreen> {
     }
     setState(() => _loading = true);
     try {
-      final url = await ref
+      // 1. Prefer a pre-generated narration row (instant, no AI at runtime).
+      String? url;
+      String? storedScript;
+      try {
+        final n = await ref
+            .read(narrationRepositoryProvider)
+            .bestForContent(widget.species.id);
+        url = n?.hasAudio ?? false ? n!.audioUrl : null;
+        storedScript = n?.script;
+      } catch (_) {/* narrations table not present yet — fall back */}
+      // 2. Else a linked media audio file.
+      url ??= await ref
           .read(mediaRepositoryProvider)
           .narrationUrlForSpecies(widget.species.id);
       if (!mounted) return;
@@ -105,10 +111,14 @@ class _SpeciesDetailScreenState extends ConsumerState<SpeciesDetailScreen> {
         await _player.setUrl(url);
         await _player.play();
       } else {
-        // Fall back to reading the narration text aloud.
-        await _tts.setSpeechRate(0.45);
-        await _tts.setPitch(1.0);
-        await _tts.speak(_narrationText);
+        // Fall back to reading the narration text aloud. Rate/pitch are
+        // best-effort (not supported on every platform), so don't let them
+        // abort speaking.
+        try {
+          await _tts.setSpeechRate(0.45);
+          await _tts.setPitch(1.0);
+        } catch (_) {/* optional tuning */}
+        await _tts.speak(_scriptFor(storedScript));
       }
     } catch (e) {
       if (mounted) {

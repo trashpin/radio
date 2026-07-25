@@ -20,6 +20,9 @@ class SupabaseTables {
   /// Geolocated points (all categories) for the real-time "Around Me" map.
   static const String mapLocations = 'map_locations';
 
+  /// Pre-generated narration scripts + audio for any content record.
+  static const String narrations = 'narrations';
+
   /// Base44 media table (audio/photo/video). Audio rows (`file_url` in the
   /// `mp3` bucket) are the real source for Explorer Radio playback.
   static const String media = 'media';

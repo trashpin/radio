@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
@@ -48,6 +49,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const SightingsAdminPage();
       case AdminModule.imageMatching:
         return const ImageMatchingPage();
+      case AdminModule.narrationStudio:
+        return const NarrationStudioPage();
       default:
         return ModulePlaceholder(module: module);
     }
