@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
 import 'package:explorer_os_mobile/features/sightings/providers/sighting_providers.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
@@ -39,6 +40,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   GoogleMapController? _controller;
   BitmapDescriptor? _pinIcon;
   BitmapDescriptor? _sightingIcon;
+  BitmapDescriptor? _locationIcon;
   LatLng _center = MapsScreen._fallbackCenter;
 
   @override
@@ -47,17 +49,20 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     _buildIcons();
   }
 
-  /// Renders circular icon markers to bitmaps (green = destinations, amber =
-  /// sightings) so pins look like the design instead of default teardrops.
+  /// Renders circular icon markers to bitmaps (green = parks, blue = locations,
+  /// amber = sightings) so pins look like the design.
   Future<void> _buildIcons() async {
     try {
       final pin =
           await _circleIconMarker(Icons.forest_rounded, _MapPalette.green);
+      final location = await _circleIconMarker(
+          Icons.place_rounded, const Color(0xFF3F8FD0));
       final sighting = await _circleIconMarker(
           Icons.visibility_rounded, _MapPalette.gold);
       if (mounted) {
         setState(() {
           _pinIcon = pin;
+          _locationIcon = location;
           _sightingIcon = sighting;
         });
       }
@@ -121,34 +126,62 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final destinations = ref.watch(destinationsProvider).value ?? const [];
     final mappable =
         destinations.where((d) => d.hasCoordinates).toList(growable: false);
-
     final sightings = ref.watch(recentSightingsProvider).value ?? const [];
+    final stops = ref.watch(allStopsProvider).value ?? const [];
+    final layers = ref.watch(mapLayersProvider);
 
     final markers = <Marker>{
-      for (final s in sightings.where((s) => s.hasCoordinates))
-        Marker(
-          markerId: MarkerId('sighting_${s.id}'),
-          position: LatLng(s.latitude!, s.longitude!),
-          icon: _sightingIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueOrange),
-          infoWindow: InfoWindow(
-            title: s.species ?? s.category.label,
-            snippet: 'Sighting · ${s.category.label}'
-                '${s.notes != null ? ' · ${s.notes}' : ''}',
+      if (layers.contains(MapLayer.parks))
+        for (final d in mappable)
+          Marker(
+            markerId: MarkerId('park_${d.id}'),
+            position: LatLng(d.latitude!, d.longitude!),
+            icon: _pinIcon ?? BitmapDescriptor.defaultMarker,
+            infoWindow: InfoWindow(title: d.name, snippet: d.location),
           ),
-        ),
-      for (final d in mappable)
-        Marker(
-          markerId: MarkerId(d.id),
-          position: LatLng(d.latitude!, d.longitude!),
-          icon: _pinIcon ?? BitmapDescriptor.defaultMarker,
-          infoWindow: InfoWindow(title: d.name, snippet: d.location),
-        ),
+      if (layers.contains(MapLayer.locations))
+        for (final s in stops.where((s) => s.latitude != null && s.longitude != null))
+          Marker(
+            markerId: MarkerId('stop_${s.id}'),
+            position: LatLng(s.latitude!, s.longitude!),
+            icon: _locationIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueAzure),
+            infoWindow: InfoWindow(
+                title: s.name, snippet: s.stopType ?? 'Location'),
+          ),
+      if (layers.contains(MapLayer.sightings))
+        for (final s in sightings.where((s) => s.hasCoordinates))
+          Marker(
+            markerId: MarkerId('sighting_${s.id}'),
+            position: LatLng(s.latitude!, s.longitude!),
+            icon: _sightingIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueOrange),
+            infoWindow: InfoWindow(
+              title: s.species ?? s.category.label,
+              snippet: 'Sighting · ${s.category.label}',
+            ),
+          ),
     };
 
-    final initialTarget =
-        mappable.isNotEmpty ? LatLng(mappable.first.latitude!, mappable.first.longitude!) : MapsScreen._fallbackCenter;
+    // Park boundaries (approximate circles until real polygons/geojson exist).
+    final circles = <Circle>{
+      if (layers.contains(MapLayer.boundaries))
+        for (final d in mappable)
+          Circle(
+            circleId: CircleId('boundary_${d.id}'),
+            center: LatLng(d.latitude!, d.longitude!),
+            radius: 12000, // ~12 km placeholder
+            strokeColor: _MapPalette.green,
+            strokeWidth: 2,
+            fillColor: _MapPalette.green.withValues(alpha: 0.08),
+          ),
+    };
+
+    final initialTarget = mappable.isNotEmpty
+        ? LatLng(mappable.first.latitude!, mappable.first.longitude!)
+        : MapsScreen._fallbackCenter;
     final nearest = _nearest([...mappable]);
 
     return Scaffold(
@@ -163,6 +196,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                   initialCameraPosition:
                       CameraPosition(target: initialTarget, zoom: 9),
                   markers: markers,
+                  circles: circles,
                   mapType: MapType.hybrid,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
@@ -172,6 +206,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                   onCameraIdle: () => setState(() {}),
                 ),
                 _controls(initialTarget),
+                _layerChips(layers),
                 if (nearest != null)
                   _NearestCard(
                     destination: nearest,
@@ -182,6 +217,32 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Quick horizontal layer toggles overlaid at the top of the map.
+  Widget _layerChips(Set<MapLayer> active) {
+    return Positioned(
+      top: AppSpacing.md,
+      left: AppSpacing.md,
+      right: 72, // leave room for the control column
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final layer in MapLayer.values)
+              Padding(
+                padding: const EdgeInsets.only(right: AppSpacing.sm),
+                child: _LayerChip(
+                  layer: layer,
+                  active: active.contains(layer),
+                  onTap: () =>
+                      ref.read(mapLayersProvider.notifier).toggle(layer),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -257,6 +318,49 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           width: 44,
           height: 44,
           child: Icon(icon, color: _MapPalette.textPrimary, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+/// A single map-layer toggle pill.
+class _LayerChip extends StatelessWidget {
+  const _LayerChip({
+    required this.layer,
+    required this.active,
+    required this.onTap,
+  });
+
+  final MapLayer layer;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: active ? _MapPalette.green : _MapPalette.control.withValues(alpha: 0.92),
+      borderRadius: AppRadius.pillAll,
+      elevation: 3,
+      child: InkWell(
+        borderRadius: AppRadius.pillAll,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(layer.icon,
+                  size: 15,
+                  color: active ? Colors.white : _MapPalette.textSecondary),
+              const SizedBox(width: 5),
+              Text(layer.label,
+                  style: TextStyle(
+                      color: active ? Colors.white : _MapPalette.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );
