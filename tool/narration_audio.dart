@@ -13,6 +13,7 @@
 // Idempotent: skips species that already have narration audio unless --force.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:explorer_os_mobile/features/admin/image_match/filename_normalizer.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
@@ -22,6 +23,18 @@ const _composer = NarrationScriptComposer();
 const _bucket = 'narration';
 // ElevenLabs "Rachel" — a stable default voice.
 const _defaultVoiceId = '21m00Tcm4TlvDq8ikWAM';
+
+/// Random v4 UUID (the `media` table's PK has no DB default).
+String _uuidV4() {
+  final r = Random.secure();
+  final b = List<int>.generate(16, (_) => r.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).toList();
+  return '${h.sublist(0, 4).join()}-${h.sublist(4, 6).join()}-'
+      '${h.sublist(6, 8).join()}-${h.sublist(8, 10).join()}-'
+      '${h.sublist(10, 16).join()}';
+}
 
 String _arg(List<String> a, String n, String d) {
   final i = a.indexOf('--$n');
@@ -162,6 +175,7 @@ Future<void> main(List<String> args) async {
         mReq.headers.set('Prefer', 'return=minimal');
         mReq.headers.contentType = ContentType.json;
         mReq.add(utf8.encode(jsonEncode({
+          'media_id': _uuidV4(),
           'species_id': s.id,
           'destination_id': destId,
           'media_type': 'audio',
