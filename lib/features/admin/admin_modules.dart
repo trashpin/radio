@@ -55,6 +55,10 @@ enum AdminModule {
   albums('Albums', Icons.album_rounded, AdminGroup.audio,
       description: 'Album grouping and art.', table: 'albums'),
 
+  species('Species', Icons.eco_rounded, AdminGroup.nature,
+      ready: true,
+      description: 'Create/edit species and upload photos (all categories).',
+      table: 'species'),
   wildlife('Wildlife', Icons.pets_rounded, AdminGroup.nature,
       description: 'Species, sounds, habitat, danger level.',
       table: 'wildlife'),

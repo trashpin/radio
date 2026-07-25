@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
@@ -10,6 +12,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.da
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/species_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/voice_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
@@ -57,6 +60,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const VoiceManagerPage();
       case AdminModule.mapEditor:
         return const MapEditorPage();
+      case AdminModule.species:
+        return const SpeciesAdminPage();
       default:
         return ModulePlaceholder(module: module);
     }
@@ -367,6 +372,11 @@ class _ProfileMenu extends StatelessWidget {
     final theme = Theme.of(context);
     return PopupMenuButton<String>(
       tooltip: 'Account',
+      onSelected: (v) async {
+        if (v == 'signout' && SupabaseService.isConfigured) {
+          await Supabase.instance.client.auth.signOut();
+        }
+      },
       child: CircleAvatar(
         radius: 16,
         backgroundColor: theme.colorScheme.primary,

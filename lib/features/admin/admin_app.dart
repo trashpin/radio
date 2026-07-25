@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_theme.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/admin_shell.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/admin_auth_gate.dart';
 
 /// Root of the ExplorerOS Admin (a separate Flutter-web target).
 ///
@@ -22,7 +22,7 @@ class AdminApp extends ConsumerWidget {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: mode,
-      home: const AdminShell(),
+      home: const AdminAuthGate(),
     );
   }
 }

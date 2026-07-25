@@ -46,6 +46,20 @@ class SpeciesRepository extends SupabaseReadRepository<Species> {
     final rows = await client.from(table).insert(payload).select();
     return Species.fromJson(rows.first);
   }
+
+  /// Creates (no id) or updates (has id) a species from the admin editor.
+  Future<Species> upsert(Species species) async {
+    if (species.id.isEmpty) return create(species);
+    final payload = Map<String, dynamic>.from(species.toJson())
+      ..remove('species_id')
+      ..['updated_at'] = DateTime.now().toUtc().toIso8601String();
+    final rows = await client
+        .from(table)
+        .update(payload)
+        .eq('species_id', species.id)
+        .select();
+    return Species.fromJson(rows.first);
+  }
 }
 
 final speciesRepositoryProvider = Provider<SpeciesRepository>((ref) {
