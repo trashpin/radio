@@ -1,6 +1,17 @@
 {
   "voices": [
     {
+      "name": "DJ Brittney",
+      "voice_id": "kPzsL2i3teMYv0FxEYQ6",
+      "description": "Warm, upbeat radio host \u2014 the voice of ExplorerOS Radio & guides.",
+      "gender": "female",
+      "style": "radio_host",
+      "suggested_category": "explorer_radio",
+      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/kPzsL2i3teMYv0FxEYQ6.mp3",
+      "language": "English",
+      "active": true
+    },
+    {
       "name": "Rachel",
       "voice_id": "21m00Tcm4TlvDq8ikWAM",
       "description": "Calm, warm American female \u2014 natural fit for nature narration.",
@@ -85,17 +96,6 @@
       "style": "strong",
       "suggested_category": "fish",
       "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/AZnzlk1XvdvUeBnXmlld.mp3",
-      "language": "English",
-      "active": true
-    },
-    {
-      "name": "Brittney",
-      "voice_id": "kPzsL2i3teMYv0FxEYQ6",
-      "description": "Warm, friendly American female \u2014 from your ElevenLabs collection.",
-      "gender": "female",
-      "style": "warm",
-      "suggested_category": "campgrounds",
-      "preview_url": "https://qqeyvhcgirmfokoftiuz.supabase.co/storage/v1/object/public/narration/voices/kPzsL2i3teMYv0FxEYQ6.mp3",
       "language": "English",
       "active": true
     }
