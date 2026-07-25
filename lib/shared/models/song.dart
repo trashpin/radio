@@ -10,6 +10,7 @@ class Song implements Model {
     required this.stationId,
     required this.title,
     this.artist,
+    this.album,
     this.audioUrl,
     this.durationSeconds,
   });
@@ -19,6 +20,7 @@ class Song implements Model {
   final String stationId;
   final String title;
   final String? artist;
+  final String? album;
   final String? audioUrl;
   final int? durationSeconds;
 
@@ -27,6 +29,7 @@ class Song implements Model {
         stationId: json['station_id']?.toString() ?? '',
         title: (json['title'] ?? '') as String,
         artist: json['artist'] as String?,
+        album: json['album'] as String?,
         audioUrl: json['audio_url'] as String?,
         durationSeconds: (json['duration_seconds'] as num?)?.toInt(),
       );

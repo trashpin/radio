@@ -5,7 +5,9 @@ import 'package:explorer_os_mobile/features/destinations/data/destination_reposi
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
+import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
+import 'package:explorer_os_mobile/shared/models/song.dart';
 
 /// Bootstraps a listening session: attaches audio output, derives the active
 /// station from Base44 content (a destination that has audio `media`), loads
@@ -21,6 +23,22 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   ref.read(radioAudioServiceProvider);
 
   final media = ref.read(mediaRepositoryProvider);
+
+  // If the user picked a station from the Stations screen, honor it; load its
+  // audio from the linked destination's media (empty for curated stations
+  // until they have content).
+  final selected = ref.watch(selectedStationProvider);
+  if (selected != null) {
+    final songs = selected.destinationId != null
+        ? await media.songsForDestination(selected.destinationId!)
+        : const <Song>[];
+    ref
+        .read(radioEngineServiceProvider)
+        .changeStation(selected, songs: songs, autoPlay: false);
+    ref.read(radioEngineControllerProvider);
+    return selected;
+  }
+
   final destinations =
       await ref.watch(destinationRepositoryProvider).fetchDestinations();
   if (destinations.isEmpty) {

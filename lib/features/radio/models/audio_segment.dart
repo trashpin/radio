@@ -68,6 +68,8 @@ class AudioSegment {
     required this.title,
     required this.type,
     required this.priority,
+    this.artist,
+    this.album,
     this.duration = Duration.zero,
     this.audioUrl,
     this.stationId,
@@ -81,6 +83,12 @@ class AudioSegment {
 
   final String id;
   final String title;
+
+  /// Optional performer/author (e.g. a song's artist) shown in the player.
+  final String? artist;
+
+  /// Optional album/collection shown in the player.
+  final String? album;
   final AudioSegmentType type;
 
   /// Where this item sits on the priority ladder (drives ordering + interrupts).
@@ -111,6 +119,8 @@ class AudioSegment {
   AudioSegment copyWith({PlaybackPriority? priority}) => AudioSegment(
         id: id,
         title: title,
+        artist: artist,
+        album: album,
         type: type,
         priority: priority ?? this.priority,
         duration: duration,
@@ -131,6 +141,8 @@ class AudioSegment {
     return AudioSegment(
       id: 'song:${song.id}',
       title: song.title,
+      artist: song.artist,
+      album: song.album,
       type: AudioSegmentType.music,
       priority: PlaybackPriority.music,
       duration: Duration(seconds: song.durationSeconds ?? 0),
