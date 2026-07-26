@@ -16,7 +16,15 @@ import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 /// mapping, validation and record-building logic lives in `csv_import_logic.dart`
 /// (pure + unit-tested); this widget is only the UI around it.
 class CsvImporterTab extends StatefulWidget {
-  const CsvImporterTab({super.key});
+  const CsvImporterTab({super.key, this.debugHeaders, this.debugRows});
+
+  /// Test-only: pre-load a parsed CSV so the mapping/preview/validate UI renders
+  /// without a file picker.
+  @visibleForTesting
+  final List<String>? debugHeaders;
+  @visibleForTesting
+  final List<List<String>>? debugRows;
+
   @override
   State<CsvImporterTab> createState() => _CsvImporterTabState();
 }
@@ -29,6 +37,17 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
   List<String> _headers = const [];
   List<List<String>> _rows = const []; // data rows (no header)
   Map<String, String?> _mapping = {}; // DB column key -> CSV header (or null)
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.debugHeaders != null) {
+      _fileName = 'debug.csv';
+      _headers = widget.debugHeaders!;
+      _rows = widget.debugRows ?? const [];
+      _mapping = autoMapColumns(_headers, _target);
+    }
+  }
 
   bool _importing = false;
   int _inserted = 0;
@@ -213,6 +232,12 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
               Row(children: [
                 OutlinedButton.icon(
                   onPressed: _importing ? null : _pickCsv,
+                  // Override the theme's full-width button size, otherwise the
+                  // button forces infinite width inside this Row.
+                  style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 44),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.lg)),
                   icon: const Icon(Icons.upload_file_rounded, size: 18),
                   label: Text(_fileName ?? 'Choose CSV'),
                 ),
@@ -299,28 +324,34 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                   ],
                 ]),
                 const Gap.v(AppSpacing.md),
+                // A horizontally-scrollable, explicitly width-bounded table.
+                // (A DataTable inside a horizontal scroll view triggers an
+                // "infinite width" layout error on the web renderer.)
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: DataTable(
-                    columns: [
-                      for (final col in _target.columns)
-                        DataColumn(label: Text(col.label)),
-                    ],
-                    rows: [
-                      for (final r in _rows.take(8))
-                        DataRow(cells: [
-                          for (final col in _target.columns)
-                            DataCell(ConstrainedBox(
-                              constraints:
-                                  const BoxConstraints(maxWidth: 180),
-                              child: Text(
-                                _cell(r, _mapping[col.key]) ?? '—',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            )),
-                        ]),
-                    ],
+                  child: SizedBox(
+                    width: _target.columns.length * 160.0,
+                    child: Table(
+                      border: TableBorder.all(
+                          color: theme.dividerColor.withValues(alpha: 0.4)),
+                      defaultColumnWidth: const FixedColumnWidth(160),
+                      children: [
+                        TableRow(
+                          decoration: BoxDecoration(
+                              color: theme.colorScheme.onSurface
+                                  .withValues(alpha: 0.04)),
+                          children: [
+                            for (final col in _target.columns)
+                              _cellText(col.label, bold: true),
+                          ],
+                        ),
+                        for (final r in _rows.take(8))
+                          TableRow(children: [
+                            for (final col in _target.columns)
+                              _cellText(_cell(r, _mapping[col.key]) ?? '—'),
+                          ]),
+                      ],
+                    ),
                   ),
                 ),
                 if (_rows.length > 8)
@@ -384,6 +415,18 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
       ],
     );
   }
+
+  Widget _cellText(String text, {bool bold = false}) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+              fontSize: 12,
+              fontWeight: bold ? FontWeight.w700 : FontWeight.w400),
+        ),
+      );
 
   Widget _pill(BuildContext context, IconData icon, String text, Color color) {
     return Container(
