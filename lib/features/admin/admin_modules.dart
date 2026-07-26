@@ -52,6 +52,11 @@ enum AdminModule {
   historicalEvents('Historical Events', Icons.history_edu_rounded,
       AdminGroup.content,
       description: 'Timeline of historical facts.', table: 'historical_events'),
+  storyStudio('Story Studio', Icons.auto_stories_rounded, AdminGroup.content,
+      ready: true,
+      description: 'AI story production: generate, review, voice, and '
+          'GPS-trigger educational stories.',
+      table: 'story_library'),
 
   explorerRadio('Explorer Radio', Icons.podcasts_rounded, AdminGroup.audio,
       description: 'Stations, programs, playlists, announcements.',

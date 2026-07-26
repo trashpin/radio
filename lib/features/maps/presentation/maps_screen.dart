@@ -14,6 +14,10 @@ import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.d
 import 'package:explorer_os_mobile/features/maps/providers/map_places_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/story_studio/data/story_library_repository.dart';
+import 'package:explorer_os_mobile/features/story_studio/services/gps_story_selector.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/sightings/models/explorer_sighting.dart';
@@ -64,6 +68,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   List<LatLng> _route = const [];
   final Set<String> _notified = {}; // notified once per approach
   final Set<String> _inZone = {}; // items whose trigger zone we're inside
+  final _storySelector = GpsStorySelector();
+  final Set<String> _storiesPlayed = {}; // GPS stories played this visit
   ({String text, IconData icon, Color color})? _banner;
   Timer? _bannerTimer;
 
@@ -124,6 +130,30 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
 
   /// Explorer Mode: notify on approach; fire GPS story triggers once per entry.
   void _scanProximity(LatLng loc) {
+    // Story Studio: play a published, GPS-zoned story when the visitor enters
+    // its radius (once per visit, avoiding repeats).
+    final stories = ref.read(playableStoriesProvider).value ?? const [];
+    if (stories.isNotEmpty) {
+      final story = _storySelector.select(stories, loc.latitude, loc.longitude,
+          alreadyPlayed: _storiesPlayed);
+      if (story != null) {
+        _storiesPlayed.add(story.id);
+        ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+              AudioSegment(
+                id: 'story:${story.id}:${DateTime.now().millisecondsSinceEpoch}',
+                title: story.title,
+                type: AudioSegmentType.gpsNarration,
+                priority: PlaybackPriority.gpsNarration,
+                audioUrl: story.audioUrl,
+                interruptible: true,
+                resumeAfter: true,
+              ),
+            );
+        _showBanner('Now playing: ${story.title}', Icons.menu_book_rounded,
+            _MapPalette.gold);
+      }
+    }
+
     final all = ref.read(mapLocationsProvider).value ?? const [];
     for (final item in all) {
       final m = _metersBetween(loc, LatLng(item.latitude, item.longitude));
@@ -373,6 +403,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final sightings = ref.watch(recentSightingsProvider).value ?? const [];
     final stops = ref.watch(allStopsProvider).value ?? const [];
     final layers = ref.watch(mapLayersProvider);
+    ref.watch(playableStoriesProvider); // preload GPS-triggered stories
 
     // Establish the user's location (device GPS on hardware; a simulated
     // center — the first destination — on web) once, so nearby search runs.
