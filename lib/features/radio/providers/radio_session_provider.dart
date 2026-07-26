@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
@@ -26,16 +29,38 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Attach the audio adapter (engine intent → real sound via just_audio).
   ref.read(radioAudioServiceProvider);
 
+  final engine = ref.read(radioEngineServiceProvider);
+
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
   // in-character between songs (falls back to TTS when none exist yet).
   try {
     final clips = await ref.read(djClipRepositoryProvider).all();
-    final segmentClips =
-        await ref.read(radioAutomationRepositoryProvider).playableClips();
+    final autoRepo = ref.read(radioAutomationRepositoryProvider);
+    final segmentClips = await autoRepo.playableClips();
     final all = [...clips, ...segmentClips];
-    if (all.isNotEmpty) {
-      ref.read(radioEngineServiceProvider).djBanter.setClips(all);
+    if (all.isNotEmpty) engine.djBanter.setClips(all);
+
+    // Rule-driven automation: song-boundary triggers run inside the engine's
+    // between-song hook; time-based triggers run on this periodic tick.
+    final rules = await autoRepo.rules();
+    final segments = await autoRepo.segments();
+    if (rules.isNotEmpty) {
+      engine.djBanter.setAutomation(AutomationEngine(), rules, segments);
+      final start = DateTime.now();
+      final timer = Timer.periodic(const Duration(seconds: 60), (_) {
+        final mins = DateTime.now().difference(start).inMinutes;
+        final seg = engine.djBanter.onTick(
+          radioStationName: engine.getCurrentStation()?.name,
+          sessionMinutes: mins,
+        );
+        if (seg != null) {
+          ref
+              .read(radioEngineControllerProvider.notifier)
+              .requestInterruption(seg);
+        }
+      });
+      ref.onDispose(timer.cancel);
     }
   } catch (_) {}
 

@@ -4,6 +4,9 @@ import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
 import 'package:explorer_os_mobile/features/dj/models/dj_clip.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 
 /// Decides when the DJ talks between songs and produces the spoken banter.
 ///
@@ -37,6 +40,52 @@ class DjBanterScheduler {
   List<DjClip> _clips = const [];
   void setClips(List<DjClip> clips) => _clips = clips;
 
+  /// Rule-driven automation (radio_schedule_rules + radio_segments). When set,
+  /// matching rules decide what plays between songs; otherwise the default
+  /// "every N songs" DJ banter applies.
+  AutomationEngine? _automation;
+  List<RadioScheduleRule> _rules = const [];
+  List<RadioSegment> _segments = const [];
+  void setAutomation(
+    AutomationEngine engine,
+    List<RadioScheduleRule> rules,
+    List<RadioSegment> segments,
+  ) {
+    _automation = engine;
+    _rules = rules;
+    _segments = segments;
+  }
+
+  /// Builds a playable segment from a library [RadioSegment] (its own audio if
+  /// voiced, else its script via TTS).
+  AudioSegment _fromSegment(RadioSegment s) => AudioSegment(
+        id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
+        title: s.title.isEmpty ? 'On air' : s.title,
+        artist: s.voice ?? 'DJ',
+        type: AudioSegmentType.announcement,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        audioUrl: s.hasAudio ? s.audioUrl : null,
+        spokenText: s.hasAudio ? null : s.script,
+        interruptible: true,
+        resumeAfter: false,
+      );
+
+  /// Time-based rule evaluation (called on a periodic tick by the session).
+  /// Returns a segment to interrupt with, or null.
+  AudioSegment? onTick({
+    required String? radioStationName,
+    required int sessionMinutes,
+    DateTime? now,
+  }) {
+    final engine = _automation;
+    if (engine == null || _rules.isEmpty) return null;
+    final seg = engine.onTick(_rules, _segments,
+        station: stationFor(radioStationName),
+        sessionMinutes: sessionMinutes,
+        now: now);
+    return seg == null ? null : _fromSegment(seg);
+  }
+
   DjClip? _pickClip(DjStation station, BanterSituation situation) {
     final matches = _clips
         .where((c) =>
@@ -64,12 +113,23 @@ class DjBanterScheduler {
     return 'evening';
   }
 
-  /// After [finishedMusic] plays, maybe return a spoken banter segment.
+  /// After [finishedMusic] plays, maybe return a segment to play between songs.
   AudioSegment? onMusicPlayed(AudioSegment finishedMusic,
       {String? radioStationName}) {
-    if (!enabled || everyNSongs <= 0) return null;
+    if (!enabled) return null;
     _count++;
-    if (_count % everyNSongs != 0) return null;
+
+    // 1) Rule-driven automation (radio_schedule_rules) decides first — its own
+    // cadence (every-N-songs, after-song, random) governs when it fires.
+    final auto = _automation;
+    if (auto != null && _rules.isNotEmpty) {
+      final seg = auto.onSong(_rules, _segments,
+          station: stationFor(radioStationName), songIndex: _count);
+      if (seg != null) return _fromSegment(seg);
+    }
+
+    // 2) Otherwise, the default DJ banter every N songs.
+    if (everyNSongs <= 0 || _count % everyNSongs != 0) return null;
 
     final station = stationFor(radioStationName);
 
