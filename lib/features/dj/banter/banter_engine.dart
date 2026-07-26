@@ -100,10 +100,12 @@ class BanterEngine {
   final Random _rng;
 
   /// Templates matching a station+situation (station-specific first, then the
-  /// `all` pool).
+  /// shared `all` pool). When [station] is `all`, only the shared pool applies
+  /// (avoids returning the shared templates twice).
   List<BanterTemplate> templatesFor(DjStation station, BanterSituation s) {
-    final specific =
-        templates.where((t) => t.situation == s && t.station == station);
+    final specific = station == DjStation.all
+        ? const <BanterTemplate>[]
+        : templates.where((t) => t.situation == s && t.station == station);
     final shared =
         templates.where((t) => t.situation == s && t.station == DjStation.all);
     return [...specific, ...shared];
