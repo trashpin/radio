@@ -11,6 +11,50 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/image_match/filename_normalizer.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
+/// Parsed ID3 metadata from an MP3 (any field may be null).
+class Mp3Tags {
+  const Mp3Tags({this.title, this.artist, this.album, this.artwork});
+  final String? title;
+  final String? artist;
+  final String? album;
+  final Uint8List? artwork;
+}
+
+/// Read ID3 tags (Title/Artist/Album + embedded cover art) from MP3 bytes.
+/// Never throws — returns an empty [Mp3Tags] if parsing fails.
+Future<Mp3Tags> extractMp3Tags(Uint8List bytes) async {
+  try {
+    final tags =
+        await TagProcessor().getTagsFromByteArray(Future.value(bytes));
+    String? pick(String key) {
+      for (final t in tags) {
+        final v = t.tags[key];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return null;
+    }
+
+    Uint8List? art;
+    for (final t in tags) {
+      final pic = t.tags['picture'];
+      if (pic is Map && pic.isNotEmpty) {
+        final data = (pic.values.first as dynamic).imageData;
+        if (data is List<int> && data.isNotEmpty) {
+          art = Uint8List.fromList(data);
+          break;
+        }
+      }
+    }
+    return Mp3Tags(
+        title: pick('title'),
+        artist: pick('artist'),
+        album: pick('album'),
+        artwork: art);
+  } catch (_) {
+    return const Mp3Tags();
+  }
+}
+
 /// Loads songs from the `songs` table (public read).
 final radioSongsProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
@@ -37,6 +81,25 @@ class SongUploaderPage extends ConsumerWidget {
           title: 'Music Library',
           subtitle: 'Upload songs (audio + artwork) straight to Supabase',
           actions: [
+            OutlinedButton.icon(
+              onPressed: () async {
+                final r = await FilePicker.platform.pickFiles(
+                    type: FileType.audio, allowMultiple: true, withData: true);
+                if (r == null || r.files.isEmpty) return;
+                if (!context.mounted) return;
+                final ok = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => _BulkImportDialog(files: r.files));
+                if (ok == true) ref.invalidate(radioSongsProvider);
+              },
+              style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg)),
+              icon: const Icon(Icons.library_add_rounded, size: 18),
+              label: const Text('Bulk import'),
+            ),
+            const Gap.h(AppSpacing.sm),
             FilledButton.icon(
               onPressed: () async {
                 final ok = await showDialog<bool>(
@@ -152,54 +215,28 @@ class _SongDialogState extends State<_SongDialog> {
   /// Read ID3 tags from the picked MP3 and auto-fill Title/Artist/Album +
   /// embedded cover art (fields the admin hasn't already set).
   Future<void> _readTags(Uint8List bytes, String filename) async {
-    try {
-      final tags = await TagProcessor().getTagsFromByteArray(Future.value(bytes));
-      String? pick(String key) {
-        for (final t in tags) {
-          final v = t.tags[key];
-          if (v is String && v.trim().isNotEmpty) return v.trim();
-        }
-        return null;
+    final tags = await extractMp3Tags(bytes);
+    setState(() {
+      if (tags.title != null && _title.text.trim().isEmpty) {
+        _title.text = tags.title!;
       }
-
-      final title = pick('title');
-      final artist = pick('artist');
-      final album = pick('album');
-      // Embedded artwork (APIC) → cover, if none chosen yet.
-      List<int>? art;
-      for (final t in tags) {
-        final pic = t.tags['picture'];
-        if (pic is Map && pic.isNotEmpty) {
-          final first = pic.values.first;
-          final data = (first as dynamic).imageData;
-          if (data is List<int> && data.isNotEmpty) {
-            art = data;
-            break;
-          }
-        }
+      if (tags.artist != null && _artist.text.trim().isEmpty) {
+        _artist.text = tags.artist!;
       }
-      setState(() {
-        if (title != null && _title.text.trim().isEmpty) _title.text = title;
-        if (artist != null && _artist.text.trim().isEmpty) {
-          _artist.text = artist;
-        }
-        if (art != null && _coverBytes == null) {
-          _coverBytes = Uint8List.fromList(art);
-          _coverName = 'embedded.jpg';
-        }
-        final found = [
-          if (title != null) 'title',
-          if (artist != null) 'artist',
-          if (album != null) 'album',
-          if (art != null) 'artwork',
-        ];
-        _tagInfo = found.isEmpty
-            ? 'No ID3 tags found — enter details manually.'
-            : 'Auto-filled from MP3 tags: ${found.join(", ")}.';
-      });
-    } catch (_) {
-      setState(() => _tagInfo = 'Could not read MP3 tags — enter manually.');
-    }
+      if (tags.artwork != null && _coverBytes == null) {
+        _coverBytes = tags.artwork;
+        _coverName = 'embedded.jpg';
+      }
+      final found = [
+        if (tags.title != null) 'title',
+        if (tags.artist != null) 'artist',
+        if (tags.album != null) 'album',
+        if (tags.artwork != null) 'artwork',
+      ];
+      _tagInfo = found.isEmpty
+          ? 'No ID3 tags found — enter details manually.'
+          : 'Auto-filled from MP3 tags: ${found.join(", ")}.';
+    });
   }
 
   Future<void> _pickCover() async {
@@ -344,6 +381,260 @@ class _SongDialogState extends State<_SongDialog> {
         ),
       ],
     );
+  }
+
+  Widget _f(TextEditingController c, String label) => TextField(
+      controller: c,
+      decoration:
+          InputDecoration(labelText: label, border: const OutlineInputBorder()));
+}
+
+enum _Stage { pending, working, done, failed }
+
+class _FileState {
+  _FileState(this.name);
+  final String name;
+  _Stage stage = _Stage.pending;
+  String? title;
+  String? artist;
+  bool hasArt = false;
+  String? message;
+}
+
+/// Bulk MP3 importer — reads ID3 tags from each picked file (title/artist +
+/// embedded cover art), uploads audio + artwork, and inserts a `songs` row.
+/// Shared Park/Station/Genre apply to every file; per-file title/artist come
+/// from the MP3 tags (falling back to the filename). Shows live per-file
+/// progress and works for hundreds of files.
+class _BulkImportDialog extends StatefulWidget {
+  const _BulkImportDialog({required this.files});
+  final List<PlatformFile> files;
+
+  @override
+  State<_BulkImportDialog> createState() => _BulkImportDialogState();
+}
+
+class _BulkImportDialogState extends State<_BulkImportDialog> {
+  final _park = TextEditingController(text: 'ocala');
+  final _station = TextEditingController(text: 'Country Roads Radio');
+  final _genre = TextEditingController(text: 'country');
+  late final List<_FileState> _items =
+      widget.files.map((f) => _FileState(f.name)).toList();
+  final Set<String> _usedKeys = {};
+  bool _running = false;
+  bool _finished = false;
+  int _ok = 0;
+  int _fail = 0;
+
+  @override
+  void dispose() {
+    _park.dispose();
+    _station.dispose();
+    _genre.dispose();
+    super.dispose();
+  }
+
+  String _stripExt(String name) {
+    final dot = name.lastIndexOf('.');
+    return dot > 0 ? name.substring(0, dot) : name;
+  }
+
+  /// Ensure a storage-safe key that is unique within this batch (so two songs
+  /// with the same title don't overwrite each other's files).
+  String _uniqueKey(String base) {
+    var key = normalizeMatchKey(base);
+    if (key.isEmpty) key = 'track';
+    var candidate = key;
+    var n = 1;
+    while (_usedKeys.contains(candidate)) {
+      candidate = '$key-$n';
+      n++;
+    }
+    _usedKeys.add(candidate);
+    return candidate;
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      _running = true;
+      _ok = 0;
+      _fail = 0;
+    });
+    final client = SupabaseService.client;
+    final park = _park.text.trim().isEmpty ? 'unknown' : _park.text.trim();
+    final station = _station.text.trim();
+    final genre = _genre.text.trim();
+
+    for (var i = 0; i < widget.files.length; i++) {
+      final file = widget.files[i];
+      final item = _items[i];
+      final bytes = file.bytes;
+      setState(() => item.stage = _Stage.working);
+      if (bytes == null) {
+        setState(() {
+          item.stage = _Stage.failed;
+          item.message = 'No file data.';
+          _fail++;
+        });
+        continue;
+      }
+      try {
+        final tags = await extractMp3Tags(bytes);
+        final title = (tags.title != null && tags.title!.trim().isNotEmpty)
+            ? tags.title!.trim()
+            : _stripExt(file.name);
+        item
+          ..title = title
+          ..artist = tags.artist
+          ..hasArt = tags.artwork != null;
+
+        final key = _uniqueKey(title);
+        final aext = file.name.contains('.')
+            ? file.name.split('.').last.toLowerCase()
+            : 'mp3';
+        final apath = '$park/$key.$aext';
+        await client.storage.from('music').uploadBinary(apath, bytes,
+            fileOptions:
+                FileOptions(upsert: true, contentType: 'audio/$aext'));
+        final audioUrl = client.storage.from('music').getPublicUrl(apath);
+
+        String? coverUrl;
+        if (tags.artwork != null) {
+          final cpath = '$park/$key.jpg';
+          await client.storage.from('artwork').uploadBinary(
+              cpath, tags.artwork!,
+              fileOptions:
+                  FileOptions(upsert: true, contentType: 'image/jpeg'));
+          coverUrl = client.storage.from('artwork').getPublicUrl(cpath);
+        }
+
+        await client.from('songs').insert({
+          'title': title,
+          'artist': tags.artist,
+          'park_code': park,
+          'station': station.isEmpty ? null : station,
+          'genre': genre.isEmpty ? null : genre,
+          'category': 'music',
+          'audio_url': audioUrl,
+          'cover_image': coverUrl,
+          'is_active': true,
+        });
+        setState(() {
+          item.stage = _Stage.done;
+          _ok++;
+        });
+      } catch (e) {
+        setState(() {
+          item.stage = _Stage.failed;
+          item.message = '$e';
+          _fail++;
+        });
+      }
+    }
+    setState(() {
+      _running = false;
+      _finished = true;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: Text('Bulk import — ${widget.files.length} files'),
+      content: SizedBox(
+        width: 520,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(children: [
+            Expanded(child: _f(_park, 'Park code')),
+            const Gap.h(AppSpacing.sm),
+            Expanded(child: _f(_genre, 'Genre')),
+          ]),
+          const Gap.v(AppSpacing.sm),
+          _f(_station, 'Station'),
+          const Gap.v(AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              _finished
+                  ? 'Done — $_ok imported${_fail > 0 ? ', $_fail failed' : ''}.'
+                  : _running
+                      ? 'Importing… ${_ok + _fail} of ${widget.files.length}'
+                      : 'Title & artist auto-fill from each MP3\'s ID3 tags. '
+                          'Shared fields above apply to all.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          const Gap.v(AppSpacing.sm),
+          SizedBox(
+            height: 320,
+            child: ListView.builder(
+              itemCount: _items.length,
+              itemBuilder: (c, i) {
+                final it = _items[i];
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: _stageIcon(it.stage),
+                  title: Text(it.title ?? _stripExt(it.name),
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    it.stage == _Stage.failed
+                        ? (it.message ?? 'Failed')
+                        : [
+                            if (it.artist != null) it.artist,
+                            if (it.hasArt) 'artwork',
+                            it.name,
+                          ].whereType<String>().join('  ·  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: it.stage == _Stage.failed
+                        ? TextStyle(color: theme.colorScheme.error)
+                        : null,
+                  ),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _running ? null : () => Navigator.pop(context, _ok > 0),
+          child: Text(_finished ? 'Close' : 'Cancel'),
+        ),
+        if (!_finished)
+          FilledButton.icon(
+            onPressed: _running ? null : _run,
+            icon: _running
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.cloud_upload_rounded, size: 18),
+            label: Text(_running
+                ? 'Importing…'
+                : 'Import ${widget.files.length} songs'),
+          ),
+      ],
+    );
+  }
+
+  Widget _stageIcon(_Stage s) {
+    switch (s) {
+      case _Stage.pending:
+        return const Icon(Icons.schedule_rounded, color: Colors.grey);
+      case _Stage.working:
+        return const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2));
+      case _Stage.done:
+        return const Icon(Icons.check_circle_rounded, color: Colors.green);
+      case _Stage.failed:
+        return const Icon(Icons.error_rounded, color: Colors.red);
+    }
   }
 
   Widget _f(TextEditingController c, String label) => TextField(
