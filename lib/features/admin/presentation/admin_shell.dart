@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/content_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
@@ -50,7 +51,13 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case AdminModule.mediaLibrary:
         return const MediaLibraryPage();
       case AdminModule.stories:
-        return const StoriesPage();
+        return const ContentUploaderPage(storiesConfig);
+      case AdminModule.wildlifeAlerts:
+        return const ContentUploaderPage(wildlifeConfig);
+      case AdminModule.safetyMessages:
+        return const ContentUploaderPage(safetyConfig);
+      case AdminModule.programmingSchedule:
+        return const ContentUploaderPage(scheduleConfig);
       case AdminModule.explorerSightings:
         return const SightingsAdminPage();
       case AdminModule.imageMatching:

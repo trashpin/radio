@@ -7,6 +7,8 @@ import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_contr
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/repositories/song_repository.dart';
+import 'package:explorer_os_mobile/features/radio/services/radio_scheduler.dart';
+import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 
 /// Bootstraps a listening session: attaches audio output, derives the active
@@ -42,6 +44,7 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
         .read(radioEngineServiceProvider)
         .changeStation(selected, songs: songs, autoPlay: false);
     ref.read(radioEngineControllerProvider);
+    _attachScheduler(ref, selected);
     return selected;
   }
 
@@ -74,6 +77,22 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
 
   // Ensure the controller is alive so it reflects engine events in the UI.
   ref.read(radioEngineControllerProvider);
+  _attachScheduler(ref, station);
 
   return station;
 });
+
+/// Starts the programming scheduler for the session: it injects due
+/// announcements (safety/wildlife with audio) into the engine's interruption
+/// path. No-op until `radio_schedule` rules + voiceover audio exist.
+void _attachScheduler(Ref ref, RadioStation station) {
+  if (!SupabaseService.isConfigured) return;
+  final scheduler = RadioScheduler(
+    client: SupabaseService.client,
+    inject: (seg) => ref
+        .read(radioEngineControllerProvider.notifier)
+        .requestInterruption(seg),
+  );
+  scheduler.start(station: station.name);
+  ref.onDispose(scheduler.stop);
+}
