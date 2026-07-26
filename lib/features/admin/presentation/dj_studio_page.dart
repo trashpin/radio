@@ -207,8 +207,14 @@ class _BanterTabState extends ConsumerState<_BanterTab> {
       wildlife: _wildlife.text.trim().isEmpty ? null : _wildlife.text.trim(),
       timeOfDay: _timeOfDay(),
     );
-    setState(() => _output = engine.generate(_station, _situation, ctx) ??
-        'No template for this combination yet.');
+    // Re-roll a few times so "Regenerate" visibly changes when >1 template
+    // exists (avoid immediately repeating the last line).
+    String? line;
+    for (var i = 0; i < 8; i++) {
+      line = engine.generate(_station, _situation, ctx);
+      if (line == null || line != _output) break;
+    }
+    setState(() => _output = line ?? 'No template for this combination yet.');
   }
 
   static String _timeOfDay() {

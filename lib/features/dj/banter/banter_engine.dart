@@ -172,6 +172,12 @@ const List<BanterTemplate> kBanterTemplates = [
       'That was "{song_title}" by {artist} — more music from {park} coming right up on {station}.'),
   BanterTemplate(DjStation.all, BanterSituation.songOutro,
       'Thanks for riding along with us. Keep your eyes open — this stretch is one of the best places to spot {wildlife}.'),
+  BanterTemplate(DjStation.all, BanterSituation.songOutro,
+      'And that\'s "{song_title}" here on {station}. Beautiful {weather} for a drive through {park} — let\'s keep it rolling.'),
+  BanterTemplate(DjStation.country, BanterSituation.songOutro,
+      'That was "{song_title}" — pure {park} country. Stick around, there\'s plenty more where that came from.'),
+  BanterTemplate(DjStation.rock, BanterSituation.songOutro,
+      'Whew — that was "{song_title}"! Crank it back up, we\'re just getting started on {station}.'),
 
   // ── GPS approaching (a story is near) ──
   BanterTemplate(DjStation.all, BanterSituation.gpsApproaching,
