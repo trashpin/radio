@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
@@ -69,6 +70,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const NarrationStudioPage();
       case AdminModule.voiceManager:
         return const VoiceManagerPage();
+      case AdminModule.djStudio:
+        return const DjStudioPage();
       case AdminModule.mapEditor:
         return const MapEditorPage();
       case AdminModule.species:

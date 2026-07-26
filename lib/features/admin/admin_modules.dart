@@ -105,6 +105,10 @@ enum AdminModule {
   voiceManager('Voice Manager', Icons.graphic_eq_rounded, AdminGroup.audio,
       ready: true,
       description: 'Browse, preview, and assign ElevenLabs voices.'),
+  djStudio('DJ Studio', Icons.headset_mic_rounded, AdminGroup.audio,
+      ready: true,
+      description: 'DJ personalities + AI/template banter and song-intro '
+          'generators so stations sound like a live FM station.'),
   aiContent('AI Content', Icons.auto_awesome_rounded, AdminGroup.assets,
       description: 'Generate descriptions, stories, metadata.'),
   downloads('Downloads', Icons.download_rounded, AdminGroup.assets,
