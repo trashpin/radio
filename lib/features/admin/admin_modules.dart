@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// Sidebar groupings for the admin modules.
 enum AdminGroup {
   overview('Overview'),
+  mediaImports('Media & Imports'),
   content('Content'),
   audio('Audio'),
   nature('Nature'),
@@ -22,6 +23,12 @@ enum AdminGroup {
 enum AdminModule {
   dashboard('Dashboard', Icons.dashboard_rounded, AdminGroup.overview,
       ready: true),
+
+  mediaImports('Media & Imports', Icons.drive_folder_upload_rounded,
+      AdminGroup.mediaImports,
+      ready: true,
+      description: 'Upload media to storage, manage songs, import CSVs, '
+          'browse files, and manage narration.'),
 
   parks('Parks', Icons.forest_rounded, AdminGroup.content,
       ready: true,
