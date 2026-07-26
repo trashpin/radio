@@ -81,7 +81,7 @@ List<CsvTarget> buildCsvTargets() => [
       const CsvTarget(
         label: 'Trails',
         table: 'trails',
-        note: 'Requires a `trails` table.',
+        note: 'Run migration 0014 once to create this table.',
         columns: [
           CsvCol('name', 'Name', required: true),
           CsvCol('difficulty', 'Difficulty'),
@@ -93,7 +93,7 @@ List<CsvTarget> buildCsvTargets() => [
       const CsvTarget(
         label: 'Points of Interest',
         table: 'map_locations',
-        note: 'Requires a `map_locations` table (run migration 0009).',
+        note: 'Run migration 0014 (or 0009) once to create this table.',
         columns: [
           CsvCol('name', 'Name', required: true),
           CsvCol('category', 'Category'),
@@ -126,7 +126,7 @@ List<CsvTarget> buildCsvTargets() => [
       const CsvTarget(
         label: 'Historical Events',
         table: 'historical_events',
-        note: 'Requires a `historical_events` table.',
+        note: 'Run migration 0014 once to create this table.',
         columns: [
           CsvCol('title', 'Title', required: true),
           CsvCol('year', 'Year', number: true),
@@ -137,7 +137,7 @@ List<CsvTarget> buildCsvTargets() => [
       const CsvTarget(
         label: 'Campgrounds',
         table: 'campgrounds',
-        note: 'Requires a `campgrounds` table.',
+        note: 'Run migration 0014 once to create this table.',
         columns: [
           CsvCol('name', 'Name', required: true),
           CsvCol('sites', 'Number of sites', number: true),
