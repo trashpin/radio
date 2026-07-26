@@ -9,10 +9,11 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/i_see_something_modal.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
-import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
@@ -120,7 +121,6 @@ class _PlayerState extends ConsumerState<_Player> {
   bool _shuffle = false;
   bool _repeat = false;
   GuideExperience _guide = GuideExperience.standard;
-  double _volume = 0.7;
 
   Destination? _destination() {
     final all = ref.read(destinationsProvider).value ?? const [];
@@ -137,18 +137,17 @@ class _PlayerState extends ConsumerState<_Player> {
     final nowPlaying = playback.current?.segment;
     final isPlaying = playback.status == PlaybackStatus.playing;
     final dest = _destination();
+    final obs = ref.watch(observationControllerProvider);
 
-    final stationTitle = widget.station.name.toUpperCase();
-    final tagline = (widget.station.description?.isNotEmpty ?? false)
-        ? widget.station.description!
-        : 'Where the Journey Meets the Music';
+    const stationTitle = 'OCALA NATIONAL FOREST RADIO';
+    const tagline = 'Music • Stories • Discovery';
     final upNext =
         playback.queue.where((q) => q.segment.title.isNotEmpty).take(3).toList();
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 130),
       children: [
-        _hero(),
+        _hero(overrideImage: obs.species?.heroImageUrl, glowing: obs.narrating),
         const Gap.v(AppSpacing.lg),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
@@ -171,15 +170,21 @@ class _PlayerState extends ConsumerState<_Player> {
               const Gap.v(AppSpacing.lg),
               _InfoStrip(park: dest?.name, location: dest?.location),
               const Gap.v(AppSpacing.xl),
-              _nowPlaying(nowPlaying?.title, nowPlaying?.artist, nowPlaying?.album),
-              const Gap.v(AppSpacing.lg),
-              _TrackProgress(
-                trackKey: nowPlaying?.id ?? '',
-                duration: (nowPlaying?.duration ?? Duration.zero) > Duration.zero
-                    ? nowPlaying!.duration
-                    : null,
-                isPlaying: isPlaying,
-              ),
+              if (obs.active)
+                _exploring(obs)
+              else ...[
+                _nowPlaying(
+                    nowPlaying?.title, nowPlaying?.artist, nowPlaying?.album),
+                const Gap.v(AppSpacing.lg),
+                _TrackProgress(
+                  trackKey: nowPlaying?.id ?? '',
+                  duration:
+                      (nowPlaying?.duration ?? Duration.zero) > Duration.zero
+                          ? nowPlaying!.duration
+                          : null,
+                  isPlaying: isPlaying,
+                ),
+              ],
               const Gap.v(AppSpacing.lg),
               _transport(isPlaying: isPlaying, controller: controller),
               const Gap.v(AppSpacing.xl),
@@ -187,25 +192,11 @@ class _PlayerState extends ConsumerState<_Player> {
                 children: [
                   Expanded(child: _guideCard()),
                   const Gap.h(AppSpacing.md),
-                  Expanded(child: _aiRangerCard()),
+                  Expanded(child: _iSeeSomethingButton()),
                 ],
               ),
               const Gap.v(AppSpacing.xl),
               _upNext(upNext),
-              const Gap.v(AppSpacing.md),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () =>
-                      ref.read(radioSchedulerProvider).fireNow(),
-                  icon: const Icon(Icons.campaign_rounded,
-                      color: _RadioPalette.accent, size: 18),
-                  label: const Text('Test announcement',
-                      style: TextStyle(color: _RadioPalette.accent)),
-                ),
-              ),
-              const Gap.v(AppSpacing.md),
-              _volumeRow(),
             ],
           ),
         ),
@@ -213,17 +204,31 @@ class _PlayerState extends ConsumerState<_Player> {
     );
   }
 
-  Widget _hero() {
-    final url = widget.station.imageUrl;
+  Widget _hero({String? overrideImage, bool glowing = false}) {
+    final url = overrideImage ?? widget.station.imageUrl;
     return SizedBox(
       height: 320,
       child: Stack(
         fit: StackFit.expand,
         children: [
           if (url != null && url.isNotEmpty)
-            Image.network(url, fit: BoxFit.cover)
+            Image.network(url, key: ValueKey(url), fit: BoxFit.cover)
           else
             const ColoredBox(color: _RadioPalette.panel),
+          if (glowing)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: _RadioPalette.accent, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                        color: _RadioPalette.accent.withValues(alpha: 0.5),
+                        blurRadius: 24,
+                        spreadRadius: 1),
+                  ],
+                ),
+              ),
+            ),
           // Fade the bottom into the page background.
           const DecoratedBox(
             decoration: BoxDecoration(
@@ -259,14 +264,14 @@ class _PlayerState extends ConsumerState<_Player> {
                         text: const TextSpan(
                           children: [
                             TextSpan(
-                                text: 'EXPLORER',
+                                text: 'OCALA',
                                 style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 18,
                                     fontWeight: FontWeight.w800,
                                     letterSpacing: 1)),
                             TextSpan(
-                                text: 'OS',
+                                text: ' RADIO',
                                 style: TextStyle(
                                     color: _RadioPalette.accent,
                                     fontSize: 18,
@@ -458,44 +463,137 @@ class _PlayerState extends ConsumerState<_Player> {
     );
   }
 
-  Widget _aiRangerCard() {
+  Widget _iSeeSomethingButton() {
     return _panelCard(
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI Ranger — ask about the park (coming soon)')),
-      ),
+      onTap: () => showISeeSomething(context, ref),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: const [
-                Text('AI RANGER',
+                Text('DISCOVER',
                     style: TextStyle(
                         color: _RadioPalette.accent,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1)),
                 SizedBox(height: 2),
-                Text('Ask me anything\nabout the park!',
+                Text('I See\nSomething',
                     style: TextStyle(
                         color: _RadioPalette.textPrimary,
-                        fontSize: 13,
-                        height: 1.2)),
+                        fontSize: 15,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
           Container(
             width: 34,
             height: 34,
-            decoration: const BoxDecoration(
-              color: Color(0xFF2E9E6B),
+            decoration: BoxDecoration(
+              color: _RadioPalette.accent.withValues(alpha: 0.9),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.smart_toy_rounded,
+            child: const Icon(Icons.visibility_rounded,
                 color: Colors.white, size: 18),
           ),
         ],
       ),
+    );
+  }
+
+  /// The "NOW EXPLORING" panel shown while an observation is selected.
+  Widget _exploring(ObservationState obs) {
+    final s = obs.species!;
+    final controller = ref.read(observationControllerProvider.notifier);
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                  color: _RadioPalette.accent, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 8),
+            const Text('NOW EXPLORING',
+                style: TextStyle(
+                    color: _RadioPalette.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5)),
+          ],
+        ),
+        const Gap.v(AppSpacing.sm),
+        Text(s.commonName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: _RadioPalette.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w800)),
+        if (s.scientificName != null)
+          Text(s.scientificName!,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: _RadioPalette.textSecondary,
+                  fontStyle: FontStyle.italic)),
+        const Gap.v(AppSpacing.md),
+        if (obs.narrating)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const _Equalizer(),
+              const SizedBox(width: 10),
+              const Icon(Icons.mic_rounded,
+                  color: _RadioPalette.accent, size: 16),
+              const SizedBox(width: 4),
+              const Text('Narrating…',
+                  style: TextStyle(color: _RadioPalette.textSecondary)),
+              const Spacer(),
+              TextButton(
+                  onPressed: controller.stop,
+                  child: const Text('Stop',
+                      style: TextStyle(color: _RadioPalette.accent))),
+            ],
+          )
+        else ...[
+          const Text('You may also like:',
+              style: TextStyle(color: _RadioPalette.textSecondary, fontSize: 12)),
+          const Gap.v(AppSpacing.sm),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final c in const [
+                'Similar species',
+                'Calls & sounds',
+                'Nearby sightings',
+                'Habitat',
+                'Conservation'
+              ])
+                Chip(
+                  label: Text(c, style: const TextStyle(fontSize: 12)),
+                  backgroundColor: _RadioPalette.panel,
+                  side: BorderSide(
+                      color: _RadioPalette.accent.withValues(alpha: 0.4)),
+                  labelStyle: const TextStyle(color: _RadioPalette.textPrimary),
+                ),
+            ],
+          ),
+          const Gap.v(AppSpacing.sm),
+          TextButton.icon(
+            onPressed: controller.clear,
+            icon: const Icon(Icons.radio_rounded,
+                color: _RadioPalette.accent, size: 18),
+            label: const Text('Back to radio',
+                style: TextStyle(color: _RadioPalette.accent)),
+          ),
+        ],
+      ],
     );
   }
 
@@ -602,32 +700,56 @@ class _PlayerState extends ConsumerState<_Player> {
     );
   }
 
-  Widget _volumeRow() {
-    return Row(
-      children: [
-        const Icon(Icons.volume_down_rounded,
-            color: _RadioPalette.textSecondary, size: 22),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: _RadioPalette.accent,
-              inactiveTrackColor: _RadioPalette.panelAlt,
-              thumbColor: Colors.white,
-              trackHeight: 4,
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Slider(
-              value: _volume,
-              onChanged: (v) {
-                setState(() => _volume = v);
-                ref.read(radioEngineServiceProvider).setVolume(v);
-              },
-            ),
-          ),
-        ),
-        const Icon(Icons.volume_up_rounded,
-            color: _RadioPalette.textSecondary, size: 22),
-      ],
+}
+
+/// Animated equalizer bars shown while narrating.
+class _Equalizer extends StatefulWidget {
+  const _Equalizer();
+  @override
+  State<_Equalizer> createState() => _EqualizerState();
+}
+
+class _EqualizerState extends State<_Equalizer>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 700))
+    ..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        double h(int i) {
+          final phase = (_c.value + i * 0.28) % 1.0;
+          return 6 + (phase < 0.5 ? phase : 1 - phase) * 24;
+        }
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (var i = 0; i < 4; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                child: Container(
+                  width: 4,
+                  height: h(i),
+                  decoration: BoxDecoration(
+                    color: _RadioPalette.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
