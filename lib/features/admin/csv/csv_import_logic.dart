@@ -93,6 +93,7 @@ List<CsvTarget> buildCsvTargets() => [
       const CsvTarget(
         label: 'Points of Interest',
         table: 'map_locations',
+        note: 'Requires a `map_locations` table (run migration 0009).',
         columns: [
           CsvCol('name', 'Name', required: true),
           CsvCol('category', 'Category'),
@@ -114,7 +115,13 @@ List<CsvTarget> buildCsvTargets() => [
           CsvCol('full_story', 'Full story'),
           CsvCol('voice_script', 'Voice script'),
         ],
-        defaults: {'destination_id': _ocalaDest, 'published': true},
+        // story_category is NOT NULL with no DB default → always provide one
+        // (a mapped CSV value overrides this).
+        defaults: {
+          'destination_id': _ocalaDest,
+          'published': true,
+          'story_category': 'history',
+        },
       ),
       const CsvTarget(
         label: 'Historical Events',

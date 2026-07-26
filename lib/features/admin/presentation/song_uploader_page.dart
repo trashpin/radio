@@ -108,7 +108,13 @@ class SongUploaderPage extends ConsumerWidget {
               onPressed: () async {
                 final ok = await showDialog<bool>(
                     context: context, builder: (_) => const _SongDialog());
-                if (ok == true) ref.invalidate(radioSongsProvider);
+                if (ok == true) {
+                  ref.invalidate(radioSongsProvider);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Song saved — it will appear below.')));
+                  }
+                }
               },
               style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 44),

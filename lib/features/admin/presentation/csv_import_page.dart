@@ -137,12 +137,50 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
 
   bool get _requiredMapped => requiredMapped(_target, _mapping);
 
+  // Columns dropped mid-import because the table doesn't have them (schema
+  // drift, e.g. `match_key` before migration 0006). Tracked so we don't fail
+  // the whole import over an optional column.
+  final Set<String> _droppedColumns = {};
+
+  static String? _missingColumn(String message) =>
+      RegExp(r"Could not find the '([^']+)' column").firstMatch(message)?.group(1);
+
+  Map<String, dynamic> _stripDropped(Map<String, dynamic> rec) {
+    if (_droppedColumns.isEmpty) return rec;
+    final m = Map<String, dynamic>.from(rec);
+    for (final c in _droppedColumns) {
+      m.remove(c);
+    }
+    return m;
+  }
+
+  /// Inserts records, and if the table is missing a (non-required) column, drops
+  /// that column and retries so the rest of the data still saves.
+  Future<void> _insertResilient(List<Map<String, dynamic>> records) async {
+    final client = SupabaseService.client;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await client
+            .from(_target.table)
+            .insert(records.map(_stripDropped).toList());
+        return;
+      } catch (e) {
+        final col = _missingColumn('$e');
+        if (col != null && !_droppedColumns.contains(col)) {
+          _droppedColumns.add(col);
+          continue; // retry without that column
+        }
+        rethrow;
+      }
+    }
+  }
+
   Future<void> _import() async {
     setState(() {
       _importing = true;
       _resetResult();
+      _droppedColumns.clear();
     });
-    final client = SupabaseService.client;
     final valid = <Map<String, dynamic>>[];
     var invalid = 0;
     for (final r in _rows) {
@@ -157,18 +195,18 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
     for (var i = 0; i < valid.length; i += batch) {
       final chunk = valid.sublist(i, min(i + batch, valid.length));
       try {
-        await client.from(_target.table).insert(chunk);
+        await _insertResilient(chunk);
         _inserted += chunk.length;
       } catch (_) {
         // Retry row-by-row to isolate the failures.
         for (final rec in chunk) {
           try {
-            await client.from(_target.table).insert(rec);
+            await _insertResilient([rec]);
             _inserted++;
           } catch (e2) {
             _failed++;
             if (_errors.length < 20) {
-              _errors.add('Row "${rec.values.first}": $e2');
+              _errors.add('Row "${rec.values.first}": ${_friendly('$e2')}');
             }
           }
         }
@@ -181,8 +219,24 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
       if (invalid > 0) {
         _errors.insert(0, '$invalid row(s) skipped: missing required field(s).');
       }
+      if (_droppedColumns.isNotEmpty) {
+        _errors.insert(0,
+            'Note: your "${_target.table}" table has no ${_droppedColumns.join(", ")} '
+            'column, so that value was not saved (the rest imported fine).');
+      }
       _done = true;
     });
+  }
+
+  /// Turns common Postgres/PostgREST errors into a plain-English hint.
+  String _friendly(String raw) {
+    if (raw.contains('does not exist') || raw.contains('PGRST205')) {
+      return 'the "${_target.table}" table does not exist yet. $raw';
+    }
+    if (raw.contains('42501') || raw.contains('row-level security')) {
+      return 'permission denied — are you signed in to the admin? $raw';
+    }
+    return raw;
   }
 
   @override

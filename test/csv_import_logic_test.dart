@@ -82,6 +82,8 @@ void main() {
     expect(rec!['story_id'], 'fixed-uuid');
     expect(rec['title'], 'The Springs of Ocala');
     expect(rec['published'], true);
+    // story_category is NOT NULL in the DB → must always be set.
+    expect(rec['story_category'], 'history');
   });
 
   test('requiredMapped reflects whether required columns are mapped', () {
