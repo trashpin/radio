@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -40,6 +41,7 @@ class ContentConfig {
     this.audioBucket,
     this.audioColumn,
     this.orderBy = 'created_at',
+    this.generatedIdColumn,
   });
   final String table;
   final String title;
@@ -51,6 +53,21 @@ class ContentConfig {
   final String? audioBucket; // e.g. 'voiceovers'
   final String? audioColumn; // e.g. 'audio_url'
   final String orderBy;
+
+  /// PK column that has no DB default and must be supplied (e.g. stories.story_id).
+  final String? generatedIdColumn;
+}
+
+/// Random v4 UUID for tables whose PK lacks a default.
+String _uuidV4() {
+  final r = Random.secure();
+  final b = List<int>.generate(16, (_) => r.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).toList();
+  return '${h.sublist(0, 4).join()}-${h.sublist(4, 6).join()}-'
+      '${h.sublist(6, 8).join()}-${h.sublist(8, 10).join()}-'
+      '${h.sublist(10, 16).join()}';
 }
 
 /// A reusable admin page: list rows of [config.table] + an "Add" dialog that
@@ -217,6 +234,7 @@ class _EditDialogState extends State<_EditDialog> {
     try {
       final client = SupabaseService.client;
       final row = <String, dynamic>{...c.defaults};
+      if (c.generatedIdColumn != null) row[c.generatedIdColumn!] = _uuidV4();
       for (final f in c.fields) {
         final v = f.options != null
             ? _values[f.key]
@@ -399,6 +417,7 @@ const storiesConfig = ContentConfig(
   titleColumn: 'title',
   subtitleColumns: ['story_category'],
   defaults: {'destination_id': _ocalaDest, 'published': true},
+  generatedIdColumn: 'story_id',
   fields: [
     FieldSpec('title', 'Title', required: true),
     FieldSpec('story_category', 'Category', options: [
