@@ -34,6 +34,7 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
   late CsvTarget _target = _targets.first;
 
   String? _fileName;
+  String? _loadNote; // visible feedback about the last file pick/parse
   List<String> _headers = const [];
   List<List<String>> _rows = const []; // data rows (no header)
   Map<String, String?> _mapping = {}; // DB column key -> CSV header (or null)
@@ -72,15 +73,26 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
   }
 
   Future<void> _pickCsv() async {
-    final res = await FilePicker.platform.pickFiles(
-      withData: true,
-      type: FileType.custom,
-      allowedExtensions: const ['csv', 'txt'],
-    );
-    if (res == null || res.files.isEmpty) return;
+    FilePickerResult? res;
+    try {
+      // FileType.any (no extension filter) is the most robust on web/desktop —
+      // an extension filter can hide the file in the OS picker.
+      res = await FilePicker.platform.pickFiles(withData: true);
+    } catch (e) {
+      setState(() => _loadNote = 'Could not open the file picker: $e');
+      return;
+    }
+    if (res == null || res.files.isEmpty) {
+      setState(() => _loadNote = 'No file selected.');
+      return;
+    }
     final f = res.files.first;
     final bytes = f.bytes;
-    if (bytes == null) return;
+    if (bytes == null || bytes.isEmpty) {
+      setState(() => _loadNote =
+          'Could not read "${f.name}" (no data). Try re-selecting the file.');
+      return;
+    }
     _parse(bytes, f.name);
   }
 
@@ -95,6 +107,7 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
           _fileName = name;
           _headers = const [];
           _rows = const [];
+          _loadNote = 'No rows found in "$name". Is it a CSV with a header row?';
         });
         return;
       }
@@ -111,10 +124,12 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
         _rows = rows;
         _mapping = autoMapColumns(_headers, _target);
         _resetResult();
+        _loadNote = 'Loaded "$name": ${rows.length} rows, ${headers.length} columns.';
       });
     } catch (e) {
       setState(() {
         _fileName = name;
+        _loadNote = 'Could not parse "$name" as CSV: $e';
         _headers = const [];
         _rows = const [];
         _errors
@@ -301,6 +316,26 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                       style: theme.textTheme.bodySmall),
                 ],
               ]),
+              if (_loadNote != null) ...[
+                const Gap.v(AppSpacing.sm),
+                Row(children: [
+                  Icon(
+                      _headers.isEmpty
+                          ? Icons.error_outline_rounded
+                          : Icons.check_circle_rounded,
+                      size: 15,
+                      color: _headers.isEmpty
+                          ? theme.colorScheme.error
+                          : Colors.green),
+                  const SizedBox(width: 6),
+                  Expanded(
+                      child: Text(_loadNote!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: _headers.isEmpty
+                                  ? theme.colorScheme.error
+                                  : null))),
+                ]),
+              ],
             ],
           ),
         ),
