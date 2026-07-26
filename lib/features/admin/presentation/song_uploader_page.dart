@@ -29,7 +29,11 @@ Future<Mp3Tags> extractMp3Tags(Uint8List bytes) async {
     String? pick(String key) {
       for (final t in tags) {
         final v = t.tags[key];
-        if (v is String && v.trim().isNotEmpty) return v.trim();
+        if (v is String) {
+          // ID3 strings are often NUL-terminated/padded — strip control chars.
+          final cleaned = v.replaceAll(RegExp(r'[\x00-\x1f]'), '').trim();
+          if (cleaned.isNotEmpty) return cleaned;
+        }
       }
       return null;
     }
