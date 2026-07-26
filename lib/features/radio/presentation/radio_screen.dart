@@ -192,7 +192,19 @@ class _PlayerState extends ConsumerState<_Player> {
               ),
               const Gap.v(AppSpacing.xl),
               _upNext(upNext),
-              const Gap.v(AppSpacing.xl),
+              const Gap.v(AppSpacing.md),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () =>
+                      ref.read(radioSchedulerProvider).fireNow(),
+                  icon: const Icon(Icons.campaign_rounded,
+                      color: _RadioPalette.accent, size: 18),
+                  label: const Text('Test announcement',
+                      style: TextStyle(color: _RadioPalette.accent)),
+                ),
+              ),
+              const Gap.v(AppSpacing.md),
               _volumeRow(),
             ],
           ),

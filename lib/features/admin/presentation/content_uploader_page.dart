@@ -418,6 +418,8 @@ const storiesConfig = ContentConfig(
   subtitleColumns: ['story_category'],
   defaults: {'destination_id': _ocalaDest, 'published': true},
   generatedIdColumn: 'story_id',
+  audioBucket: 'voiceovers',
+  audioColumn: 'audio_url',
   fields: [
     FieldSpec('title', 'Title', required: true),
     FieldSpec('story_category', 'Category', options: [

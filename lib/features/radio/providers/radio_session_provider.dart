@@ -86,13 +86,18 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
 /// announcements (safety/wildlife with audio) into the engine's interruption
 /// path. No-op until `radio_schedule` rules + voiceover audio exist.
 void _attachScheduler(Ref ref, RadioStation station) {
-  if (!SupabaseService.isConfigured) return;
-  final scheduler = RadioScheduler(
-    client: SupabaseService.client,
+  final scheduler = ref.read(radioSchedulerProvider);
+  scheduler.start(station: station.name);
+  ref.onDispose(scheduler.stop);
+}
+
+/// The programming scheduler (singleton). Exposed so the radio UI can trigger a
+/// "Test announcement" (fireNow) and so the session can start/stop it.
+final radioSchedulerProvider = Provider<RadioScheduler>((ref) {
+  return RadioScheduler(
+    client: SupabaseService.isConfigured ? SupabaseService.client : null,
     inject: (seg) => ref
         .read(radioEngineControllerProvider.notifier)
         .requestInterruption(seg),
   );
-  scheduler.start(station: station.name);
-  ref.onDispose(scheduler.stop);
-}
+});

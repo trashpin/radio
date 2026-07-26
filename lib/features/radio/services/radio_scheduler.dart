@@ -16,16 +16,20 @@ import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart'
 class RadioScheduler {
   RadioScheduler({required this.client, required this.inject});
 
-  final SupabaseClient client;
+  /// Null when Supabase isn't configured (e.g. preview) — scheduler no-ops.
+  final SupabaseClient? client;
   final void Function(AudioSegment segment) inject;
 
   Timer? _timer;
+  bool _loaded = false;
   final Map<String, DateTime> _lastFired = {};
   List<Map<String, dynamic>> _rules = const [];
   List<Map<String, dynamic>> _safety = const [];
   List<Map<String, dynamic>> _wildlife = const [];
+  List<Map<String, dynamic>> _stories = const [];
   int _safetyIdx = 0;
   int _wildlifeIdx = 0;
+  int _storyIdx = 0;
 
   Future<void> start({String? station, String? parkCode}) async {
     await reload(station: station, parkCode: parkCode);
@@ -33,31 +37,45 @@ class RadioScheduler {
     _timer = Timer.periodic(const Duration(seconds: 30), (_) => _tick());
   }
 
-  Future<void> reload({String? station, String? parkCode}) async {
+  Future<List<Map<String, dynamic>>> _tryLoad(String table,
+      {bool nullAudio = false}) async {
+    if (client == null) return const [];
     try {
-      _rules = ((await client
-              .from('radio_schedule')
+      var q = client!.from(table).select().eq('active', true);
+      if (nullAudio) q = q.not('audio_url', 'is', null);
+      return ((await q) as List).cast<Map<String, dynamic>>();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> reload({String? station, String? parkCode}) async {
+    if (client == null) return;
+    _rules = await _tryLoad('radio_schedule');
+    _safety = await _tryLoad('safety_messages', nullAudio: true);
+    _wildlife = await _tryLoad('wildlife_alerts', nullAudio: true);
+    // stories: published + has audio_url (column added in migration 0013).
+    try {
+      _stories = ((await client!
+              .from('stories')
               .select()
-              .eq('active', true)) as List)
-          .cast<Map<String, dynamic>>();
-      _safety = ((await client
-              .from('safety_messages')
-              .select()
-              .eq('active', true)
-              .not('audio_url', 'is', null)) as List)
-          .cast<Map<String, dynamic>>();
-      _wildlife = ((await client
-              .from('wildlife_alerts')
-              .select()
-              .eq('active', true)
+              .eq('published', true)
               .not('audio_url', 'is', null)) as List)
           .cast<Map<String, dynamic>>();
     } catch (_) {
-      // Tables/policies not present yet — scheduler stays idle.
-      _rules = const [];
-      _safety = const [];
-      _wildlife = const [];
+      _stories = const [];
     }
+    _loaded = true;
+  }
+
+  /// Immediately inject the next available announcement (for a "Test now"
+  /// button) — ignores cadence. Loads content on first use.
+  Future<void> fireNow() async {
+    if (!_loaded) await reload();
+    final seg = _segmentFor('safety') ??
+        _segmentFor('wildlife') ??
+        _segmentFor('story');
+    if (seg != null) inject(seg);
   }
 
   void _tick() {
@@ -105,6 +123,18 @@ class RadioScheduler {
           priority: PlaybackPriority.scheduledAnnouncement,
           audioUrl: m['audio_url'] as String?,
           interruptible: false,
+          resumeAfter: true,
+        );
+      case 'story':
+        if (_stories.isEmpty) return null;
+        final m = _stories[_storyIdx++ % _stories.length];
+        return AudioSegment(
+          id: 'story:${m['story_id'] ?? m['id']}',
+          title: (m['title'] ?? 'Story') as String,
+          type: AudioSegmentType.narration,
+          priority: PlaybackPriority.scheduledAnnouncement,
+          audioUrl: m['audio_url'] as String?,
+          interruptible: true,
           resumeAfter: true,
         );
       default:
