@@ -43,6 +43,12 @@ class JustAudioPlayerPort implements AudioPlayerPort {
 
   @override
   Future<void> play(String url) async {
+    // On web, calling setUrl while the player is actively playing does NOT
+    // reliably switch the underlying <audio> source — it keeps playing the
+    // previous track (and reports its stale duration). Stopping first forces
+    // the element to release the old source and load the new one, so
+    // interruptions (e.g. narration over music) actually swap the audio.
+    await _player.stop();
     await _player.setUrl(url);
     await _player.play();
   }
