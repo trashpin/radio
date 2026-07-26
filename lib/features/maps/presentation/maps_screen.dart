@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
+import 'package:explorer_os_mobile/features/maps/providers/map_places_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
@@ -50,8 +51,11 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   BitmapDescriptor? _pinIcon;
   BitmapDescriptor? _sightingIcon;
   BitmapDescriptor? _locationIcon;
+  BitmapDescriptor? _poiIcon;
+  BitmapDescriptor? _campIcon;
   final Map<String, BitmapDescriptor> _categoryIcons = {};
   bool _centerInitialized = false;
+  bool _fittedPlaces = false; // auto-fit bounds to places once
 
   // Explorer Mode + simulated drive + GPS story triggers.
   bool _explorerMode = true;
@@ -179,8 +183,16 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     _buildIcons();
   }
 
-  BitmapDescriptor _iconFor(String category) =>
-      _categoryIcons[category] ??
+  /// Icon for a place category. Campgrounds get the cabin icon; unknown/POI
+  /// categories get a distinct orange place pin (never a blank default).
+  BitmapDescriptor _iconFor(String category) {
+    if (category == 'campgrounds') {
+      return _campIcon ?? _categoryIcons['campgrounds'] ?? _fallbackPin;
+    }
+    return _categoryIcons[category] ?? _poiIcon ?? _fallbackPin;
+  }
+
+  static final BitmapDescriptor _fallbackPin =
       BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
 
   /// Renders circular icon markers to bitmaps (green = parks, blue = locations,
@@ -193,6 +205,11 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           Icons.place_rounded, const Color(0xFF3F8FD0));
       final sighting = await _circleIconMarker(
           Icons.visibility_rounded, _MapPalette.gold);
+      // Distinct icons for the two always-on place types (requirement #9).
+      final poi = await _circleIconMarker(
+          Icons.place_rounded, const Color(0xFFEE7B2E));
+      final camp = await _circleIconMarker(
+          Icons.cabin_rounded, const Color(0xFF7C8B3A));
       final cats = <String, BitmapDescriptor>{};
       for (final token in _nearbyCategoryTokens) {
         final style = nearbyStyle(token);
@@ -203,6 +220,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           _pinIcon = pin;
           _locationIcon = location;
           _sightingIcon = sighting;
+          _poiIcon = poi;
+          _campIcon = camp;
           _categoryIcons.addAll(cats);
         });
       }
@@ -372,6 +391,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final userLocation = ref.watch(mapCenterProvider);
     final hits = ref.watch(nearbyItemsProvider);
     final radius = ref.watch(searchRadiusProvider);
+    // Always-on POI + campground markers (not gated by the search radius).
+    final places = ref.watch(mapPlacesProvider);
 
     final markers = <Marker>{
       if (layers.contains(MapLayer.parks))
@@ -402,15 +423,16 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                     BitmapDescriptor.hueOrange),
             onTap: () => _openSightingSheet(s),
           ),
-      // Real-time "Around Me" discovery markers (from map_locations), within
-      // the selected radius, one icon per category.
-      for (final hit in hits)
-        Marker(
-          markerId: MarkerId('nearby_${hit.item.id}'),
-          position: LatLng(hit.item.latitude, hit.item.longitude),
-          icon: _iconFor(hit.item.category),
-          onTap: () => _openNearbySheet(hit),
-        ),
+      // Points of Interest (map_locations) + Campgrounds — every valid record,
+      // always visible (not radius-filtered), each with its own icon.
+      if (layers.contains(MapLayer.locations))
+        for (final p in places)
+          Marker(
+            markerId: MarkerId('place_${p.id}'),
+            position: LatLng(p.latitude, p.longitude),
+            icon: _iconFor(p.category),
+            onTap: () => _openPlaceSheet(p),
+          ),
       // User location (blue dot).
       if (userLocation != null)
         Marker(
@@ -421,6 +443,22 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           infoWindow: const InfoWindow(title: 'You are here'),
         ),
     };
+
+    debugPrint('[Map] markers built: ${markers.length} '
+        '(places/POI+campgrounds=${places.length}, parks=${mappable.length}, '
+        'stops=${stops.length}, sightings=${sightings.length})');
+
+    // Auto-fit the camera once so every place/park marker is in view, even if
+    // records sit outside the initial viewport (requirement #7/#8).
+    if (!_fittedPlaces && _controller != null) {
+      final pts = <LatLng>[
+        for (final p in places) LatLng(p.latitude, p.longitude),
+        for (final d in mappable) LatLng(d.latitude!, d.longitude!),
+      ];
+      if (pts.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFitBounds(pts));
+      }
+    }
 
     // Park boundaries (approximate circles until real polygons/geojson exist).
     final circles = <Circle>{
@@ -467,7 +505,12 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
-                  onMapCreated: (c) => _controller = c,
+                  onMapCreated: (c) {
+                    _controller = c;
+                    // Trigger a rebuild so the auto-fit block runs now that the
+                    // controller exists.
+                    if (mounted) setState(() {});
+                  },
                 ),
                 _controls(initialTarget, userLocation),
                 _layerChips(layers),
@@ -637,6 +680,51 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         },
       ),
     );
+  }
+
+  /// Detail sheet for an always-on place marker (POI / campground).
+  void _openPlaceSheet(NearbyItem item) {
+    final style = nearbyStyle(item.category);
+    _showDetail(
+      title: item.name,
+      subtitle: item.description ?? style.group,
+      imageUrl: item.imageUrl,
+      icon: style.icon,
+      color: style.color,
+      actions: [_nearbyActionRow()],
+    );
+  }
+
+  /// Fit the camera to include all provided points (extends bounds so markers
+  /// outside the current viewport become visible). Runs once.
+  void _maybeFitBounds(List<LatLng> pts) {
+    if (_fittedPlaces || _controller == null || pts.isEmpty) return;
+    _fittedPlaces = true;
+    if (pts.length == 1) {
+      _controller!.animateCamera(CameraUpdate.newLatLngZoom(pts.first, 13));
+      return;
+    }
+    var minLat = pts.first.latitude, maxLat = pts.first.latitude;
+    var minLng = pts.first.longitude, maxLng = pts.first.longitude;
+    for (final p in pts) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+    // Degenerate (all points nearly identical) → just zoom to it.
+    if ((maxLat - minLat).abs() < 0.0008 && (maxLng - minLng).abs() < 0.0008) {
+      _controller!
+          .animateCamera(CameraUpdate.newLatLngZoom(pts.first, 13));
+      return;
+    }
+    _controller!.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      ),
+      64,
+    ));
   }
 
   void _openNearbySheet(NearbyHit hit) {

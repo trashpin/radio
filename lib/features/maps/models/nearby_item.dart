@@ -36,9 +36,10 @@ class NearbyItem implements Model {
   factory NearbyItem.fromJson(Json json) => NearbyItem(
         id: (json['id'] ?? json['location_id'])?.toString() ?? '',
         category: (json['category'] ?? 'other') as String,
-        name: (json['name'] ?? '') as String,
-        latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
-        longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+        name: (json['name'] ?? json['title'] ?? '') as String,
+        // Accept latitude/longitude, lat/lng, lat/lon (numbers or strings).
+        latitude: _coord(json, const ['latitude', 'lat']) ?? 0,
+        longitude: _coord(json, const ['longitude', 'lng', 'lon', 'long']) ?? 0,
         subcategory: json['subcategory'] as String?,
         description: json['description'] as String?,
         imageUrl: (json['image_url'] ?? json['hero_image']) as String?,
@@ -46,6 +47,18 @@ class NearbyItem implements Model {
         parkCode: json['park_code'] as String?,
         featured: (json['featured'] ?? false) as bool,
       );
+
+  static double? _coord(Json json, List<String> keys) {
+    for (final k in keys) {
+      final v = json[k];
+      if (v is num) return v.toDouble();
+      if (v is String) {
+        final d = double.tryParse(v.trim());
+        if (d != null) return d;
+      }
+    }
+    return null;
+  }
 }
 
 /// A nearby item paired with its distance (meters) from the user.
