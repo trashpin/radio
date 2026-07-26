@@ -35,6 +35,81 @@ BanterSituation? _situationFor(String s) {
   return null;
 }
 
+/// Voices every radio_segments row that has a script but no audio, uploads the
+/// MP3 to voiceovers/segments/, and marks the row published with its audio_url.
+Future<void> _voiceSegments(HttpClient http, Map<String, String> sbh,
+    String url, String xi, bool dryRun) async {
+  final getReq = await http.getUrl(Uri.parse(
+      '$url/rest/v1/radio_segments?select=*&audio_url=is.null&script=not.is.null'));
+  sbh.forEach(getReq.headers.set);
+  final getRes = await getReq.close();
+  final body = await getRes.transform(utf8.decoder).join();
+  if (getRes.statusCode >= 300) {
+    stderr.writeln('load segments ${getRes.statusCode}: $body');
+    return;
+  }
+  final rows = (jsonDecode(body) as List).cast<Map<String, dynamic>>();
+  stdout.writeln('segments needing audio: ${rows.length}');
+  var ok = 0, fail = 0;
+  for (final r in rows) {
+    final id = r['id'].toString();
+    final script = (r['script'] ?? '').toString();
+    final voiceId = (r['voice_id'] ?? _defaultVoiceId).toString();
+    if (script.trim().isEmpty) continue;
+    if (dryRun) {
+      stdout.writeln('  [dry] ${r['title']}: "$script"');
+      continue;
+    }
+    try {
+      final ttsReq = await http.postUrl(Uri.parse(
+          'https://api.elevenlabs.io/v1/text-to-speech/$voiceId?output_format=mp3_44100_128'));
+      ttsReq.headers.set('xi-api-key', xi);
+      ttsReq.headers.set('accept', 'audio/mpeg');
+      ttsReq.headers.contentType = ContentType.json;
+      ttsReq.add(utf8.encode(
+          jsonEncode({'text': script, 'model_id': 'eleven_multilingual_v2'})));
+      final ttsRes = await ttsReq.close();
+      if (ttsRes.statusCode >= 300) {
+        throw 'ElevenLabs ${ttsRes.statusCode}';
+      }
+      final bytes = <int>[];
+      await for (final c in ttsRes) {
+        bytes.addAll(c);
+      }
+      final path = 'segments/$id.mp3';
+      final upReq =
+          await http.postUrl(Uri.parse('$url/storage/v1/object/$_bucket/$path'));
+      sbh.forEach(upReq.headers.set);
+      upReq.headers.set('x-upsert', 'true');
+      upReq.headers.contentType = ContentType('audio', 'mpeg');
+      upReq.add(bytes);
+      final upRes = await upReq.close();
+      await upRes.drain<void>();
+      if (upRes.statusCode >= 300) throw 'upload ${upRes.statusCode}';
+      final publicUrl = '$url/storage/v1/object/public/$_bucket/$path';
+
+      final patchReq = await http.openUrl(
+          'PATCH', Uri.parse('$url/rest/v1/radio_segments?id=eq.$id'));
+      sbh.forEach(patchReq.headers.set);
+      patchReq.headers.set('Prefer', 'return=minimal');
+      patchReq.headers.contentType = ContentType.json;
+      patchReq.add(utf8.encode(jsonEncode({
+        'audio_url': publicUrl,
+        'published': true,
+      })));
+      final patchRes = await patchReq.close();
+      await patchRes.drain<void>();
+      if (patchRes.statusCode >= 300) throw 'update ${patchRes.statusCode}';
+      ok++;
+      stdout.writeln('  ✓ ${r['title']} (${(bytes.length / 1024).round()} KB)');
+    } catch (e) {
+      fail++;
+      stderr.writeln('  ✗ ${r['title']}: $e');
+    }
+  }
+  stdout.writeln('\n=== Done (segments) ===  voiced: $ok  failed: $fail');
+}
+
 Future<void> main(List<String> args) async {
   final stationName = _arg(args, 'station', 'all');
   final station = _stationFor(stationName);
@@ -68,6 +143,14 @@ Future<void> main(List<String> args) async {
   final engine = BanterEngine();
   final http = HttpClient();
   final sbh = {'apikey': key, 'Authorization': 'Bearer $key'};
+
+  // Mode 2: voice admin-authored Radio Automation library segments (rows in
+  // radio_segments that have a script but no audio_url yet).
+  if (args.contains('--from-segments')) {
+    await _voiceSegments(http, sbh, url, xi, dryRun);
+    http.close(force: true);
+    return;
+  }
 
   stdout.writeln('DJ: $voiceName ($voiceId)  station: ${station.name}  '
       'situations: ${situations.map((s) => s.name).join(", ")}');

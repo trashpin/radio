@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
+import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
@@ -25,12 +26,16 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Attach the audio adapter (engine intent → real sound via just_audio).
   ref.read(radioAudioServiceProvider);
 
-  // Load any pre-generated DJ voice clips so the DJ speaks in-character between
-  // songs (falls back to TTS when none exist yet).
+  // Load pre-generated DJ voice clips (from dj_banter_clips) + published
+  // Radio Automation library segments that have audio, so the DJ speaks
+  // in-character between songs (falls back to TTS when none exist yet).
   try {
     final clips = await ref.read(djClipRepositoryProvider).all();
-    if (clips.isNotEmpty) {
-      ref.read(radioEngineServiceProvider).djBanter.setClips(clips);
+    final segmentClips =
+        await ref.read(radioAutomationRepositoryProvider).playableClips();
+    final all = [...clips, ...segmentClips];
+    if (all.isNotEmpty) {
+      ref.read(radioEngineServiceProvider).djBanter.setClips(all);
     }
   } catch (_) {}
 

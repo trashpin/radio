@@ -109,6 +109,12 @@ enum AdminModule {
       ready: true,
       description: 'DJ personalities + AI/template banter and song-intro '
           'generators so stations sound like a live FM station.'),
+  radioAutomation('Radio Automation', Icons.settings_input_antenna_rounded,
+      AdminGroup.audio,
+      ready: true,
+      description: 'Segment library (banter/IDs/intros/promos), scheduling '
+          'rules, voices, and templates — broadcast automation.',
+      table: 'radio_segments'),
   aiContent('AI Content', Icons.auto_awesome_rounded, AdminGroup.assets,
       description: 'Generate descriptions, stories, metadata.'),
   downloads('Downloads', Icons.download_rounded, AdminGroup.assets,
