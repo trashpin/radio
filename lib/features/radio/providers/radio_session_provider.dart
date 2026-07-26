@@ -6,8 +6,8 @@ import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
+import 'package:explorer_os_mobile/features/radio/repositories/song_repository.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
-import 'package:explorer_os_mobile/shared/models/song.dart';
 
 /// Bootstraps a listening session: attaches audio output, derives the active
 /// station from Base44 content (a destination that has audio `media`), loads
@@ -27,11 +27,17 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // If the user picked a station from the Stations screen, honor it; load its
   // audio from the linked destination's media (empty for curated stations
   // until they have content).
+  final songRepo = ref.read(songRepositoryProvider);
   final selected = ref.watch(selectedStationProvider);
   if (selected != null) {
-    final songs = selected.destinationId != null
-        ? await media.songsForDestination(selected.destinationId!)
-        : const <Song>[];
+    // Prefer dynamic songs uploaded via the admin (songs table), matched by
+    // station name; fall back to the linked destination's media, then any
+    // active songs so playback always has content.
+    var songs = await songRepo.activeSongs(station: selected.name);
+    if (songs.isEmpty && selected.destinationId != null) {
+      songs = await media.songsForDestination(selected.destinationId!);
+    }
+    if (songs.isEmpty) songs = await songRepo.activeSongs();
     ref
         .read(radioEngineServiceProvider)
         .changeStation(selected, songs: songs, autoPlay: false);
@@ -57,7 +63,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   );
 
   final station = RadioStation.fromDestination(destination);
-  final songs = await media.songsForDestination(destination.id);
+  // Dynamic playlist: prefer admin-uploaded songs (songs table), fall back to
+  // the destination's media audio.
+  var songs = await songRepo.activeSongs();
+  if (songs.isEmpty) songs = await media.songsForDestination(destination.id);
 
   ref
       .read(radioEngineServiceProvider)

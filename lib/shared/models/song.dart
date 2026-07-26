@@ -26,11 +26,15 @@ class Song implements Model {
 
   factory Song.fromJson(Json json) => Song(
         id: json['id']?.toString() ?? '',
-        stationId: json['station_id']?.toString() ?? '',
+        // The platform `songs` table uses `station` (name); older rows use
+        // `station_id`.
+        stationId: (json['station_id'] ?? json['station'])?.toString() ?? '',
         title: (json['title'] ?? '') as String,
         artist: json['artist'] as String?,
         album: json['album'] as String?,
         audioUrl: json['audio_url'] as String?,
-        durationSeconds: (json['duration_seconds'] as num?)?.toInt(),
+        // `songs` table column is `duration`; older rows use `duration_seconds`.
+        durationSeconds:
+            ((json['duration_seconds'] ?? json['duration']) as num?)?.toInt(),
       );
 }
