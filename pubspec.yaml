@@ -46,6 +46,7 @@ dependencies:
   google_maps_flutter: ^2.18.0
   flutter_tts: ^4.2.5
   file_picker: ^3.0.4
+  dart_tags: ^0.4.1
 
 dev_dependencies:
   flutter_test:

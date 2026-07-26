@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:dart_tags/dart_tags.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -123,6 +124,7 @@ class _SongDialogState extends State<_SongDialog> {
   String? _coverName;
   bool _saving = false;
   String? _error;
+  String? _tagInfo;
 
   @override
   void dispose() {
@@ -137,11 +139,66 @@ class _SongDialogState extends State<_SongDialog> {
   Future<void> _pickAudio() async {
     final r = await FilePicker.platform
         .pickFiles(type: FileType.audio, withData: true);
-    if (r != null && r.files.isNotEmpty) {
+    if (r == null || r.files.isEmpty) return;
+    final f = r.files.first;
+    setState(() {
+      _audioBytes = f.bytes;
+      _audioName = f.name;
+      _tagInfo = null;
+    });
+    if (f.bytes != null) await _readTags(f.bytes!, f.name);
+  }
+
+  /// Read ID3 tags from the picked MP3 and auto-fill Title/Artist/Album +
+  /// embedded cover art (fields the admin hasn't already set).
+  Future<void> _readTags(Uint8List bytes, String filename) async {
+    try {
+      final tags = await TagProcessor().getTagsFromByteArray(Future.value(bytes));
+      String? pick(String key) {
+        for (final t in tags) {
+          final v = t.tags[key];
+          if (v is String && v.trim().isNotEmpty) return v.trim();
+        }
+        return null;
+      }
+
+      final title = pick('title');
+      final artist = pick('artist');
+      final album = pick('album');
+      // Embedded artwork (APIC) → cover, if none chosen yet.
+      List<int>? art;
+      for (final t in tags) {
+        final pic = t.tags['picture'];
+        if (pic is Map && pic.isNotEmpty) {
+          final first = pic.values.first;
+          final data = (first as dynamic).imageData;
+          if (data is List<int> && data.isNotEmpty) {
+            art = data;
+            break;
+          }
+        }
+      }
       setState(() {
-        _audioBytes = r.files.first.bytes;
-        _audioName = r.files.first.name;
+        if (title != null && _title.text.trim().isEmpty) _title.text = title;
+        if (artist != null && _artist.text.trim().isEmpty) {
+          _artist.text = artist;
+        }
+        if (art != null && _coverBytes == null) {
+          _coverBytes = Uint8List.fromList(art);
+          _coverName = 'embedded.jpg';
+        }
+        final found = [
+          if (title != null) 'title',
+          if (artist != null) 'artist',
+          if (album != null) 'album',
+          if (art != null) 'artwork',
+        ];
+        _tagInfo = found.isEmpty
+            ? 'No ID3 tags found — enter details manually.'
+            : 'Auto-filled from MP3 tags: ${found.join(", ")}.';
       });
+    } catch (_) {
+      setState(() => _tagInfo = 'Could not read MP3 tags — enter manually.');
     }
   }
 
@@ -241,6 +298,28 @@ class _SongDialogState extends State<_SongDialog> {
                 label: Text(_coverName ?? 'Cover art'),
               ),
             ]),
+            if (_coverBytes != null) ...[
+              const Gap.v(AppSpacing.sm),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(_coverBytes!, height: 64, width: 64,
+                      fit: BoxFit.cover),
+                ),
+              ),
+            ],
+            if (_tagInfo != null) ...[
+              const Gap.v(AppSpacing.sm),
+              Row(children: [
+                const Icon(Icons.auto_awesome_rounded,
+                    size: 14, color: Colors.teal),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: Text(_tagInfo!,
+                        style: Theme.of(context).textTheme.bodySmall)),
+              ]),
+            ],
             if (_error != null) ...[
               const Gap.v(AppSpacing.md),
               Text(_error!,
