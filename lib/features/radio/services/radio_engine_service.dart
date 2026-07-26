@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dar
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
+import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/history_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/music_scheduler.dart';
@@ -53,9 +54,11 @@ class RadioEngineService {
     AudioFocusManager? audioFocus,
     OfflinePlaybackService? offline,
     StationIdentificationService? stationIds,
+    DjBanterScheduler? djBanter,
   })  : audioFocus = audioFocus ?? AudioFocusManager(),
         offline = offline ?? OfflinePlaybackService(),
-        stationIds = stationIds ?? StationIdentificationService();
+        stationIds = stationIds ?? StationIdentificationService(),
+        djBanter = djBanter ?? DjBanterScheduler();
 
   final QueueManagerService queue;
   final PlaybackController playback;
@@ -69,6 +72,7 @@ class RadioEngineService {
   final AudioFocusManager audioFocus;
   final OfflinePlaybackService offline;
   final StationIdentificationService stationIds;
+  final DjBanterScheduler djBanter;
 
   final StreamController<RadioEvent> _events =
       StreamController<RadioEvent>.broadcast();
@@ -135,7 +139,7 @@ class RadioEngineService {
 
       // After a music track, schedulers may inject scheduled content.
       if (finished.segment.type == AudioSegmentType.music) {
-        _injectScheduledContent();
+        _injectScheduledContent(finished.segment);
       }
     }
 
@@ -277,7 +281,7 @@ class RadioEngineService {
 
   void dispose() => _events.close();
 
-  void _injectScheduledContent() {
+  void _injectScheduledContent(AudioSegment finishedMusic) {
     final due = <AudioSegment>[];
     if (preferences.narrationsEnabled) {
       final narration = stories.onMusicPlayed();
@@ -286,6 +290,13 @@ class RadioEngineService {
     if (preferences.announcementsEnabled) {
       final announcement = announcements.onMusicPlayed();
       if (announcement != null) due.add(announcement);
+    }
+    // DJ banter fills the space between songs when nothing else is scheduled,
+    // so the station sounds hosted rather than a bare playlist.
+    if (due.isEmpty) {
+      final banter = djBanter.onMusicPlayed(finishedMusic,
+          radioStationName: station.station?.name);
+      if (banter != null) due.add(banter);
     }
 
     for (final segment in due) {

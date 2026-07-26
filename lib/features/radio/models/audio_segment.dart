@@ -79,6 +79,7 @@ class AudioSegment {
     this.tags = const [],
     this.interruptible = true,
     this.resumeAfter = false,
+    this.spokenText,
   });
 
   final String id;
@@ -116,6 +117,12 @@ class AudioSegment {
   /// finishes (true for interruptions like alerts/narration/announcements).
   final bool resumeAfter;
 
+  /// Text to be SPOKEN via on-device TTS instead of playing an [audioUrl].
+  /// Used by dynamically-generated DJ banter (no pre-recorded clip). When set
+  /// (and [audioUrl] is null), the audio adapter speaks this and reports
+  /// completion when the speech ends.
+  final String? spokenText;
+
   AudioSegment copyWith({PlaybackPriority? priority}) => AudioSegment(
         id: id,
         title: title,
@@ -132,6 +139,7 @@ class AudioSegment {
         tags: tags,
         interruptible: interruptible,
         resumeAfter: resumeAfter,
+        spokenText: spokenText,
       );
 
   // --- Factories: map source content into normalized segments --------------
