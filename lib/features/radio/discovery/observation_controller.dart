@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:just_audio/just_audio.dart';
 
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
+import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
+import 'package:explorer_os_mobile/features/narration/data/narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/services/narration_script_composer.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
@@ -16,16 +19,18 @@ class ObservationState {
   bool get active => species != null;
 }
 
-/// Drives the discovery experience: when the user selects an observation while
-/// the radio is playing, it **pauses the music** (interrupt), narrates the
-/// species aloud (composed tour-guide script via TTS), then **resumes the
-/// radio exactly where it left off**. A fallback timer guarantees the radio
-/// resumes even if the web TTS completion callback doesn't fire.
+/// Drives the discovery experience: selecting a subject **pauses the radio**,
+/// then narrates the species — preferring a **pre-generated recorded voiceover**
+/// (DJ Brittney / ElevenLabs, stored in `narrations`/`media`) and only falling
+/// back to on-device text-to-speech when no recording exists — then **resumes
+/// the radio** exactly where it left off.
 class ObservationController extends Notifier<ObservationState> {
   final FlutterTts _tts = FlutterTts();
+  final AudioPlayer _player = AudioPlayer();
   static const _composer = NarrationScriptComposer();
   bool _wired = false;
   bool _wasPlaying = false;
+  bool _suppress = false; // ignore player completion during teardown
   Timer? _fallback;
 
   @override
@@ -35,35 +40,63 @@ class ObservationController extends Notifier<ObservationState> {
     if (_wired) return;
     _wired = true;
     _tts.setCompletionHandler(_finish);
-    _tts.setCancelHandler(_finish);
     _tts.setErrorHandler((_) => _finish());
+    _player.playerStateStream.listen((st) {
+      if (!_suppress && st.processingState == ProcessingState.completed) {
+        _finish();
+      }
+    });
   }
 
   Future<void> observe(Species s) async {
     _wire();
+    await _teardownAudio(); // stop any current narration without resuming
     _fallback?.cancel();
 
-    // Interrupt the radio: remember whether it was playing, then pause it so
-    // the narration is clearly audible.
     final controller = ref.read(radioEngineControllerProvider.notifier);
-    _wasPlaying =
-        ref.read(radioEngineControllerProvider).status == PlaybackStatus.playing;
+    if (!state.narrating) {
+      _wasPlaying = ref.read(radioEngineControllerProvider).status ==
+          PlaybackStatus.playing;
+    }
     if (_wasPlaying) controller.pause();
-
     state = ObservationState(species: s, narrating: true);
 
+    // Prefer a recorded voiceover; else speak a composed script.
+    final url = await _narrationUrl(s);
+    if (url != null && url.isNotEmpty) {
+      try {
+        _suppress = false;
+        await _player.setUrl(url);
+        await _player.play(); // completion listener resumes the radio
+        return;
+      } catch (_) {/* fall through to TTS */}
+    }
+    await _speak(s);
+  }
+
+  Future<String?> _narrationUrl(Species s) async {
+    // 1. Approved narration with audio (narrations table).
+    try {
+      final n = await ref.read(narrationRepositoryProvider).bestForContent(s.id);
+      if (n?.audioUrl != null && n!.audioUrl!.isNotEmpty) return n.audioUrl;
+    } catch (_) {}
+    // 2. Linked media audio (the DJ Brittney species voiceovers).
+    try {
+      return await ref.read(mediaRepositoryProvider).narrationUrlForSpecies(s.id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _speak(Species s) async {
     final script = _composer.composeForSpecies(s);
     try {
       await _tts.awaitSpeakCompletion(true);
       await _tts.setSpeechRate(0.45);
       await _tts.setPitch(1.0);
-    } catch (_) {/* optional tuning */}
-
-    // Safety net: resume the radio after the estimated duration even if the
-    // TTS completion callback never arrives (a known web flakiness).
+    } catch (_) {}
     final secs = _composer.estimateSeconds(script).clamp(20, 180);
     _fallback = Timer(Duration(seconds: secs + 6), _finish);
-
     try {
       await _tts.speak(script);
     } catch (_) {
@@ -71,10 +104,21 @@ class ObservationController extends Notifier<ObservationState> {
     }
   }
 
+  Future<void> _teardownAudio() async {
+    _suppress = true;
+    try {
+      await _player.stop();
+    } catch (_) {}
+    try {
+      await _tts.stop();
+    } catch (_) {}
+    _fallback?.cancel();
+    _suppress = false;
+  }
+
   void _finish() {
     _fallback?.cancel();
     _fallback = null;
-    // Resume the radio exactly where it left off.
     if (_wasPlaying) {
       try {
         ref.read(radioEngineControllerProvider.notifier).resume();
@@ -88,9 +132,7 @@ class ObservationController extends Notifier<ObservationState> {
 
   /// Stop narration early (keeps the observation on screen for follow-up chips).
   Future<void> stop() async {
-    try {
-      await _tts.stop();
-    } catch (_) {}
+    await _teardownAudio();
     _finish();
   }
 
