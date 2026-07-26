@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
+import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
@@ -23,6 +24,15 @@ import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Attach the audio adapter (engine intent → real sound via just_audio).
   ref.read(radioAudioServiceProvider);
+
+  // Load any pre-generated DJ voice clips so the DJ speaks in-character between
+  // songs (falls back to TTS when none exist yet).
+  try {
+    final clips = await ref.read(djClipRepositoryProvider).all();
+    if (clips.isNotEmpty) {
+      ref.read(radioEngineServiceProvider).djBanter.setClips(clips);
+    }
+  } catch (_) {}
 
   final media = ref.read(mediaRepositoryProvider);
 
