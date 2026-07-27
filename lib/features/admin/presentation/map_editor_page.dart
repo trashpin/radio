@@ -31,6 +31,7 @@ const _cats = <String, _Cat>{
   'springs': _Cat('Springs', Color(0xFF00ACC1), BitmapDescriptor.hueCyan, 120),
   'scenic_overlooks':
       _Cat('Scenic Overlooks', Color(0xFF2E7D32), BitmapDescriptor.hueGreen, 122),
+  'cities': _Cat('Cities', Color(0xFF3949AB), BitmapDescriptor.hueBlue, 100),
   'poi': _Cat('Other', Color(0xFF9E9E9E), BitmapDescriptor.hueRose, 100),
 };
 _Cat _catOf(String c) => _cats[c] ?? _cats['poi']!;
@@ -45,6 +46,7 @@ class MapEditorPage extends ConsumerStatefulWidget {
 class _MapEditorPageState extends ConsumerState<MapEditorPage> {
   final List<MapPoi> _pois = [];
   bool _seeded = false;
+  bool _fitted = false;
   GoogleMapController? _map;
   MapPoi? _selected;
   final Set<String> _filter = {};
@@ -130,6 +132,33 @@ class _MapEditorPageState extends ConsumerState<MapEditorPage> {
     });
   }
 
+  /// Fit the camera to all loaded POIs once, so markers spread across the state
+  /// (not just near Ocala) are visible instead of off-screen.
+  void _fitToPois() {
+    if (_fitted || _map == null || _pois.isEmpty) return;
+    _fitted = true;
+    if (_pois.length == 1) {
+      _map!.animateCamera(CameraUpdate.newLatLngZoom(
+          LatLng(_pois.first.latitude, _pois.first.longitude), 12));
+      return;
+    }
+    var minLat = _pois.first.latitude, maxLat = _pois.first.latitude;
+    var minLng = _pois.first.longitude, maxLng = _pois.first.longitude;
+    for (final p in _pois) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    _map!.animateCamera(CameraUpdate.newLatLngBounds(
+      LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      ),
+      64,
+    ));
+  }
+
   void _search() {
     final q = _searchCtrl.text.trim().toLowerCase();
     if (q.isEmpty) return;
@@ -147,6 +176,7 @@ class _MapEditorPageState extends ConsumerState<MapEditorPage> {
     if (!_seeded && async.hasValue) {
       _seeded = true;
       _pois.addAll(async.value!);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitToPois());
     }
 
     final markers = <Marker>{
@@ -185,7 +215,11 @@ class _MapEditorPageState extends ConsumerState<MapEditorPage> {
                 circles: circles,
                 mapType: MapType.hybrid,
                 zoomControlsEnabled: false,
-                onMapCreated: (c) => _map = c,
+                onMapCreated: (c) {
+                  _map = c;
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _fitToPois());
+                },
                 onTap: _addMode ? _addAt : null,
               ),
               if (_addMode)

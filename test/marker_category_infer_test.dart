@@ -34,10 +34,21 @@ void main() {
     expect(infer(null, 'Salt Springs Overlook'), 'scenic_overlooks');
   });
 
-  test('unknown/empty falls back to other', () {
+  test('empty is other; parks/natural areas stay other', () {
     expect(infer(null, null), 'other');
     expect(infer('', ''), 'other');
-    expect(infer('poi', 'Woody Truck Sales'), 'other');
+    expect(infer(null, 'Bulow Creek State Park'), 'other');
+    expect(infer(null, 'Cedar Key Scrub State Reserve'), 'other');
+    expect(infer(null, 'Dagny Johnson Key Largo Hammock Botanical State Park'),
+        'other');
+  });
+
+  test('bare place names are treated as cities', () {
+    expect(infer(null, 'Ocala'), 'cities');
+    expect(infer(null, 'Dunnellon'), 'cities');
+    expect(infer('city', 'Anywhere'), 'cities');
+    // A park name is NOT a city.
+    expect(infer(null, 'Colt Creek State Park'), 'other');
   });
 
   test('every result is a valid legend key', () {

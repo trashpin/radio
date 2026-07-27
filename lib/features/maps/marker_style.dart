@@ -32,6 +32,8 @@ const _springs = MarkerCategoryStyle(
     'springs', 'Springs', Color(0xFF00ACC1), Icons.water_drop_rounded);
 const _scenic = MarkerCategoryStyle('scenic_overlooks', 'Scenic Overlooks',
     Color(0xFF2E7D32), Icons.landscape_rounded);
+const _cities = MarkerCategoryStyle(
+    'cities', 'Cities', Color(0xFF3949AB), Icons.location_city_rounded);
 const _other =
     MarkerCategoryStyle('other', 'Other', Color(0xFF9E9E9E), Icons.place_rounded);
 
@@ -50,6 +52,7 @@ const markerLegend = <MarkerCategoryStyle>[
   _parking,
   _springs,
   _scenic,
+  _cities,
   _other,
 ];
 

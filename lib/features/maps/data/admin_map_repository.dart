@@ -21,7 +21,27 @@ class AdminMapRepository {
         .select()
         .eq('park_code', parkCode)
         .order('name') as List;
-    return rows.map((r) => MapPoi.fromJson(r)).toList(growable: false);
+    return _parse(rows);
+  }
+
+  /// All POIs (every park). Used by the Map Editor so nothing is hidden by a
+  /// park_code filter.
+  Future<List<MapPoi>> all() async {
+    final rows =
+        await _client.from(_table).select().order('name') as List;
+    return _parse(rows);
+  }
+
+  /// Maps rows to POIs, skipping any without valid numeric coordinates (so one
+  /// bad row never blanks the whole map).
+  List<MapPoi> _parse(List rows) {
+    final out = <MapPoi>[];
+    for (final r in rows) {
+      final lat = r['latitude'], lng = r['longitude'];
+      if (lat is! num || lng is! num) continue;
+      out.add(MapPoi.fromJson(r as Map<String, dynamic>));
+    }
+    return out;
   }
 
   /// Insert (no id) or update (has id). Returns the saved row.
@@ -51,11 +71,11 @@ final adminMapRepositoryProvider = Provider<AdminMapRepository>((ref) {
   return AdminMapRepository(ref.watch(supabaseClientProvider));
 });
 
-/// POIs for the Map Editor (default park: Ocala). Overridden with seed data in
-/// the demo entrypoint; reads live `map_locations` in production.
+/// POIs for the Map Editor — every `map_locations` row (not filtered by park),
+/// so nothing is hidden. Rows without valid coordinates are skipped.
 final mapEditorPoisProvider = FutureProvider<List<MapPoi>>((ref) async {
   try {
-    return await ref.watch(adminMapRepositoryProvider).byPark('ocala');
+    return await ref.watch(adminMapRepositoryProvider).all();
   } catch (_) {
     return const <MapPoi>[];
   }

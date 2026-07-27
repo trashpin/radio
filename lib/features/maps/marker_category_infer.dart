@@ -18,7 +18,27 @@ const markerCategoryKeys = <String>[
   'parking',
   'springs',
   'scenic_overlooks',
+  'cities',
   'other',
+];
+
+/// Words that mark a park / natural area (kept as 'other', never 'cities').
+const _parkWords = <String>[
+  'state park',
+  'national park',
+  'state reserve',
+  'state forest',
+  'national forest',
+  'recreation area',
+  'archaeological',
+  'botanical',
+  'hammock',
+  'wilderness',
+  'wildlife management',
+  'scrub',
+  'reserve',
+  ' park',
+  ' forest',
 ];
 
 /// (keyword, legend key) rules in priority order. Specific facilities beat
@@ -81,6 +101,9 @@ const _exactTokens = <String, String>{
   'visitor_centers': 'visitor_centers',
   'visitor_center': 'visitor_centers',
   'ranger_stations': 'visitor_centers',
+  'cities': 'cities',
+  'city': 'cities',
+  'town': 'cities',
   'historic_sites': 'historic_sites',
   'historic_site': 'historic_sites',
   'wildlife_viewing': 'wildlife_viewing',
@@ -110,5 +133,10 @@ String inferCategoryKey(String? category, String? name, [String? subcategory]) {
   for (final (keyword, key) in _rules) {
     if (text.contains(keyword)) return key;
   }
-  return 'other';
+  // No feature keyword. Parks/natural areas stay 'other'; a bare place name
+  // (e.g. "Ocala", "Dunnellon") is treated as a city.
+  for (final w in _parkWords) {
+    if (text.contains(w)) return 'other';
+  }
+  return 'cities';
 }
