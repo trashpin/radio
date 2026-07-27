@@ -211,5 +211,47 @@ void main() {
           ['Blue Spring', 'FLSP9'], const {}, uuid: () => 'gen');
       expect(rec!['destination_id'], 'gen');
     });
+
+    test('slug + destination_code auto-generate from name when blank', () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'destination_type', 'state_province'];
+      final rec = buildRecord(
+          dest, headers, ['Blue Spring State Park', 'State Park', 'Florida'],
+          const {},
+          uuid: () => 'id');
+      expect(rec!['slug'], 'blue-spring-state-park');
+      // FL + SP + 4-digit hash.
+      expect(rec['destination_code'], matches(r'^FLSP\d{4}$'));
+    });
+
+    test('auto destination_code is deterministic (re-import safe for dedupe)',
+        () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'destination_type', 'state_province'];
+      final a = buildRecord(dest, headers,
+          ['Blue Spring State Park', 'State Park', 'Florida'], const {},
+          uuid: () => 'id');
+      final b = buildRecord(dest, headers,
+          ['Blue Spring State Park', 'State Park', 'Florida'], const {},
+          uuid: () => 'id2');
+      expect(a!['destination_code'], b!['destination_code']);
+    });
+
+    test('supplied slug / destination_code are kept', () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'slug', 'destination_code'];
+      final rec = buildRecord(dest, headers,
+          ['Blue Spring', 'my-slug', 'MYCODE1'], const {}, uuid: () => 'id');
+      expect(rec!['slug'], 'my-slug');
+      expect(rec['destination_code'], 'MYCODE1');
+    });
+
+    test('code prefixes cover key types', () {
+      expect(destinationTypePrefix('National Forest'), 'NF');
+      expect(destinationTypePrefix('Spring'), 'SPR');
+      expect(destinationTypePrefix('City'), 'CITY');
+      expect(stateAbbrev('Florida'), 'FL');
+      expect(stateAbbrev('Utah'), 'UT');
+    });
   });
 }

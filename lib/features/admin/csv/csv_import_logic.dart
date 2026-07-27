@@ -25,6 +25,7 @@ class CsvTarget {
     this.passthrough = false,
     this.upsertKey,
     this.autoUuidColumn,
+    this.autoSlugAndCode = false,
   });
 
   final String label;
@@ -41,6 +42,10 @@ class CsvTarget {
   /// importer generates a UUID before inserting (e.g. `destination_id`). A
   /// supplied value is kept as-is.
   final String? autoUuidColumn;
+
+  /// When true, blank `slug` and `destination_code` are generated from the row's
+  /// `name`/`destination_type`/`state_province` so neither needs manual entry.
+  final bool autoSlugAndCode;
 
   /// Direct-mapping mode: every CSV header is sent straight to the matching
   /// table column (by snake_cased header name) with no value validation and no
@@ -103,6 +108,7 @@ List<CsvTarget> buildCsvTargets() => [
         passthrough: true,
         upsertKey: 'destination_code',
         autoUuidColumn: 'destination_id',
+        autoSlugAndCode: true,
         note: 'Direct import: every column maps straight to the destinations '
             'table by name (values sent as-is, e.g. "USA", "State Park"). '
             'destination_id is OPTIONAL — a UUID is generated automatically when '
@@ -238,6 +244,88 @@ String? cellFor(List<String> headers, List<String> row, String? header) {
   return v.isEmpty ? null : v;
 }
 
+bool _blank(dynamic v) => v == null || v.toString().trim().isEmpty;
+
+/// Slugifies a name: lowercase, non-alphanumerics → hyphens, trimmed.
+String slugifyName(String name) => name
+    .toLowerCase()
+    .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+    .replaceAll(RegExp(r'^-+|-+$'), '');
+
+/// 2-letter USPS abbreviation for a state (fallback: first 2 letters).
+String stateAbbrev(String? state) {
+  const m = {
+    'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
+    'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
+    'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
+    'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
+    'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
+    'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
+    'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
+    'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+    'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
+    'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
+    'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
+    'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
+    'wisconsin': 'WI', 'wyoming': 'WY', 'district of columbia': 'DC',
+  };
+  final s = (state ?? '').toLowerCase().trim();
+  if (m.containsKey(s)) return m[s]!;
+  final letters = s.replaceAll(RegExp(r'[^a-z]'), '').toUpperCase();
+  return letters.isEmpty ? 'XX' : '${letters}XX'.substring(0, 2);
+}
+
+/// Short prefix for a destination type (matches the DB code family).
+String destinationTypePrefix(String? type) {
+  switch ((type ?? '').toLowerCase().trim()) {
+    case 'national park':
+      return 'NP';
+    case 'national forest':
+      return 'NF';
+    case 'state park':
+      return 'SP';
+    case 'state forest':
+      return 'SF';
+    case 'spring':
+    case 'springs':
+      return 'SPR';
+    case 'wildlife management area':
+      return 'WMA';
+    case 'scenic drive':
+      return 'DRIVE';
+    case 'historic site':
+    case 'historical site':
+      return 'HIST';
+    case 'museum':
+      return 'MUS';
+    case 'city':
+      return 'CITY';
+    case 'beach':
+      return 'BEACH';
+    case 'campground':
+      return 'CG';
+    case 'trailhead':
+      return 'TH';
+    case 'business':
+      return 'BIZ';
+    default:
+      return 'DEST';
+  }
+}
+
+/// Deterministic scalable code, e.g. FLSP4821 — {state}{type}{4-digit hash of the
+/// slug}. Deterministic on the name so re-importing the same row yields the same
+/// code (keeps destination_code dedupe stable even when the CSV omits it).
+String generateDestinationCode(String? name, String? type, String? state) {
+  final base = stateAbbrev(state) + destinationTypePrefix(type);
+  final slug = slugifyName(name ?? '');
+  var h = 0;
+  for (final c in slug.codeUnits) {
+    h = (h * 31 + c) & 0x7fffffff;
+  }
+  return '$base${(h % 10000).toString().padLeft(4, '0')}';
+}
+
 /// Snake_cases a CSV header into a database column name, e.g.
 /// "Destination Type" -> "destination_type", "State/Province" ->
 /// "state_province". Used by passthrough (direct-mapping) targets.
@@ -290,14 +378,24 @@ Map<String, dynamic>? buildRecord(
       rec[key] = val;
     }
     if (rec.isEmpty) return null;
+    // Auto-fill slug + destination_code from the name when blank, so the admin
+    // never has to type them (deterministic code keeps dedupe stable).
+    if (target.autoSlugAndCode) {
+      final name = (rec['name'] ?? '').toString();
+      if (name.isNotEmpty) {
+        if (_blank(rec['slug'])) rec['slug'] = slugifyName(name);
+        if (_blank(rec['destination_code'])) {
+          rec['destination_code'] = generateDestinationCode(
+              name, rec['destination_type']?.toString(),
+              rec['state_province']?.toString());
+        }
+      }
+    }
     // Never send NULL for the auto-UUID column: generate one when blank, keep a
     // supplied value as-is. The admin never has to create UUIDs by hand.
     final idCol = target.autoUuidColumn;
-    if (idCol != null) {
-      final v = rec[idCol];
-      if (v == null || v.toString().trim().isEmpty) {
-        rec[idCol] = (uuid ?? uuidV4)();
-      }
+    if (idCol != null && _blank(rec[idCol])) {
+      rec[idCol] = (uuid ?? uuidV4)();
     }
     return rec;
   }
