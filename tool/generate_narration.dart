@@ -135,8 +135,10 @@ Future<void> _run({
   required int maxVar,
   required bool dryRun,
 }) async {
+  // Keep the select to columns that exist regardless of migration 0020, so the
+  // tool works before/after the master-destination columns are added.
   final destRows = await get('destinations?name=eq.${Uri.encodeComponent(destName)}'
-      '&select=destination_id,description,destination_type,county,state_province&limit=1');
+      '&select=destination_id,description,destination_type,state_province&limit=1');
   if (destRows.isEmpty) {
     stderr.writeln('! destination not found: "$destName"');
     return;
@@ -219,10 +221,14 @@ Future<void> _run({
         final script = (v['script'] ?? '').toString();
         final words = wordCount(script);
         final others = [...scripts]..removeAt(i);
-        if (dryRun) {
-          stdout.writeln('  [dry] $type v${i + 1}: ${v['title']}');
-          continue;
-        }
+        final snippet =
+            script.length > 160 ? '${script.substring(0, 160)}…' : script;
+        stdout.writeln('    v${i + 1} "${v['title']}" '
+            '(${words}w ~${speakingSeconds(words)}s, '
+            'dup ${(maxDuplicateScore(script, others) * 100).round()}%, '
+            'read ${readabilityScore(script).round()})');
+        stdout.writeln('       $snippet');
+        if (dryRun) continue;
         await _insert(http, url, sbh, {
           'destination_id': destId,
           'script_type': type,
