@@ -11,15 +11,23 @@ class MasterDestinationRepository {
 
   Future<List<MasterDestination>> list() async {
     if (!SupabaseService.isConfigured) return const [];
+    // Order by name only on the server so the query works even before migration
+    // 0020 adds the `priority` column; sort by priority client-side.
     final rows = await SupabaseService.client
         .from('destinations')
         .select()
-        .order('priority', ascending: false)
         .order('name', ascending: true) as List;
-    return rows
+    final items = rows
         .cast<Map<String, dynamic>>()
         .map(MasterDestination.fromJson)
-        .toList(growable: false);
+        .toList();
+    items.sort((a, b) {
+      final byPriority = b.priority.compareTo(a.priority);
+      return byPriority != 0
+          ? byPriority
+          : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+    return items;
   }
 
   Future<void> setPublished(String id, bool value) => SupabaseService.client
