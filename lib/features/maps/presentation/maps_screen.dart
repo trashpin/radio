@@ -651,7 +651,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                 _layerChips(layers),
                 _radiusSelector(radius),
                 _explorerModeToggle(),
-                _aroundMeButton(hits.length),
+                if (_selection == null) _aroundMeButton(hits.length),
                 if (_banner != null) _bannerOverlay(),
                 if (_selection != null) _selectionCard(userLocation),
               ],
@@ -1087,10 +1087,13 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final distance = userLocation != null
         ? formatDistance(_metersBetween(userLocation, sel.position))
         : null;
+    // Sit above the shell's floating NavigationBar (extendBody makes the map
+    // flow underneath it): bar height (68) + its bottom padding + safe area.
+    final bottomInset = MediaQuery.of(context).padding.bottom + 68 + 24;
     return Positioned(
       left: AppSpacing.md,
       right: AppSpacing.md,
-      bottom: AppSpacing.md,
+      bottom: bottomInset,
       child: TweenAnimationBuilder<double>(
         key: ValueKey(sel.markerId),
         tween: Tween(begin: 0, end: 1),
@@ -1228,17 +1231,24 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
       Tooltip(
         message: tooltip,
         child: Material(
-          color: _MapPalette.bg,
+          color: Colors.white.withValues(alpha: 0.10),
           shape: RoundedRectangleBorder(
-              borderRadius: AppRadius.mdAll,
-              side: const BorderSide(color: Color(0xFF2E3A34))),
+            borderRadius: AppRadius.mdAll,
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.22)),
+          ),
           child: InkWell(
             borderRadius: AppRadius.mdAll,
             onTap: onTap,
-            child: SizedBox(
-              width: 46,
-              height: 42,
-              child: Icon(icon, size: 19, color: _MapPalette.textPrimary),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 52,
+                  height: 42,
+                  child: Icon(icon, size: 20, color: _MapPalette.textPrimary),
+                ),
+              ],
             ),
           ),
         ),

@@ -38,6 +38,11 @@
        raw key is never committed. Restrict it by HTTP referrer in Google Cloud
        Console. Requires the "Maps JavaScript API" enabled. -->
   <script src="https://maps.googleapis.com/maps/api/js?key=__GOOGLE_MAPS_API_KEY__"></script>
+  <!-- Marker clustering for the Map. Required by google_maps_flutter_web's
+       ClusterManager (it binds to the global `markerClusterer`); without this the
+       web map fails to initialize when a ClusterManager is present. Pinned to the
+       version the plugin supports. -->
+  <script src="https://cdn.jsdelivr.net/npm/@googlemaps/markerclusterer@2.5.3/dist/index.umd.min.js"></script>
 </head>
 <body>
   <!--
