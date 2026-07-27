@@ -57,6 +57,11 @@ enum AdminModule {
       description: 'AI story production: generate, review, voice, and '
           'GPS-trigger educational stories.',
       table: 'story_library'),
+  contentGenerator('Content Generator', Icons.hub_rounded, AdminGroup.content,
+      ready: true,
+      description: 'Master content engine: research destinations, build a '
+          'knowledge base, and queue story/audio jobs at scale.',
+      table: 'generation_jobs'),
 
   explorerRadio('Explorer Radio', Icons.podcasts_rounded, AdminGroup.audio,
       description: 'Stations, programs, playlists, announcements.',

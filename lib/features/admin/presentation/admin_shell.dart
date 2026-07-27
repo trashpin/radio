@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/content_generator_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
@@ -78,6 +79,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const RadioAutomationPage();
       case AdminModule.storyStudio:
         return const StoryStudioPage();
+      case AdminModule.contentGenerator:
+        return const ContentGeneratorPage();
       case AdminModule.mapEditor:
         return const MapEditorPage();
       case AdminModule.species:
