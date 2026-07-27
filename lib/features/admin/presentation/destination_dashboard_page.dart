@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/destination_narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/destinations/data/master_destination_repository.dart';
 import 'package:explorer_os_mobile/features/destinations/models/master_destination.dart';
@@ -304,6 +305,12 @@ class _DestinationCard extends ConsumerWidget {
               _ActionsMenu(
                 onJob: (job) => _launch(context, ref, job),
                 onTogglePublish: () => _togglePublish(context, ref),
+                onNarration: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        DestinationNarrationStudioPage(destination: d),
+                  ),
+                ),
                 published: d.published,
               ),
             ],
@@ -344,10 +351,12 @@ class _ActionsMenu extends StatelessWidget {
   const _ActionsMenu({
     required this.onJob,
     required this.onTogglePublish,
+    required this.onNarration,
     required this.published,
   });
   final void Function(DestinationAiJob) onJob;
   final VoidCallback onTogglePublish;
+  final VoidCallback onNarration;
   final bool published;
 
   @override
@@ -358,11 +367,21 @@ class _ActionsMenu extends StatelessWidget {
       onSelected: (v) {
         if (v == 'publish') {
           onTogglePublish();
+        } else if (v == 'narration') {
+          onNarration();
         } else {
           onJob(DestinationAiJob.values.firstWhere((j) => j.name == v));
         }
       },
       itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'narration',
+          child: Row(children: [
+            Icon(Icons.record_voice_over_rounded),
+            SizedBox(width: 10),
+            Text('Narration Studio'),
+          ]),
+        ),
         PopupMenuItem(
           value: 'publish',
           child: Row(children: [

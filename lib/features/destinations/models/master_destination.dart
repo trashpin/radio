@@ -40,6 +40,7 @@ class MasterDestination {
     this.city,
     this.region,
     this.managingAgency,
+    this.heroImage,
     this.latitude,
     this.longitude,
     this.published = false,
@@ -72,6 +73,7 @@ class MasterDestination {
   final String? city;
   final String? region;
   final String? managingAgency;
+  final String? heroImage;
   final double? latitude;
   final double? longitude;
   final bool published;
@@ -111,6 +113,7 @@ class MasterDestination {
       city: j['city'] as String?,
       region: j['region'] as String?,
       managingAgency: j['managing_agency'] as String?,
+      heroImage: (j['hero_image'] ?? j['image_url']) as String?,
       latitude: asDouble(j['latitude']),
       longitude: asDouble(j['longitude']),
       published: (j['published'] ?? false) as bool,
