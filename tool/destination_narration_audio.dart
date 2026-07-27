@@ -1,6 +1,7 @@
 // Narration audio generator: voices approved destination_narrations rows with
 // ElevenLabs, uploads the MP3 to the public `narration` bucket, and stores
-// audio_url + voice + duration_seconds, then marks the row published.
+// audio_url + voice + duration_seconds, then sets status = audio_generated.
+// It NEVER publishes — the administrator publishes explicitly in the studio.
 //
 // Run (after approving scripts in the Narration Studio):
 //   ELEVENLABS_API_KEY=... SUPABASE_URL=... SUPABASE_SERVICE_KEY=... \
@@ -126,7 +127,8 @@ Future<void> main(List<String> args) async {
           'audio_url': publicUrl,
           'voice': voiceName,
           'duration_seconds': dur,
-          'status': 'published',
+          // Audio is generated but NOT published — the admin publishes explicitly.
+          'status': 'audio_generated',
         })));
         final patchRes = await patchReq.close();
         await patchRes.drain<void>();
@@ -139,7 +141,8 @@ Future<void> main(List<String> args) async {
         stderr.writeln('  ✗ ${r['script_type']} v${r['variant']}: $e');
       }
     }
-    stdout.writeln('\n=== Done ===  voiced+published: $ok  failed: $fail');
+    stdout.writeln('\n=== Done ===  voiced (status=audio_generated): $ok  '
+        'failed: $fail   — publish explicitly in the Narration Studio.');
   } catch (e) {
     stderr.writeln('FAILED: $e');
     exitCode = 1;

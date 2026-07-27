@@ -152,7 +152,8 @@ enum AdminModule {
       description: 'Dashboard, table browser, maintenance, and CSV export — '
           'manage the database without the SQL editor.'),
   settings('Settings', Icons.settings_rounded, AdminGroup.platform,
-      description: 'Platform configuration.');
+      ready: true,
+      description: 'Platform configuration + AI Narration automation switches.');
 
   const AdminModule(
     this.title,

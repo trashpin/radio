@@ -235,7 +235,8 @@ Future<void> _run({
           'title': (v['title'] ?? '$label — $destName').toString(),
           'script': script,
           'variant': i + 1,
-          'status': 'review',
+          'status': 'draft', // scripts only — never audio; admin approves later
+
           'word_count': words,
           'speaking_seconds': speakingSeconds(words),
           'readability_score': readabilityScore(script),

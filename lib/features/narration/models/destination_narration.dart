@@ -45,20 +45,31 @@ enum NarrationScriptType {
   }
 }
 
-/// Lifecycle of a narration script.
+/// Lifecycle of a narration script. Script generation, audio generation, and
+/// publishing are separate, admin-controlled stages:
+/// draft → (approve) approved → (generate audio) audioGenerated → (publish)
+/// published. Rejected scripts return to draft; anything can be archived.
 enum NarrationStatus {
   draft('draft', 'Draft'),
-  review('review', 'In review'),
   needsReview('needs_review', 'Needs review'),
   approved('approved', 'Approved'),
-  published('published', 'Published');
+  audioGenerated('audio_generated', 'Audio generated'),
+  published('published', 'Published'),
+  archived('archived', 'Archived');
 
   const NarrationStatus(this.dbValue, this.label);
   final String dbValue;
   final String label;
 
-  static NarrationStatus fromDb(String? v) =>
-      values.firstWhere((s) => s.dbValue == v, orElse: () => NarrationStatus.draft);
+  static NarrationStatus fromDb(String? v) {
+    // Legacy 'review' rows map to draft.
+    if (v == 'review') return NarrationStatus.draft;
+    return values.firstWhere((s) => s.dbValue == v,
+        orElse: () => NarrationStatus.draft);
+  }
+
+  bool get hasAudioStage =>
+      this == audioGenerated || this == published;
 }
 
 /// Suggested narrator voices (mapped to ElevenLabs voices in config).
