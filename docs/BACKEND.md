@@ -23,6 +23,7 @@ one in the Supabase SQL editor (project `qqeyvhcgirmfokoftiuz`).
 | **`0021_destination_write_access.sql`** | **Write RLS on `destinations` (insert/update/delete) so the admin dashboard + CSV importer can create/import/edit destinations** |
 | **`0022_narration_studio.sql`** | **AI Narration Studio: `destination_narrations` (25 script types + variants + QC) and `route_narrations`, coverage view, `random_narration()`, indexes, RLS** |
 | **`0023_narration_settings.sql`** | **`narration_settings` singleton (Settings → AI Narration automation switches; all default OFF)** |
+| **`0024_narration_voices.sql`** | **Per-narration voice (`voice_id`, `audio_generated_at`), global default voice on `narration_settings`, and a `voice_defaults` table (destination/county/park) for the voice resolution chain** |
 
 Earlier migrations (`0001`–`0013`) established the original content tables
 (`destinations`, `species`, `media`, `songs`, `stories`, …).
@@ -143,6 +144,14 @@ narration, grounded only in ExplorerOS knowledge.
 - **Settings → AI Narration** (`narration_settings`, migration 0023): three
   switches — auto-generate scripts after import, auto-generate audio after
   approval, auto-publish after audio — all default OFF.
+- **Voice selection** (migration 0024): every narration has a Voice dropdown
+  (`voice_id` + `voice` stored on the row). Audio generation resolves the voice
+  per narration — `narration.voice_id` → per-destination default → global default
+  (`narration_settings.default_voice_id`) → last-resort fallback — with **no
+  hardcoded default**. "Regenerate Audio (new voice)" clears the old MP3 and
+  re-voices without changing the script. Defaults live in `voice_defaults`
+  (destination/county/park scope) + the global setting. The catalog is
+  `lib/features/narration/voices.dart` (mirrored in the worker).
 - **Queue worker (Edge Function):** `supabase/functions/narration-worker/`
   drains `generation_jobs` (`research` → knowledge, `narration` → draft scripts,
   `narration_audio` → audio) so the studio's Generate buttons run automatically
