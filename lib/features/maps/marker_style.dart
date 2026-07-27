@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:explorer_os_mobile/features/maps/marker_category_infer.dart';
+
 /// The visual identity of a map marker category — color + icon + label — matching
 /// the Map Editor legend. Every destination/POI category on the map is bucketed
 /// into one of these so the marker color immediately communicates what it is.
@@ -50,6 +52,19 @@ const markerLegend = <MarkerCategoryStyle>[
   _scenic,
   _other,
 ];
+
+/// The legend style for a category key (as produced by [inferCategoryKey]).
+final Map<String, MarkerCategoryStyle> _byKey = {
+  for (final s in markerLegend) s.key: s,
+};
+
+/// Style for a POI using both its [category] and its [name] (and optional
+/// [subcategory]): honors an explicit legend category, otherwise infers one
+/// from the name so pins are colored even when the stored category is generic
+/// or null. This is what the map uses for markers.
+MarkerCategoryStyle markerStyleForItem(String? category, String? name,
+        [String? subcategory]) =>
+    _byKey[inferCategoryKey(category, name, subcategory)] ?? _other;
 
 /// Buckets any raw category token (from `map_locations`, sightings, or a
 /// destination type) into one of the legend categories.

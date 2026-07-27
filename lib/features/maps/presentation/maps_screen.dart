@@ -546,12 +546,12 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           _placeMarker(
             id: 'place_${p.id}',
             position: LatLng(p.latitude, p.longitude),
-            style: markerStyleFor(p.category),
+            style: markerStyleForItem(p.category, p.name, p.subcategory),
             clustered: true,
             selection: _MapSelection(
               markerId: 'place_${p.id}',
               name: p.name,
-              style: markerStyleFor(p.category),
+              style: markerStyleForItem(p.category, p.name, p.subcategory),
               position: LatLng(p.latitude, p.longitude),
               imageUrl: p.imageUrl,
               audioUrl: p.audioUrl,
