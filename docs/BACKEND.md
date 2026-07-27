@@ -22,6 +22,7 @@ one in the Supabase SQL editor (project `qqeyvhcgirmfokoftiuz`).
 | **`0020_master_destinations.sql`** | **Master Destination System: new destination columns, auto `destination_code`/`slug`/`id`, `gps_zones`, `destination_id` FKs on content tables, counts/status, dashboard view, indexes, RLS** |
 | **`0021_destination_write_access.sql`** | **Write RLS on `destinations` (insert/update/delete) so the admin dashboard + CSV importer can create/import/edit destinations** |
 | **`0022_narration_studio.sql`** | **AI Narration Studio: `destination_narrations` (25 script types + variants + QC) and `route_narrations`, coverage view, `random_narration()`, indexes, RLS** |
+| **`0023_narration_settings.sql`** | **`narration_settings` singleton (Settings → AI Narration automation switches; all default OFF)** |
 
 Earlier migrations (`0001`–`0013`) established the original content tables
 (`destinations`, `species`, `media`, `songs`, `stories`, …).
@@ -124,13 +125,24 @@ narration, grounded only in ExplorerOS knowledge.
   a `needs_review` placeholder when a destination has no knowledge). With no
   `--destination` it drains pending `generation_jobs` where `job_type='narration'`.
   Requires `OPENAI_API_KEY` + `SUPABASE_SERVICE_KEY`.
+- **Separated workflow (no auto audio/publish):** script generation, audio
+  generation, and publishing are independent, admin-controlled stages —
+  `draft → approve → approved → Generate Audio → audio_generated → Publish →
+  published` (Reject → draft; Archive anytime). Generating scripts NEVER calls
+  ElevenLabs; generating audio NEVER publishes. Statuses: `draft`,
+  `needs_review`, `approved`, `audio_generated`, `published`, `archived`.
+  Explorer Radio plays only `published` narrations (via `random_narration()`).
 - **Audio (ElevenLabs):** `dart run tool/destination_narration_audio.dart
   [--id <id>] [--voice-name "National Park Ranger"] [--voice <elevenlabs_id>]
   [--dry-run]` voices **approved** narrations that lack audio, uploads the MP3 to
   the public `narration` bucket, stores `audio_url` + `voice` +
-  `duration_seconds`, and marks the row `published`. Idempotent (never
-  regenerates existing audio). Suggested voice names map to ElevenLabs ids in
-  the tool. Requires `ELEVENLABS_API_KEY` + `SUPABASE_SERVICE_KEY`.
+  `duration_seconds`, and sets status `audio_generated` (**never publishes** —
+  the admin publishes explicitly). Idempotent (never regenerates existing audio).
+  Suggested voice names map to ElevenLabs ids. Requires `ELEVENLABS_API_KEY` +
+  `SUPABASE_SERVICE_KEY`.
+- **Settings → AI Narration** (`narration_settings`, migration 0023): three
+  switches — auto-generate scripts after import, auto-generate audio after
+  approval, auto-publish after audio — all default OFF.
 - **Route narration:** `dart run tool/generate_route_narration.dart --from "A"
   --to "B" [--dry-run]` generates one ranger-style driving script for the leg
   (grounded in both endpoints' knowledge; distance + drive time computed from
