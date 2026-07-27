@@ -13,9 +13,25 @@ Handles pending jobs of these `job_type`s:
 
 It is idempotent and resumable: it only generates missing script types / voices
 approved-without-audio scripts, in bounded batches per run (`TYPE_CAP`,
-`AUDIO_CAP`, `MAX_JOBS`), leaving a job `pending` until fully done so a 1-minute
+`AUDIO_CAP`, `MAX_JOBS`), leaving a job `pending` until fully done so a repeated
 schedule finishes large jobs across runs. Publishing always stays a manual admin
 action.
+
+Files: `worker.ts` holds the shared logic; `index.ts` is the Edge Function
+entrypoint (`Deno.serve`); `run.ts` is a CLI batch runner used by CI.
+
+## Easiest setup: GitHub Actions (no Supabase CLI)
+
+`.github/workflows/narration-worker.yml` runs `run.ts` on a schedule (every 15
+min) and on demand. **You only add repository secrets** — no CLI, no deploy:
+
+1. GitHub repo → **Settings → Secrets and variables → Actions → New repository
+   secret**, add: `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `SUPABASE_SERVICE_KEY`
+   (and optionally `SUPABASE_URL`).
+2. Done — it runs automatically. To run it immediately: **Actions tab → Narration
+   Worker → Run workflow**.
+
+## Alternative: deploy as a Supabase Edge Function
 
 ## Deploy
 

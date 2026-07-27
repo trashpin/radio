@@ -1,0 +1,40 @@
+name: Narration Worker
+
+# Drains the ExplorerOS generation_jobs queue (research -> scripts -> audio) so
+# the Narration Studio's "Generate" buttons process automatically — no Supabase
+# CLI or Edge Function deploy required. Runs on a schedule and on demand.
+#
+# ONE-TIME SETUP: add these repository secrets under
+# Settings → Secrets and variables → Actions → New repository secret:
+#   OPENAI_API_KEY        (required for scripts + research)
+#   ELEVENLABS_API_KEY    (required for audio)
+#   SUPABASE_SERVICE_KEY  (your Supabase service-role key)
+#   SUPABASE_URL          (optional; defaults to the project URL)
+
+on:
+  workflow_dispatch: {}          # "Run workflow" button in the Actions tab
+  schedule:
+    - cron: "*/15 * * * *"       # every 15 minutes
+
+concurrency:
+  group: narration-worker
+  cancel-in-progress: false
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Drain narration queue
+        run: >-
+          deno run --allow-net --allow-env
+          supabase/functions/narration-worker/run.ts
