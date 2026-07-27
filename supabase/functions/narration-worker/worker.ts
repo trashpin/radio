@@ -379,6 +379,14 @@ async function processJob(job: any): Promise<void> {
       case "narration_audio":
         res = await doAudio(job);
         break;
+      case "full": {
+        // Full pipeline (dashboard button): research, then generate scripts.
+        // Audio + publishing remain deliberate manual steps.
+        const r1 = await doResearch(job);
+        const r2 = await doNarration(job);
+        res = { done: r2.done, msg: `${r1.msg}; ${r2.msg}` };
+        break;
+      }
       default:
         res = { done: true, msg: `unsupported job_type ${job.job_type}` };
     }
@@ -400,7 +408,7 @@ export async function drainQueue(
   limit = MAX_JOBS,
 ): Promise<{ processed: number; jobs: unknown[] }> {
   const jobs = await sbGet(
-    `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio)` +
+    `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full)` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
   const results: unknown[] = [];
