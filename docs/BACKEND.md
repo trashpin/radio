@@ -124,6 +124,17 @@ narration, grounded only in ExplorerOS knowledge.
   a `needs_review` placeholder when a destination has no knowledge). With no
   `--destination` it drains pending `generation_jobs` where `job_type='narration'`.
   Requires `OPENAI_API_KEY` + `SUPABASE_SERVICE_KEY`.
+- **Audio (ElevenLabs):** `dart run tool/destination_narration_audio.dart
+  [--id <id>] [--voice-name "National Park Ranger"] [--voice <elevenlabs_id>]
+  [--dry-run]` voices **approved** narrations that lack audio, uploads the MP3 to
+  the public `narration` bucket, stores `audio_url` + `voice` +
+  `duration_seconds`, and marks the row `published`. Idempotent (never
+  regenerates existing audio). Suggested voice names map to ElevenLabs ids in
+  the tool. Requires `ELEVENLABS_API_KEY` + `SUPABASE_SERVICE_KEY`.
+- **Route narration:** `dart run tool/generate_route_narration.dart --from "A"
+  --to "B" [--dry-run]` generates one ranger-style driving script for the leg
+  (grounded in both endpoints' knowledge; distance + drive time computed from
+  coordinates) and upserts it into `route_narrations`. Requires `OPENAI_API_KEY`.
 
 ## Story pipeline
 
