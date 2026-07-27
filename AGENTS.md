@@ -86,3 +86,17 @@ Run from repo root (see Flutter docs for details):
   yet supported by the maps plugin"` on web even though the key/schema are fine.
   Fix: `flutter clean && flutter pub get && flutter build web` so the registrant
   regenerates with `GoogleMapsPlugin.registerWith`.
+- **Map clustering needs the markerclusterer script.** `google_maps_flutter_web`'s
+  `ClusterManager` binds to the global `markerClusterer`, loaded by the
+  `@googlemaps/markerclusterer` `<script>` in `web/index.html`. If that script is
+  removed, the whole web map fails to initialize (`Cannot read properties of
+  undefined (reading 'MarkerClusterer')`) whenever a `ClusterManager` is present.
+- **Server-side AI tools read keys from the environment, not `.env`.** The
+  content pipeline scripts in `tool/` (`research_destination.dart`,
+  `story_generate.dart`, `story_audio.dart`, `dj_audio.dart`,
+  `narration_audio.dart`) read `OPENAI_API_KEY` / `ELEVENLABS_API_KEY` and
+  `SUPABASE_SERVICE_KEY` (falls back to `SUPABASE_ANON_KEY`) from environment
+  variables (Cursor secrets), so they need those secrets set — the Flutter app's
+  `.env` is not used by them. Run e.g.
+  `dart run tool/research_destination.dart --destination "Rainbow Springs State Park" --category state_park --state Florida`
+  (add `--dry-run` to validate wiring without calling OpenAI).
