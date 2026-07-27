@@ -19,6 +19,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/image_matching_pa
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_automation_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/song_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page.dart';
@@ -90,6 +91,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const ContentGeneratorPage();
       case AdminModule.databaseTools:
         return const DatabaseToolsPage();
+      case AdminModule.playbackDebug:
+        return const PlaybackDebugPage();
       case AdminModule.mapEditor:
         return const MapEditorPage();
       case AdminModule.species:

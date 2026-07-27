@@ -151,6 +151,10 @@ enum AdminModule {
       ready: true,
       description: 'Dashboard, table browser, maintenance, and CSV export — '
           'manage the database without the SQL editor.'),
+  playbackDebug('Playback Debug', Icons.equalizer_rounded, AdminGroup.platform,
+      ready: true,
+      description: 'Exercise the central PlaybackManager engine: states, queue, '
+          'priorities, ducking transitions, events, and error handling.'),
   settings('Settings', Icons.settings_rounded, AdminGroup.platform,
       ready: true,
       description: 'Platform configuration + AI Narration automation switches.');
