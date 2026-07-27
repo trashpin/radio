@@ -124,14 +124,14 @@ class _TablesTab extends ConsumerStatefulWidget {
 
 class _TablesTabState extends ConsumerState<_TablesTab> {
   DbTable _table = kDbTables.first;
-  late Future<List<Map<String, dynamic>>> _future = _load();
-  int _count = -1;
+  late Future<({int count, List<Map<String, dynamic>> rows})> _future = _load();
   String _q = '';
 
-  Future<List<Map<String, dynamic>>> _load() async {
+  Future<({int count, List<Map<String, dynamic>> rows})> _load() async {
     final repo = ref.read(dbToolsRepositoryProvider);
-    _count = await repo.count(_table.name);
-    return repo.rows(_table.name, limit: 100);
+    final count = await repo.count(_table.name);
+    final rows = await repo.rows(_table.name, limit: 100);
+    return (count: count, rows: rows);
   }
 
   void _reload() => setState(() => _future = _load());
@@ -143,8 +143,7 @@ class _TablesTabState extends ConsumerState<_TablesTab> {
       children: [
         AdminPageHeader(
           title: 'Table Browser',
-          subtitle: 'Browse recent rows, search, and delete. '
-              '${_count >= 0 ? '$_count rows in ${_table.name}.' : ''}',
+          subtitle: 'Browse recent rows, search, and delete.',
           actions: [
             SizedBox(
               width: 220,
@@ -175,7 +174,7 @@ class _TablesTabState extends ConsumerState<_TablesTab> {
               border: OutlineInputBorder()),
         ),
         const Gap.v(AppSpacing.lg),
-        FutureBuilder<List<Map<String, dynamic>>>(
+        FutureBuilder<({int count, List<Map<String, dynamic>> rows})>(
           future: _future,
           builder: (context, snap) {
             if (snap.connectionState != ConnectionState.done) {
@@ -183,7 +182,8 @@ class _TablesTabState extends ConsumerState<_TablesTab> {
                   padding: EdgeInsets.all(AppSpacing.xxl),
                   child: Center(child: CircularProgressIndicator()));
             }
-            final all = snap.data ?? const [];
+            final count = snap.data?.count ?? -1;
+            final all = snap.data?.rows ?? const [];
             final rows = all.where((r) {
               if (_q.isEmpty) return true;
               return r.values.any((v) => '$v'.toLowerCase().contains(_q));
@@ -192,12 +192,22 @@ class _TablesTabState extends ConsumerState<_TablesTab> {
               return AdminSectionCard(
                   child: AdminEmptyState(
                       icon: Icons.table_rows_rounded,
-                      message: _count < 0
+                      message: count < 0
                           ? 'Table "${_table.name}" not found.'
                           : 'No rows.'));
             }
             return AdminSectionCard(
               child: Column(children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                    child: Text(
+                        '$count total in ${_table.name}'
+                        '${all.length < count ? ' (showing first ${all.length})' : ''}',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
+                ),
                 for (final r in rows) _row(context, r),
               ]),
             );
