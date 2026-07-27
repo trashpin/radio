@@ -34,6 +34,21 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Verify required secrets
+        run: |
+          missing=0
+          for k in SUPABASE_SERVICE_KEY OPENAI_API_KEY ELEVENLABS_API_KEY; do
+            if [ -z "${!k}" ]; then
+              echo "ERROR: $k is not set"
+              missing=1
+            else
+              echo "$k is set"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo 'One or more required secrets are missing. Aborting.'
+            exit 1
+          fi
       - name: Drain narration queue
         run: >-
           deno run --allow-net --allow-env
