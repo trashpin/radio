@@ -21,6 +21,7 @@ one in the Supabase SQL editor (project `qqeyvhcgirmfokoftiuz`).
 | **`0019_backend_foundation.sql`** | **Auth/roles, user tables, ops tables, content-support tables, cross-cutting triggers, FTS + GPS indexes, helper functions, dashboard views, Storage buckets** |
 | **`0020_master_destinations.sql`** | **Master Destination System: new destination columns, auto `destination_code`/`slug`/`id`, `gps_zones`, `destination_id` FKs on content tables, counts/status, dashboard view, indexes, RLS** |
 | **`0021_destination_write_access.sql`** | **Write RLS on `destinations` (insert/update/delete) so the admin dashboard + CSV importer can create/import/edit destinations** |
+| **`0022_narration_studio.sql`** | **AI Narration Studio: `destination_narrations` (25 script types + variants + QC) and `route_narrations`, coverage view, `random_narration()`, indexes, RLS** |
 
 Earlier migrations (`0001`–`0013`) established the original content tables
 (`destinations`, `species`, `media`, `songs`, `stories`, …).
@@ -94,6 +95,35 @@ preserved.
   per row. It requires `0020` (auto id/slug/code) and `0021` (write access) to
   import successfully; without them the DB returns `NOT NULL` / `42501 RLS`
   errors, which the importer surfaces per row.
+
+## AI Narration Studio (`0022`)
+
+Per-destination, multi-script AI narration + destination-to-destination route
+narration, grounded only in ExplorerOS knowledge.
+
+- **Tables:** `destination_narrations` (25 script types — arrival, main/extended
+  history, wildlife, plants, trees, birds, geology, fun facts, family/kids,
+  accessibility, scenic, hidden gems, departure, night/sunrise/sunset, rainy day,
+  emergency, … — with `variant`, `language`, `season`, `time_of_day`, an
+  approval→publish `status`, and QC columns: `word_count`, `speaking_seconds`
+  @150 wpm, `readability_score`, `fact_confidence`, `duplicate_score`,
+  `needs_review`) and `route_narrations` (from/to destination, distance, drive
+  time, script/audio).
+- **View/function:** `v_destination_narration_coverage` (scripts/audio/approved/
+  published/needs_review per destination) and `random_narration(dest, type,
+  lang)` so Explorer Radio rotates published variants.
+- **Admin UI:** the per-destination **Narration Studio** (opened from the
+  Destinations dashboard → ⋮ → Narration Studio): coverage header, all 25 script
+  types with variants + QC + lifecycle actions (Approve/Publish/Edit/Generate
+  Audio/…), and Generate All / Generate Missing. QC helpers live in
+  `lib/features/narration/narration_qc.dart` (pure + unit-tested).
+- **Generation:** `dart run tool/generate_narration.dart --destination "Ocala
+  National Forest" [--types arrival,fun_facts] [--mode all|missing]
+  [--max-variations N] [--dry-run]`. Writes ranger-style scripts grounded ONLY
+  in `knowledge_base` + `species` for the destination (never invents facts; emits
+  a `needs_review` placeholder when a destination has no knowledge). With no
+  `--destination` it drains pending `generation_jobs` where `job_type='narration'`.
+  Requires `OPENAI_API_KEY` + `SUPABASE_SERVICE_KEY`.
 
 ## Story pipeline
 
