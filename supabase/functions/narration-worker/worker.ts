@@ -16,8 +16,32 @@
 // Schedules, or pg_cron calling the function URL). SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are injected automatically.
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ??
-  "https://qqeyvhcgirmfokoftiuz.supabase.co";
+// Project URL used when SUPABASE_URL is unset/blank (e.g. an empty GitHub secret).
+const DEFAULT_SUPABASE_URL = "https://qqeyvhcgirmfokoftiuz.supabase.co";
+
+/// Resolve the Supabase base URL from the environment. Treats a blank value as
+/// missing (an unset GitHub secret is passed as ""), falls back to the project
+/// URL, and throws a descriptive error only if the resolved value isn't a valid
+/// absolute URL. This guarantees we never build a relative REST path.
+function resolveBaseUrl(): string {
+  const raw = (Deno.env.get("SUPABASE_URL") ?? "").trim();
+  const url = raw.length > 0 ? raw : DEFAULT_SUPABASE_URL;
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(
+      `SUPABASE_URL is missing or invalid ("${raw}"). Set the SUPABASE_URL ` +
+        `environment variable / GitHub secret to your project URL, e.g. ` +
+        `https://<project-ref>.supabase.co`,
+    );
+  }
+  return url.replace(/\/+$/, ""); // strip trailing slash
+}
+
+/// Absolute URL for a Supabase path (REST or Storage). [path] may start with or
+/// without a leading slash; the result is always fully-qualified.
+export function buildSupabaseUrl(path: string): string {
+  return `${resolveBaseUrl()}/${path.replace(/^\/+/, "")}`;
+}
+
 // Edge Functions inject SUPABASE_SERVICE_ROLE_KEY; CI passes SUPABASE_SERVICE_KEY.
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
   Deno.env.get("SUPABASE_SERVICE_KEY") ?? "";
@@ -118,12 +142,12 @@ function readability(s: string) {
 
 // ── PostgREST helpers ──
 async function sbGet(path: string): Promise<any[]> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: SB });
+  const r = await fetch(buildSupabaseUrl(`rest/v1/${path}`), { headers: SB });
   if (!r.ok) return [];
   return await r.json();
 }
 async function sbInsert(table: string, row: unknown) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+  const r = await fetch(buildSupabaseUrl(`rest/v1/${table}`), {
     method: "POST",
     headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify(row),
@@ -131,7 +155,7 @@ async function sbInsert(table: string, row: unknown) {
   if (!r.ok) throw new Error(`insert ${table} ${r.status}: ${await r.text()}`);
 }
 async function sbPatch(path: string, patch: unknown) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  const r = await fetch(buildSupabaseUrl(`rest/v1/${path}`), {
     method: "PATCH",
     headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify(patch),
@@ -338,15 +362,18 @@ async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
       if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
       const bytes = new Uint8Array(await tts.arrayBuffer());
       const path = `destinations/${r.id}.mp3`;
-      const up = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
-        method: "POST",
-        headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" },
-        body: bytes,
-      });
+      const up = await fetch(
+        buildSupabaseUrl(`storage/v1/object/${BUCKET}/${path}`),
+        {
+          method: "POST",
+          headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" },
+          body: bytes,
+        },
+      );
       if (!up.ok) throw new Error(`upload ${up.status}`);
       const words = r.word_count ?? wordCount(r.script ?? "");
       await sbPatch(`destination_narrations?id=eq.${r.id}`, {
-        audio_url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`,
+        audio_url: buildSupabaseUrl(`storage/v1/object/public/${BUCKET}/${path}`),
         voice: vName,
         voice_id: voiceId,
         duration_seconds: r.speaking_seconds ?? speakingSeconds(words),
@@ -407,6 +434,15 @@ async function processJob(job: any): Promise<void> {
 export async function drainQueue(
   limit = MAX_JOBS,
 ): Promise<{ processed: number; jobs: unknown[] }> {
+  // Fail loudly (not silently) if the service key wasn't provided.
+  if (!SERVICE_KEY.trim()) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SERVICE_KEY is missing. Add it as a " +
+        "GitHub secret (SUPABASE_SERVICE_KEY) or Edge Function secret.",
+    );
+  }
+  // Validate the base URL up front so config errors are obvious.
+  buildSupabaseUrl("rest/v1/");
   const jobs = await sbGet(
     `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full)` +
       `&order=created_at.asc&limit=${limit}&select=*`,
