@@ -116,45 +116,92 @@ function readability(s: string) {
   return Math.max(0, Math.min(100, 100 - (words / sentences - 14) * 5));
 }
 
-// ── PostgREST helpers ──
+// ── PostgREST helpers (improved errors for CI debugging) ──
 async function sbGet(path: string): Promise<any[]> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers: SB });
-  if (!r.ok) return [];
-  return await r.json();
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  console.debug(`[sbGet] ${url}`);
+  let r: Response;
+  try {
+    r = await fetch(url, { headers: SB });
+  } catch (e) {
+    throw new Error(`sbGet fetch ${url} failed: ${e}`);
+  }
+  if (!r.ok) {
+    const body = await r.text().catch(() => "<no body>");
+    throw new Error(`sbGet ${url} returned ${r.status}: ${body}`);
+  }
+  try {
+    return await r.json();
+  } catch (e) {
+    throw new Error(`sbGet ${url} invalid JSON response: ${e}`);
+  }
 }
 async function sbInsert(table: string, row: unknown) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-    method: "POST",
-    headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify(row),
-  });
-  if (!r.ok) throw new Error(`insert ${table} ${r.status}: ${await r.text()}`);
+  const url = `${SUPABASE_URL}/rest/v1/${table}`;
+  console.debug(`[sbInsert] ${url} payload=${JSON.stringify(row).slice(0,200)}`);
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      method: "POST",
+      headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(row),
+    });
+  } catch (e) {
+    throw new Error(`insert ${url} failed: ${e}`);
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "<no body>");
+    throw new Error(`insert ${url} ${r.status}: ${text}`);
+  }
 }
 async function sbPatch(path: string, patch: unknown) {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    method: "PATCH",
-    headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
-    body: JSON.stringify(patch),
-  });
-  if (!r.ok) throw new Error(`patch ${path} ${r.status}: ${await r.text()}`);
+  const url = `${SUPABASE_URL}/rest/v1/${path}`;
+  console.debug(`[sbPatch] ${url} patch=${JSON.stringify(patch).slice(0,200)}`);
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      method: "PATCH",
+      headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(patch),
+    });
+  } catch (e) {
+    throw new Error(`patch ${url} failed: ${e}`);
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "<no body>");
+    throw new Error(`patch ${url} ${r.status}: ${text}`);
+  }
 }
 const enc = (s: string) => encodeURIComponent(s);
 
 async function openaiJson(system: string, user: string): Promise<any> {
   if (!OPENAI_KEY) throw new Error("OPENAI_API_KEY not set");
-  const r = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      temperature: 0.85,
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    }),
-  });
-  if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const url = "https://api.openai.com/v1/chat/completions";
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        temperature: 0.85,
+        response_format: { type: "json_object" },
+        messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      }),
+    });
+  } catch (e) {
+    throw new Error(`OpenAI fetch ${url} failed: ${e}`);
+  }
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "<no body>");
+    throw new Error(`OpenAI ${r.status}: ${txt.slice(0, 200)}`);
+  }
   const data = await r.json();
-  return JSON.parse(data.choices[0].message.content);
+  try {
+    return JSON.parse(data.choices[0].message.content);
+  } catch (e) {
+    throw new Error(`OpenAI response parse failed: ${e} -- content: ${String(data.choices?.[0]?.message?.content).slice(0,200)}`);
+  }
 }
 
 // ── job note parsing: "narration|scope=destination|mode=all" ──
@@ -407,10 +454,10 @@ async function processJob(job: any): Promise<void> {
 export async function drainQueue(
   limit = MAX_JOBS,
 ): Promise<{ processed: number; jobs: unknown[] }> {
-  const jobs = await sbGet(
-    `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full)` +
-      `&order=created_at.asc&limit=${limit}&select=*`,
-  );
+  const path = `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full)` +
+    `&order=created_at.asc&limit=${limit}&select=*`;
+  console.debug(`[drainQueue] fetching jobs: ${SUPABASE_URL}/rest/v1/${path}`);
+  const jobs = await sbGet(path);
   const results: unknown[] = [];
   for (const job of jobs) {
     await processJob(job);
