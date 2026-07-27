@@ -232,7 +232,11 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
       _importing = false;
       _failed += invalid;
       if (invalid > 0) {
-        _errors.insert(0, '$invalid row(s) skipped: missing required field(s).');
+        _errors.insert(
+            0,
+            _target.passthrough
+                ? '$invalid empty row(s) skipped.'
+                : '$invalid row(s) skipped: missing required field(s).');
       }
       if (_droppedColumns.isNotEmpty) {
         _errors.insert(0,
@@ -257,6 +261,11 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Columns to preview: raw CSV headers for passthrough targets, otherwise the
+    // target's declared columns (mapped to a CSV header).
+    final previewCols = _target.passthrough
+        ? [for (final h in _headers) (label: h, header: h)]
+        : [for (final c in _target.columns) (label: c.label, header: _mapping[c.key])];
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
@@ -342,52 +351,88 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
 
         if (_headers.isNotEmpty) ...[
           const Gap.v(AppSpacing.lg),
-          // Step 2 — map columns.
-          AdminSectionCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('2. Map columns',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700)),
-                const Gap.v(AppSpacing.sm),
-                Text('Match each field to a column from your file '
-                    '(auto-guessed where possible).',
-                    style: theme.textTheme.bodySmall),
-                const Gap.v(AppSpacing.md),
-                for (final col in _target.columns)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-                    child: Row(children: [
-                      SizedBox(
-                        width: 200,
-                        child: Text(col.label + (col.required ? ' *' : ''),
-                            style: TextStyle(
-                                fontWeight: col.required
-                                    ? FontWeight.w700
-                                    : FontWeight.w500)),
-                      ),
-                      Expanded(
-                        child: DropdownButtonFormField<String?>(
-                          initialValue: _mapping[col.key],
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                              isDense: true, border: OutlineInputBorder()),
-                          items: [
-                            const DropdownMenuItem<String?>(
-                                value: null, child: Text('(skip)')),
-                            for (final h in _headers)
-                              DropdownMenuItem(value: h, child: Text(h)),
-                          ],
-                          onChanged: (v) =>
-                              setState(() => _mapping[col.key] = v),
+          // Step 2 — map columns (skipped for direct-mapping targets).
+          if (_target.passthrough)
+            AdminSectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('2. Direct column mapping',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const Gap.v(AppSpacing.sm),
+                  Text(
+                      'Every CSV column is sent straight to the "${_target.table}" '
+                      'table by name (header "Destination Type" → column '
+                      'destination_type). Values are not validated here — the '
+                      'database checks each row and any errors are shown below '
+                      'after import. Columns your table does not have are '
+                      'ignored automatically.',
+                      style: theme.textTheme.bodySmall),
+                  const Gap.v(AppSpacing.sm),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final h in _headers)
+                        Chip(
+                          label: Text('$h → ${passthroughKey(h)}',
+                              style: const TextStyle(fontSize: 11)),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
-                      ),
-                    ]),
+                    ],
                   ),
-              ],
+                ],
+              ),
+            )
+          else
+            AdminSectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('2. Map columns',
+                      style: theme.textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const Gap.v(AppSpacing.sm),
+                  Text('Match each field to a column from your file '
+                      '(auto-guessed where possible).',
+                      style: theme.textTheme.bodySmall),
+                  const Gap.v(AppSpacing.md),
+                  for (final col in _target.columns)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+                      child: Row(children: [
+                        SizedBox(
+                          width: 200,
+                          child: Text(col.label + (col.required ? ' *' : ''),
+                              style: TextStyle(
+                                  fontWeight: col.required
+                                      ? FontWeight.w700
+                                      : FontWeight.w500)),
+                        ),
+                        Expanded(
+                          child: DropdownButtonFormField<String?>(
+                            initialValue: _mapping[col.key],
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                                isDense: true, border: OutlineInputBorder()),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                  value: null, child: Text('(skip)')),
+                              for (final h in _headers)
+                                DropdownMenuItem(value: h, child: Text(h)),
+                            ],
+                            onChanged: (v) =>
+                                setState(() => _mapping[col.key] = v),
+                          ),
+                        ),
+                      ]),
+                    ),
+                ],
+              ),
             ),
-          ),
 
           const Gap.v(AppSpacing.lg),
           // Step 3 — preview + validation.
@@ -401,15 +446,26 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                 const Gap.v(AppSpacing.sm),
                 Row(children: [
                   _pill(context, Icons.check_circle_rounded,
-                      '${_rows.length - _invalidRows} valid', Colors.green),
-                  const Gap.h(AppSpacing.sm),
-                  if (_invalidRows > 0)
-                    _pill(context, Icons.warning_amber_rounded,
-                        '$_invalidRows missing required', Colors.orange),
-                  if (!_requiredMapped) ...[
+                      '${_rows.length - _invalidRows} ready', Colors.green),
+                  if (_invalidRows > 0) ...[
+                    const Gap.h(AppSpacing.sm),
+                    _pill(
+                        context,
+                        Icons.warning_amber_rounded,
+                        _target.passthrough
+                            ? '$_invalidRows empty'
+                            : '$_invalidRows missing required',
+                        Colors.orange),
+                  ],
+                  if (!_target.passthrough && !_requiredMapped) ...[
                     const Gap.h(AppSpacing.sm),
                     _pill(context, Icons.error_rounded,
                         'Map required fields first', Colors.red),
+                  ],
+                  if (_target.passthrough) ...[
+                    const Gap.h(AppSpacing.sm),
+                    _pill(context, Icons.storage_rounded,
+                        'Validated by database', Colors.blueGrey),
                   ],
                 ]),
                 const Gap.v(AppSpacing.md),
@@ -419,7 +475,7 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: SizedBox(
-                    width: _target.columns.length * 160.0,
+                    width: (previewCols.isEmpty ? 1 : previewCols.length) * 160.0,
                     child: Table(
                       border: TableBorder.all(
                           color: theme.dividerColor.withValues(alpha: 0.4)),
@@ -430,14 +486,14 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                               color: theme.colorScheme.onSurface
                                   .withValues(alpha: 0.04)),
                           children: [
-                            for (final col in _target.columns)
+                            for (final col in previewCols)
                               _cellText(col.label, bold: true),
                           ],
                         ),
                         for (final r in _rows.take(8))
                           TableRow(children: [
-                            for (final col in _target.columns)
-                              _cellText(_cell(r, _mapping[col.key]) ?? '—'),
+                            for (final col in previewCols)
+                              _cellText(_cell(r, col.header) ?? '—'),
                           ]),
                       ],
                     ),

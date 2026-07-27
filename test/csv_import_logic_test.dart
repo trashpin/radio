@@ -107,4 +107,74 @@ void main() {
     expect(rec['duration'], 212);
     expect(rec.containsKey('story_id'), isFalse);
   });
+
+  group('Destinations passthrough importer', () {
+    test('Destinations target exists and is direct-mapping (passthrough)', () {
+      final dest = targetNamed('Destinations');
+      expect(dest.table, 'destinations');
+      expect(dest.passthrough, isTrue);
+    });
+
+    test('passthroughKey snake_cases arbitrary headers', () {
+      expect(passthroughKey('Destination Type'), 'destination_type');
+      expect(passthroughKey('State/Province'), 'state_province');
+      expect(passthroughKey('  destination_code '), 'destination_code');
+      expect(passthroughKey('Latitude'), 'latitude');
+    });
+
+    test('coerceCsvValue coerces numbers/bools but never rejects text', () {
+      expect(coerceCsvValue('USA'), 'USA');
+      expect(coerceCsvValue('State Park'), 'State Park');
+      expect(coerceCsvValue('29.1872'), 29.1872);
+      expect(coerceCsvValue('150'), 150);
+      expect(coerceCsvValue('true'), true);
+      expect(coerceCsvValue('False'), false);
+      expect(coerceCsvValue('   '), isNull); // empty → omit
+    });
+
+    test('buildRecord maps every column directly and accepts USA / State Park',
+        () {
+      final dest = targetNamed('Destinations');
+      final headers = [
+        'name',
+        'destination_type',
+        'country',
+        'state_province',
+        'latitude',
+        'longitude',
+        'published',
+      ];
+      final rec = buildRecord(
+        dest,
+        headers,
+        ['Silver Springs', 'State Park', 'USA', 'Florida', '29.2', '-82.05', 'true'],
+        const {}, // mapping ignored for passthrough
+      );
+      expect(rec, isNotNull);
+      expect(rec!['name'], 'Silver Springs');
+      expect(rec['destination_type'], 'State Park'); // not rejected
+      expect(rec['country'], 'USA'); // not rejected
+      expect(rec['state_province'], 'Florida');
+      expect(rec['latitude'], 29.2);
+      expect(rec['published'], true);
+    });
+
+    test('buildRecord does not require fields; only skips fully-empty rows', () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'country'];
+      // No name provided, but the row is not blocked — the DB validates instead.
+      final rec = buildRecord(dest, headers, ['', 'USA'], const {});
+      expect(rec, isNotNull);
+      expect(rec!['country'], 'USA');
+      expect(rec.containsKey('name'), isFalse);
+      // Fully-empty row is skipped.
+      expect(buildRecord(dest, headers, ['', ''], const {}), isNull);
+    });
+
+    test('requiredMapped is always true for passthrough (no client-side gate)',
+        () {
+      final dest = targetNamed('Destinations');
+      expect(requiredMapped(dest, const {}), isTrue);
+    });
+  });
 }
