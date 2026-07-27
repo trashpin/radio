@@ -142,6 +142,10 @@ enum AdminModule {
       description: 'Plans and subscribers.', table: 'subscriptions'),
   analytics('Analytics', Icons.insights_rounded, AdminGroup.platform,
       description: 'Popular content, downloads, revenue.'),
+  databaseTools('Database Tools', Icons.storage_rounded, AdminGroup.platform,
+      ready: true,
+      description: 'Dashboard, table browser, maintenance, and CSV export — '
+          'manage the database without the SQL editor.'),
   settings('Settings', Icons.settings_rounded, AdminGroup.platform,
       description: 'Platform configuration.');
 
