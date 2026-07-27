@@ -9,6 +9,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/maps/marker_style.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_places_provider.dart';
@@ -52,12 +53,11 @@ class MapsScreen extends ConsumerStatefulWidget {
 
 class _MapsScreenState extends ConsumerState<MapsScreen> {
   GoogleMapController? _controller;
-  BitmapDescriptor? _pinIcon;
-  BitmapDescriptor? _sightingIcon;
-  BitmapDescriptor? _locationIcon;
-  BitmapDescriptor? _poiIcon;
-  BitmapDescriptor? _campIcon;
-  final Map<String, BitmapDescriptor> _categoryIcons = {};
+  // Category pin bitmaps, keyed by '<styleKey>:<selected>'. Built once.
+  final Map<String, BitmapDescriptor> _pins = {};
+  // The currently highlighted marker + the data behind its bottom info card.
+  _MapSelection? _selection;
+  static const _placesCluster = ClusterManagerId('places');
   bool _centerInitialized = false;
   bool _fittedPlaces = false; // auto-fit bounds to places once
 
@@ -200,120 +200,202 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     });
   }
 
-  static const _nearbyCategoryTokens = [
-    'mammals', 'birds', 'reptiles', 'amphibians', 'fish', 'plants', 'trees',
-    'wildflowers', 'mushrooms', 'springs', 'waterfalls', 'scenic_overlooks',
-    'historic_sites', 'trails', 'campgrounds', 'visitor_centers',
-    'ranger_stations', 'fishing_areas', 'boat_ramps',
-  ];
-
   @override
   void initState() {
     super.initState();
     _buildIcons();
   }
 
-  /// Icon for a place category. Campgrounds get the cabin icon; unknown/POI
-  /// categories get a distinct orange place pin (never a blank default).
-  BitmapDescriptor _iconFor(String category) {
-    if (category == 'campgrounds') {
-      return _campIcon ?? _categoryIcons['campgrounds'] ?? _fallbackPin;
-    }
-    return _categoryIcons[category] ?? _poiIcon ?? _fallbackPin;
-  }
-
   static final BitmapDescriptor _fallbackPin =
       BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
 
-  /// Renders circular icon markers to bitmaps (green = parks, blue = locations,
-  /// amber = sightings) so pins look like the design.
+  /// The cached pin bitmap for a category [style], normal or [selected].
+  BitmapDescriptor _pin(MarkerCategoryStyle style, {bool selected = false}) =>
+      _pins['${style.key}:$selected'] ?? _fallbackPin;
+
+  /// Renders a crisp, category-colored teardrop pin for every legend category
+  /// (plus a park pin), in normal and selected variants, once.
   Future<void> _buildIcons() async {
     try {
-      final pin =
-          await _circleIconMarker(Icons.forest_rounded, _MapPalette.green);
-      final location = await _circleIconMarker(
-          Icons.place_rounded, const Color(0xFF3F8FD0));
-      final sighting = await _circleIconMarker(
-          Icons.visibility_rounded, _MapPalette.gold);
-      // Distinct icons for the two always-on place types (requirement #9).
-      final poi = await _circleIconMarker(
-          Icons.place_rounded, const Color(0xFFEE7B2E));
-      final camp = await _circleIconMarker(
-          Icons.cabin_rounded, const Color(0xFF7C8B3A));
-      final cats = <String, BitmapDescriptor>{};
-      for (final token in _nearbyCategoryTokens) {
-        final style = nearbyStyle(token);
-        cats[token] = await _circleIconMarker(style.icon, style.color, size: 96);
+      final styles = [...markerLegend, parkMarkerStyle];
+      final built = <String, BitmapDescriptor>{};
+      for (final s in styles) {
+        built['${s.key}:false'] = await _pinBitmap(s, selected: false);
+        built['${s.key}:true'] = await _pinBitmap(s, selected: true);
       }
       if (mounted) {
-        setState(() {
-          _pinIcon = pin;
-          _locationIcon = location;
-          _sightingIcon = sighting;
-          _poiIcon = poi;
-          _campIcon = camp;
-          _categoryIcons.addAll(cats);
-        });
+        setState(() => _pins.addAll(built));
       }
     } catch (_) {
-      // Fall back to the default marker if bitmap rendering is unavailable.
+      // Fall back to default markers if bitmap rendering is unavailable.
     }
   }
 
-  static Future<BitmapDescriptor> _circleIconMarker(
-    IconData icon,
-    Color color, {
-    double size = 120,
+  /// Draws a scalable teardrop marker filled with the category color, a white
+  /// glyph, and (when [selected]) a larger body, highlight halo, and drop
+  /// shadow. Rendered at 3x and tagged with imagePixelRatio so it stays crisp.
+  static Future<BitmapDescriptor> _pinBitmap(
+    MarkerCategoryStyle style, {
+    bool selected = false,
   }) async {
+    const dpr = 3.0;
+    final w = selected ? 58.0 : 44.0;
+    final h = selected ? 76.0 : 58.0;
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
-    final radius = size / 2;
-    canvas.drawCircle(Offset(radius, radius), radius, Paint()..color = Colors.white);
-    canvas.drawCircle(Offset(radius, radius), radius - 7, Paint()..color = color);
-    final tp = TextPainter(textDirection: TextDirection.ltr)
+    canvas.scale(dpr);
+
+    final headR = w * 0.40;
+    final cx = w / 2;
+    final cy = headR + (selected ? 6.0 : 3.0);
+    final tipY = h - 1;
+
+    // Drop shadow (stronger when selected) under the tip.
+    final shadowPaint = Paint()
+      ..color = Colors.black.withValues(alpha: selected ? 0.34 : 0.22)
+      ..maskFilter = MaskFilter.blur(BlurStyle.normal, selected ? 5 : 3);
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset(cx, tipY - 2), width: headR * 1.1, height: headR * 0.5),
+      shadowPaint,
+    );
+
+    // Selected: soft colored halo around the head.
+    if (selected) {
+      canvas.drawCircle(Offset(cx, cy), headR * 1.42,
+          Paint()..color = style.color.withValues(alpha: 0.22));
+    }
+
+    final fill = Paint()..color = style.color;
+    // Tail (triangle from head to the tip), then the head circle over it.
+    final tail = Path()
+      ..moveTo(cx - headR * 0.62, cy + headR * 0.45)
+      ..lineTo(cx, tipY)
+      ..lineTo(cx + headR * 0.62, cy + headR * 0.45)
+      ..close();
+    canvas.drawPath(tail, fill);
+    canvas.drawCircle(Offset(cx, cy), headR, fill);
+    // White ring around the head.
+    canvas.drawCircle(
+      Offset(cx, cy),
+      headR,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = selected ? 3.4 : 2.6
+        ..color = Colors.white,
+    );
+    // Inner white disc so the glyph reads on any color.
+    canvas.drawCircle(
+        Offset(cx, cy), headR * 0.60, Paint()..color = Colors.white);
+
+    final glyph = TextPainter(textDirection: TextDirection.ltr)
       ..text = TextSpan(
-        text: String.fromCharCode(icon.codePoint),
+        text: String.fromCharCode(style.icon.codePoint),
         style: TextStyle(
-          fontSize: size * 0.5,
-          fontFamily: icon.fontFamily,
-          package: icon.fontPackage,
-          color: Colors.white,
+          fontSize: headR * 0.92,
+          fontFamily: style.icon.fontFamily,
+          package: style.icon.fontPackage,
+          color: style.color,
         ),
       )
       ..layout();
-    tp.paint(canvas, Offset(radius - tp.width / 2, radius - tp.height / 2));
-    final image =
-        await recorder.endRecording().toImage(size.toInt(), size.toInt());
+    glyph.paint(canvas, Offset(cx - glyph.width / 2, cy - glyph.height / 2));
+
+    final image = await recorder
+        .endRecording()
+        .toImage((w * dpr).toInt(), (h * dpr).toInt());
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List(),
+        imagePixelRatio: dpr);
+  }
+
+  void _select(_MapSelection selection) {
+    setState(() => _selection = selection);
+  }
+
+  /// Zoom into a cluster's bounds so it expands into individual markers.
+  void _onClusterTap(Cluster cluster) {
+    final c = _controller;
+    if (c == null) return;
+    try {
+      c.animateCamera(CameraUpdate.newLatLngBounds(cluster.bounds, 72));
+    } catch (_) {
+      c.animateCamera(CameraUpdate.newLatLngZoom(cluster.position, 14));
+    }
+  }
+
+  /// Builds a category-colored pin marker that highlights (larger + shadow)
+  /// while it's the current selection and opens the bottom info card on tap.
+  Marker _placeMarker({
+    required String id,
+    required LatLng position,
+    required MarkerCategoryStyle style,
+    required _MapSelection selection,
+    bool clustered = false,
+  }) {
+    final selected = _selection?.markerId == id;
+    return Marker(
+      markerId: MarkerId(id),
+      position: position,
+      icon: _pin(style, selected: selected),
+      anchor: const Offset(0.5, 1),
+      zIndexInt: selected ? 3 : 1,
+      clusterManagerId: clustered ? _placesCluster : null,
+      onTap: () => _select(selection),
+    );
+  }
+
+  // --- Bottom info card actions -------------------------------------------
+  void _listen(_MapSelection sel) {
+    final messenger = ScaffoldMessenger.of(context);
+    if (sel.park != null) {
+      ref
+          .read(selectedStationProvider.notifier)
+          .select(RadioStation.fromDestination(sel.park!));
+      ref.invalidate(radioSessionProvider);
+      messenger.showSnackBar(SnackBar(
+          content: Text('Tuned to ${sel.park!.name} Radio — open the Radio tab')));
+      return;
+    }
+    if (sel.audioUrl != null && sel.audioUrl!.isNotEmpty) {
+      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+            AudioSegment(
+              id: 'poi:${sel.markerId}:${DateTime.now().millisecondsSinceEpoch}',
+              title: sel.name,
+              type: AudioSegmentType.gpsNarration,
+              priority: PlaybackPriority.gpsNarration,
+              audioUrl: sel.audioUrl,
+              interruptible: true,
+              resumeAfter: true,
+            ),
+          );
+      messenger.showSnackBar(
+          SnackBar(content: Text('Playing ${sel.name} on Explorer Radio')));
+      return;
+    }
+    messenger.showSnackBar(
+        SnackBar(content: Text('No narration for ${sel.name} yet')));
+  }
+
+  void _navigateTo(_MapSelection sel) {
+    _controller?.animateCamera(CameraUpdate.newLatLngZoom(sel.position, 15));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Navigating to ${sel.name}')));
+  }
+
+  void _moreInfo(_MapSelection sel, String? distance) {
+    _showDetail(
+      title: sel.name,
+      subtitle:
+          '${sel.style.label}${distance != null ? ' · $distance' : ''}',
+      imageUrl: sel.imageUrl,
+      icon: sel.style.icon,
+      color: sel.style.color,
+      actions: [_nearbyActionRow()],
+    );
   }
 
   // --- Marker detail sheets (tap a marker to explore) ----------------------
-
-  void _openParkSheet(Destination d) => _showDetail(
-        title: d.name,
-        subtitle: d.location ?? d.category ?? 'Park',
-        imageUrl: d.imageUrl,
-        icon: Icons.forest_rounded,
-        color: _MapPalette.green,
-        actions: [
-          FilledButton.icon(
-            onPressed: () {
-              ref
-                  .read(selectedStationProvider.notifier)
-                  .select(RadioStation.fromDestination(d));
-              ref.invalidate(radioSessionProvider);
-              Navigator.of(context).maybePop();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content:
-                    Text('Tuned to ${d.name} Radio — open the Radio tab'),
-              ));
-            },
-            icon: const Icon(Icons.podcasts_rounded, size: 18),
-            label: const Text('Tune Radio'),
-          ),
-        ],
-      );
 
   void _openStopSheet(Stop s) => _showDetail(
         title: s.name,
@@ -428,20 +510,25 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final markers = <Marker>{
       if (layers.contains(MapLayer.parks))
         for (final d in mappable)
-          Marker(
-            markerId: MarkerId('park_${d.id}'),
+          _placeMarker(
+            id: 'park_${d.id}',
             position: LatLng(d.latitude!, d.longitude!),
-            icon: _pinIcon ?? BitmapDescriptor.defaultMarker,
-            onTap: () => _openParkSheet(d),
+            style: parkMarkerStyle,
+            selection: _MapSelection(
+              markerId: 'park_${d.id}',
+              name: d.name,
+              style: parkMarkerStyle,
+              position: LatLng(d.latitude!, d.longitude!),
+              imageUrl: d.imageUrl,
+              park: d,
+            ),
           ),
       if (layers.contains(MapLayer.locations))
         for (final s in stops.where((s) => s.latitude != null && s.longitude != null))
           Marker(
             markerId: MarkerId('stop_${s.id}'),
             position: LatLng(s.latitude!, s.longitude!),
-            icon: _locationIcon ??
-                BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueAzure),
+            icon: _pin(markerStyleFor('other')),
             onTap: () => _openStopSheet(s),
           ),
       if (layers.contains(MapLayer.sightings))
@@ -449,20 +536,26 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           Marker(
             markerId: MarkerId('sighting_${s.id}'),
             position: LatLng(s.latitude!, s.longitude!),
-            icon: _sightingIcon ??
-                BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueOrange),
+            icon: _pin(markerStyleFor('wildlife_viewing')),
             onTap: () => _openSightingSheet(s),
           ),
-      // Points of Interest (map_locations) + Campgrounds — every valid record,
-      // always visible (not radius-filtered), each with its own icon.
+      // Points of Interest (map_locations) + Campgrounds — category-colored,
+      // clustered when zoomed out, each with a selectable info card.
       if (layers.contains(MapLayer.locations))
         for (final p in places)
-          Marker(
-            markerId: MarkerId('place_${p.id}'),
+          _placeMarker(
+            id: 'place_${p.id}',
             position: LatLng(p.latitude, p.longitude),
-            icon: _iconFor(p.category),
-            onTap: () => _openPlaceSheet(p),
+            style: markerStyleFor(p.category),
+            clustered: true,
+            selection: _MapSelection(
+              markerId: 'place_${p.id}',
+              name: p.name,
+              style: markerStyleFor(p.category),
+              position: LatLng(p.latitude, p.longitude),
+              imageUrl: p.imageUrl,
+              audioUrl: p.audioUrl,
+            ),
           ),
       // User location (blue dot).
       if (userLocation != null)
@@ -532,10 +625,21 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                       CameraPosition(target: initialTarget, zoom: 9),
                   markers: markers,
                   circles: circles,
+                  clusterManagers: {
+                    ClusterManager(
+                      clusterManagerId: _placesCluster,
+                      onClusterTap: _onClusterTap,
+                    ),
+                  },
                   mapType: MapType.hybrid,
                   myLocationButtonEnabled: false,
                   zoomControlsEnabled: false,
                   mapToolbarEnabled: false,
+                  onTap: (_) {
+                    if (_selection != null) {
+                      setState(() => _selection = null);
+                    }
+                  },
                   onMapCreated: (c) {
                     _controller = c;
                     // Trigger a rebuild so the auto-fit block runs now that the
@@ -549,6 +653,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                 _explorerModeToggle(),
                 _aroundMeButton(hits.length),
                 if (_banner != null) _bannerOverlay(),
+                if (_selection != null) _selectionCard(userLocation),
               ],
             ),
           ),
@@ -710,19 +815,6 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           );
         },
       ),
-    );
-  }
-
-  /// Detail sheet for an always-on place marker (POI / campground).
-  void _openPlaceSheet(NearbyItem item) {
-    final style = nearbyStyle(item.category);
-    _showDetail(
-      title: item.name,
-      subtitle: item.description ?? style.group,
-      imageUrl: item.imageUrl,
-      icon: style.icon,
-      color: style.color,
-      actions: [_nearbyActionRow()],
     );
   }
 
@@ -987,6 +1079,191 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
       ),
     );
   }
+
+  /// The bottom information card for the selected marker: photo, name, category,
+  /// distance, and Listen / Navigate / Save / More Info actions. Animates in.
+  Widget _selectionCard(LatLng? userLocation) {
+    final sel = _selection!;
+    final distance = userLocation != null
+        ? formatDistance(_metersBetween(userLocation, sel.position))
+        : null;
+    return Positioned(
+      left: AppSpacing.md,
+      right: AppSpacing.md,
+      bottom: AppSpacing.md,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(sel.markerId),
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        builder: (context, t, child) => Opacity(
+          opacity: t.clamp(0, 1),
+          child: Transform.translate(offset: Offset(0, (1 - t) * 18), child: child),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _MapPalette.control,
+            borderRadius: AppRadius.lgAll,
+            border: Border.all(color: sel.style.color.withValues(alpha: 0.6)),
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x88000000), blurRadius: 18, offset: Offset(0, 6))
+            ],
+          ),
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: AppRadius.mdAll,
+                    child: SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: (sel.imageUrl != null && sel.imageUrl!.isNotEmpty)
+                          ? Image.network(sel.imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _thumbFallback(sel))
+                          : _thumbFallback(sel),
+                    ),
+                  ),
+                  const Gap.h(AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(sel.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                color: _MapPalette.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800)),
+                        const Gap.v(4),
+                        Row(
+                          children: [
+                            Container(
+                                width: 9,
+                                height: 9,
+                                decoration: BoxDecoration(
+                                    color: sel.style.color,
+                                    shape: BoxShape.circle)),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(sel.style.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: _MapPalette.textSecondary,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            if (distance != null) ...[
+                              const Text('  ·  ',
+                                  style:
+                                      TextStyle(color: _MapPalette.textSecondary)),
+                              Text(distance,
+                                  style: const TextStyle(
+                                      color: _MapPalette.gold,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700)),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => setState(() => _selection = null),
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.close_rounded,
+                        color: _MapPalette.textSecondary),
+                  ),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () => _listen(sel),
+                      style: FilledButton.styleFrom(
+                          backgroundColor: _MapPalette.gold,
+                          foregroundColor: Colors.black,
+                          minimumSize: const Size(0, 42)),
+                      icon: const Icon(Icons.podcasts_rounded, size: 18),
+                      label: const Text('Listen', overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                  const Gap.h(AppSpacing.sm),
+                  _cardIconButton(
+                      Icons.navigation_rounded, 'Navigate', () => _navigateTo(sel)),
+                  const Gap.h(AppSpacing.sm),
+                  _cardIconButton(
+                      Icons.bookmark_border_rounded,
+                      'Save',
+                      () => ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Saved ${sel.name}')))),
+                  const Gap.h(AppSpacing.sm),
+                  _cardIconButton(Icons.info_outline_rounded, 'More Info',
+                      () => _moreInfo(sel, distance)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _thumbFallback(_MapSelection sel) => Container(
+        color: sel.style.color.withValues(alpha: 0.22),
+        child: Icon(sel.style.icon, color: sel.style.color, size: 26),
+      );
+
+  Widget _cardIconButton(IconData icon, String tooltip, VoidCallback onTap) =>
+      Tooltip(
+        message: tooltip,
+        child: Material(
+          color: _MapPalette.bg,
+          shape: RoundedRectangleBorder(
+              borderRadius: AppRadius.mdAll,
+              side: const BorderSide(color: Color(0xFF2E3A34))),
+          child: InkWell(
+            borderRadius: AppRadius.mdAll,
+            onTap: onTap,
+            child: SizedBox(
+              width: 46,
+              height: 42,
+              child: Icon(icon, size: 19, color: _MapPalette.textPrimary),
+            ),
+          ),
+        ),
+      );
+}
+
+/// The data behind the selected-marker info card.
+class _MapSelection {
+  const _MapSelection({
+    required this.markerId,
+    required this.name,
+    required this.style,
+    required this.position,
+    this.imageUrl,
+    this.audioUrl,
+    this.park,
+  });
+
+  final String markerId;
+  final String name;
+  final MarkerCategoryStyle style;
+  final LatLng position;
+  final String? imageUrl;
+  final String? audioUrl;
+  final Destination? park;
 }
 
 /// A single map-layer toggle pill.
