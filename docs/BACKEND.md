@@ -143,6 +143,12 @@ narration, grounded only in ExplorerOS knowledge.
 - **Settings → AI Narration** (`narration_settings`, migration 0023): three
   switches — auto-generate scripts after import, auto-generate audio after
   approval, auto-publish after audio — all default OFF.
+- **Queue worker (Edge Function):** `supabase/functions/narration-worker/`
+  drains `generation_jobs` (`research` → knowledge, `narration` → draft scripts,
+  `narration_audio` → audio) so the studio's Generate buttons run automatically
+  server-side. Deploy + schedule every minute (see its README). Without it,
+  Generate only queues jobs and nothing processes them; the `tool/*.dart` CLIs
+  are the manual alternative.
 - **Route narration:** `dart run tool/generate_route_narration.dart --from "A"
   --to "B" [--dry-run]` generates one ranger-style driving script for the leg
   (grounded in both endpoints' knowledge; distance + drive time computed from

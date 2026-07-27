@@ -100,3 +100,9 @@ Run from repo root (see Flutter docs for details):
   `.env` is not used by them. Run e.g.
   `dart run tool/research_destination.dart --destination "Rainbow Springs State Park" --category state_park --state Florida`
   (add `--dry-run` to validate wiring without calling OpenAI).
+- **Narration "Generate" buttons only enqueue `generation_jobs`** — they do not
+  create scripts/audio directly (the AI keys are server-side only). A worker must
+  drain the queue: either the `supabase/functions/narration-worker` Edge Function
+  (deploy + schedule every minute; see its README) or the `tool/*.dart` CLIs run
+  manually. If admins report "Generate did nothing / no scripts appear," the
+  worker isn't running.
