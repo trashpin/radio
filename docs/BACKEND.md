@@ -19,6 +19,7 @@ one in the Supabase SQL editor (project `qqeyvhcgirmfokoftiuz`).
 | `0017_story_library.sql` | `story_library` (AI stories + GPS + audio) |
 | `0018_content_generator.sql` | `knowledge_base`, `generation_jobs` |
 | **`0019_backend_foundation.sql`** | **Auth/roles, user tables, ops tables, content-support tables, cross-cutting triggers, FTS + GPS indexes, helper functions, dashboard views, Storage buckets** |
+| **`0020_master_destinations.sql`** | **Master Destination System: new destination columns, auto `destination_code`/`slug`/`id`, `gps_zones`, `destination_id` FKs on content tables, counts/status, dashboard view, indexes, RLS** |
 
 Earlier migrations (`0001`–`0013`) established the original content tables
 (`destinations`, `species`, `media`, `songs`, `stories`, …).
@@ -51,6 +52,40 @@ pattern (anyone can read, authenticated/anon can write). Tighten writes to
 `audit_logs`, `system_logs`, `feature_flags`, `api_keys`, `analytics_events`,
 `import_jobs`, `export_jobs`. Reads are gated to admins; writes flow through
 `SECURITY DEFINER` triggers/functions or the service role.
+
+## Master Destination System (`0020`)
+
+`destinations` is the central source of truth for every destination type (state
+parks, national parks/forests, springs, WMAs, scenic drives, historic sites,
+museums, cities, beaches, campgrounds, trailheads, businesses) and scales to all
+50 states. The migration is additive — every existing column and row is
+preserved.
+
+- **New columns:** `county`, `city`, `region`, `subcategory`, `gps_radius_ft`,
+  `email`/`facebook`/`instagram`/`youtube`, `ai_enabled`, per-stage status
+  (`research_status`, `story_status`, `audio_status`, `image_status`,
+  `video_status`), counts (`story_count`, `audio_count`, `image_count`,
+  `play_count`), `priority`, `visitor_center`, `pet_friendly`, `accessibility`,
+  `best_season`, `entrance_fee`, `reservation_required`, `last_ai_research` /
+  `last_story_generation` / `last_audio_generation`, and `metadata` (JSONB).
+- **Scalable codes:** `trg_destination_defaults` (BEFORE INSERT) fills
+  `destination_id`, `slug`, and a `destination_code` like `FLNF0001`,
+  `FLSP0001`, `FLSPR0001`, `FLCITY0001`, `UTNP0001` via
+  `generate_destination_code(type, state)` (uses `state_abbrev` +
+  `destination_type_prefix`). Existing codes such as `OCALA` are preserved.
+- **Normalization:** a new `gps_zones` table (arrival/departure/approach/scenic/
+  trail/road triggers) and a `destination_id` foreign key added to every content
+  table (`stories`, `story_library`, `knowledge_base`, `species`, `trails`,
+  `campgrounds`, `events`, `businesses`, `images`, `videos`, `media`,
+  `generation_jobs`, …). `media` + `narrations` remain the audio store.
+- **Counts/status:** `recalc_destination_counts(uuid)` and
+  `recalc_all_destination_counts()` refresh the cached counts;
+  `v_destination_dashboard` exposes status + counts for the admin.
+- **Admin UI:** the **Destinations** module (`destination_dashboard_page.dart`)
+  lists destinations with AI-status chips, counts, and filters (type, county,
+  region, published, research/audio status), toggles publish, and launches AI
+  jobs per destination (enqueues `generation_jobs`). Bulk import uses the
+  **Destinations** CSV target; the DB trigger generates code/slug/id.
 
 ## Story pipeline
 
