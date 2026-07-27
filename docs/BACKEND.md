@@ -20,6 +20,7 @@ one in the Supabase SQL editor (project `qqeyvhcgirmfokoftiuz`).
 | `0018_content_generator.sql` | `knowledge_base`, `generation_jobs` |
 | **`0019_backend_foundation.sql`** | **Auth/roles, user tables, ops tables, content-support tables, cross-cutting triggers, FTS + GPS indexes, helper functions, dashboard views, Storage buckets** |
 | **`0020_master_destinations.sql`** | **Master Destination System: new destination columns, auto `destination_code`/`slug`/`id`, `gps_zones`, `destination_id` FKs on content tables, counts/status, dashboard view, indexes, RLS** |
+| **`0021_destination_write_access.sql`** | **Write RLS on `destinations` (insert/update/delete) so the admin dashboard + CSV importer can create/import/edit destinations** |
 
 Earlier migrations (`0001`–`0013`) established the original content tables
 (`destinations`, `species`, `media`, `songs`, `stories`, …).
@@ -86,6 +87,13 @@ preserved.
   region, published, research/audio status), toggles publish, and launches AI
   jobs per destination (enqueues `generation_jobs`). Bulk import uses the
   **Destinations** CSV target; the DB trigger generates code/slug/id.
+- **Bulk import (direct passthrough):** the **Destinations** CSV target maps every
+  column straight to the `destinations` table by header name (e.g. `Destination
+  Type` → `destination_type`), performs no value validation (values like `USA`
+  and `State Park` pass through), pre-blocks nothing, and shows Supabase errors
+  per row. It requires `0020` (auto id/slug/code) and `0021` (write access) to
+  import successfully; without them the DB returns `NOT NULL` / `42501 RLS`
+  errors, which the importer surfaces per row.
 
 ## Story pipeline
 
