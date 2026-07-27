@@ -30,6 +30,11 @@ enum AdminModule {
       description: 'Upload media to storage, manage songs, import CSVs, '
           'browse files, and manage narration.'),
 
+  destinations('Destinations', Icons.travel_explore_rounded, AdminGroup.content,
+      ready: true,
+      description: 'Master destination system: AI content status, filters, '
+          'per-destination AI jobs, and scalable destination codes.',
+      table: 'destinations'),
   parks('Parks', Icons.forest_rounded, AdminGroup.content,
       ready: true,
       description: 'Create and manage parks/destinations.',
