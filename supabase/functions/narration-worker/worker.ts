@@ -61,15 +61,31 @@ const TYPES: [string, string, number][] = [
   ["emergency_info", "Emergency information", 110],
 ];
 
-const VOICE_IDS: Record<string, string> = {
-  "National Park Ranger": "pNInz6obpgDQGcFmaJgB",
-  "Local Historian": "pNInz6obpgDQGcFmaJgB",
-  "Friendly Tour Guide": "ErXwobaYiN019PkySvjV",
-  "Campfire Storyteller": "TxGEqnHWrfWFTfGW9XjX",
-  "Kids Adventure Guide": "MF3mGyEYCl7XYWbV9V6O",
-  "Southern Storyteller": "VR6AewLTigWG4xSOukaG",
-};
-const DEFAULT_VOICE = "National Park Ranger";
+// ExplorerOS voice catalog (mirror of lib/features/narration/voices.dart).
+const VOICES: { id: string; name: string }[] = [
+  { id: "pNInz6obpgDQGcFmaJgB", name: "National Park Ranger (Adam)" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Friendly Tour Guide (Antoni)" },
+  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Campfire Storyteller (Josh)" },
+  { id: "MF3mGyEYCl7XYWbV9V6O", name: "Kids Adventure Guide (Elli)" },
+  { id: "VR6AewLTigWG4xSOukaG", name: "Southern Storyteller (Arnold)" },
+  { id: "kPzsL2i3teMYv0FxEYQ6", name: "DJ Brittney" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella" },
+  { id: "AZnzlk1XvdvUeBnXmlld", name: "Domi" },
+];
+const FALLBACK_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+const voiceName = (id: string) => VOICES.find((v) => v.id === id)?.name ?? id;
+
+async function globalDefaultVoiceId(): Promise<string | null> {
+  const r = await sbGet("narration_settings?select=default_voice_id&limit=1");
+  return r[0]?.default_voice_id ?? null;
+}
+async function destDefaultVoiceId(destId: string): Promise<string | null> {
+  const r = await sbGet(
+    `voice_defaults?scope=eq.destination&scope_value=eq.${destId}&select=voice_id&limit=1`,
+  );
+  return r[0]?.voice_id ?? null;
+}
 
 // ── QC helpers ──
 const wordRe = /[a-zA-Z0-9]+/g;
@@ -274,18 +290,16 @@ async function doNarration(job: any): Promise<{ done: boolean; msg: string }> {
 }
 
 // ── narration_audio: ElevenLabs -> audio_generated (never publishes) ──
+// Voice resolution per script: narration.voice_id → destination default →
+// global default → fallback. No hardcoded default beyond the last-resort.
 async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
   if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
   const notes = parseNotes(job.notes);
-  const voiceName = notes.voice ?? DEFAULT_VOICE;
-  const voiceId = VOICE_IDS[voiceName] ?? VOICE_IDS[DEFAULT_VOICE];
 
-  // Resolve which approved-without-audio rows to voice.
   let filter: string;
   if (notes.id) {
     filter = `id=eq.${notes.id}`;
   } else {
-    // job.destination is a name (bulk) or an id (single enqueue).
     let destId = job.destination as string;
     if (!/^[0-9a-f-]{36}$/i.test(destId)) {
       const d = await destByName(job.destination);
@@ -298,10 +312,21 @@ async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
   const pending = rows.filter((r: any) => !(r.audio_url ?? "").length);
   if (pending.length === 0) return { done: true, msg: "no approved scripts need audio" };
 
+  const globalVoice = await globalDefaultVoiceId();
+  const destCache = new Map<string, string | null>();
   const batch = pending.slice(0, AUDIO_CAP);
   let ok = 0;
   for (const r of batch) {
     try {
+      let voiceId: string | null = (r.voice_id && String(r.voice_id).length)
+        ? String(r.voice_id)
+        : null;
+      if (!voiceId) {
+        const dId = String(r.destination_id ?? "");
+        if (dId && !destCache.has(dId)) destCache.set(dId, await destDefaultVoiceId(dId));
+        voiceId = (dId ? destCache.get(dId) : null) || globalVoice || FALLBACK_VOICE_ID;
+      }
+      const vName = voiceName(voiceId);
       const tts = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
         {
@@ -322,8 +347,10 @@ async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
       const words = r.word_count ?? wordCount(r.script ?? "");
       await sbPatch(`destination_narrations?id=eq.${r.id}`, {
         audio_url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`,
-        voice: voiceName,
+        voice: vName,
+        voice_id: voiceId,
         duration_seconds: r.speaking_seconds ?? speakingSeconds(words),
+        audio_generated_at: new Date().toISOString(),
         status: "audio_generated", // NOT published
       });
       ok++;

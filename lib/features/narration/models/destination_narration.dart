@@ -95,7 +95,9 @@ class DestinationNarration {
     this.script,
     this.audioUrl,
     this.voice,
+    this.voiceId,
     this.durationSeconds,
+    this.audioGeneratedAt,
     this.status = NarrationStatus.draft,
     this.version = 1,
     this.variant = 1,
@@ -118,7 +120,9 @@ class DestinationNarration {
   final String? script;
   final String? audioUrl;
   final String? voice;
+  final String? voiceId;
   final int? durationSeconds;
+  final DateTime? audioGeneratedAt;
   final NarrationStatus status;
   final int version;
   final int variant;
@@ -148,7 +152,9 @@ class DestinationNarration {
       script: j['script'] as String?,
       audioUrl: j['audio_url'] as String?,
       voice: j['voice'] as String?,
+      voiceId: j['voice_id'] as String?,
       durationSeconds: (j['duration_seconds'] as num?)?.toInt(),
+      audioGeneratedAt: dt(j['audio_generated_at']),
       status: NarrationStatus.fromDb(j['status'] as String?),
       version: i(j['version'], 1),
       variant: i(j['variant'], 1),

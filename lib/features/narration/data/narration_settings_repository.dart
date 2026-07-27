@@ -8,16 +8,22 @@ class NarrationSettings {
     this.autoGenerateScripts = false,
     this.autoGenerateAudio = false,
     this.autoPublish = false,
+    this.defaultVoiceId,
+    this.defaultVoiceName,
   });
 
   final bool autoGenerateScripts;
   final bool autoGenerateAudio;
   final bool autoPublish;
+  final String? defaultVoiceId;
+  final String? defaultVoiceName;
 
   factory NarrationSettings.fromJson(Map<String, dynamic> j) => NarrationSettings(
         autoGenerateScripts: (j['auto_generate_scripts'] ?? false) as bool,
         autoGenerateAudio: (j['auto_generate_audio'] ?? false) as bool,
         autoPublish: (j['auto_publish'] ?? false) as bool,
+        defaultVoiceId: j['default_voice_id'] as String?,
+        defaultVoiceName: j['default_voice_name'] as String?,
       );
 }
 
@@ -44,6 +50,11 @@ class NarrationSettingsRepository {
       SupabaseService.client
           .from('narration_settings')
           .update({column: value}).eq('id', true);
+
+  /// Set the global default voice.
+  Future<void> setDefaultVoice(String voiceId, String voiceName) =>
+      SupabaseService.client.from('narration_settings').update(
+          {'default_voice_id': voiceId, 'default_voice_name': voiceName}).eq('id', true);
 }
 
 final narrationSettingsRepositoryProvider =

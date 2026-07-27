@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/narration/data/narration_settings_repository.dart';
+import 'package:explorer_os_mobile/features/narration/voices.dart';
 
 /// Admin Settings — currently the AI Narration automation switches. Everything
 /// defaults OFF: scripts, audio, and publishing are all manual unless enabled.
@@ -74,6 +75,46 @@ class AdminSettingsPage extends ConsumerWidget {
                     'When audio is generated, publish to Explorer Radio.'),
                 value: s.autoPublish,
                 onChanged: (v) => _set(context, ref, 'auto_publish', v),
+              ),
+              const Divider(),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('Global default voice',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                  DropdownButton<String>(
+                    value: narrationVoices.any((v) => v.id == s.defaultVoiceId)
+                        ? s.defaultVoiceId
+                        : null,
+                    hint: const Text('Select voice', style: TextStyle(fontSize: 13)),
+                    underline: const SizedBox.shrink(),
+                    items: [
+                      for (final v in narrationVoices)
+                        DropdownMenuItem(
+                            value: v.id,
+                            child: Text(v.name, style: const TextStyle(fontSize: 13))),
+                    ],
+                    onChanged: (voiceId) async {
+                      if (voiceId == null) return;
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await ref
+                            .read(narrationSettingsRepositoryProvider)
+                            .setDefaultVoice(voiceId, voiceNameForId(voiceId) ?? voiceId);
+                        ref.read(narrationSettingsRefreshProvider.notifier).bump();
+                      } catch (e) {
+                        messenger.showSnackBar(SnackBar(
+                            content: Text('Could not save (run migration 0024): $e')));
+                      }
+                    },
+                  ),
+                ],
+              ),
+              Text(
+                'Used when a narration (and its destination) has no voice set.',
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),

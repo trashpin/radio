@@ -134,6 +134,62 @@ class DestinationNarrationRepository {
 
   Future<void> archive(String id) => setStatus(id, NarrationStatus.archived);
 
+  /// Set the voice for a single narration (persists voice_id + name).
+  Future<void> setVoice(String id, String voiceId, String voiceName) =>
+      SupabaseService.client
+          .from('destination_narrations')
+          .update({'voice_id': voiceId, 'voice': voiceName}).eq('id', id);
+
+  Future<void> clearVoice(String id) => SupabaseService.client
+      .from('destination_narrations')
+      .update({'voice_id': null, 'voice': null}).eq('id', id);
+
+  /// Change voice and regenerate audio WITHOUT touching the script: sets the
+  /// voice, clears the old audio, moves back to approved, and queues an audio
+  /// job (the worker voices it with the selected voice).
+  Future<void> regenerateAudio(DestinationNarration n,
+      {String? voiceId, String? voiceName}) async {
+    final patch = <String, dynamic>{
+      'audio_url': null,
+      'audio_generated_at': null,
+      'status': NarrationStatus.approved.dbValue,
+    };
+    if (voiceId != null) {
+      patch['voice_id'] = voiceId;
+      patch['voice'] = voiceName;
+    }
+    await SupabaseService.client
+        .from('destination_narrations')
+        .update(patch)
+        .eq('id', n.id);
+    await enqueueAudio(n, voice: voiceName);
+  }
+
+  /// Per-destination default voice (voice_defaults scope=destination).
+  Future<String?> destinationDefaultVoiceId(String destId) async {
+    if (!SupabaseService.isConfigured || destId.isEmpty) return null;
+    try {
+      final rows = await SupabaseService.client
+          .from('voice_defaults')
+          .select('voice_id')
+          .eq('scope', 'destination')
+          .eq('scope_value', destId)
+          .limit(1) as List;
+      return rows.isEmpty ? null : rows.first['voice_id'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setDestinationDefaultVoice(
+          String destId, String voiceId, String voiceName) =>
+      SupabaseService.client.from('voice_defaults').upsert({
+        'scope': 'destination',
+        'scope_value': destId,
+        'voice_id': voiceId,
+        'voice_name': voiceName,
+      }, onConflict: 'scope,scope_value');
+
   /// Duplicate a script as a fresh draft (no audio, awaiting review).
   Future<void> duplicate(DestinationNarration n) =>
       SupabaseService.client.from('destination_narrations').insert({
@@ -238,4 +294,12 @@ final destinationNarrationsProvider =
     FutureProvider.family<List<DestinationNarration>, String>((ref, destId) {
   ref.watch(narrationRefreshProvider);
   return ref.watch(destinationNarrationRepositoryProvider).forDestination(destId);
+});
+
+/// The per-destination default voice id (null = use global default).
+final destinationDefaultVoiceProvider =
+    FutureProvider.family<String?, String>((ref, destId) {
+  ref.watch(narrationRefreshProvider);
+  return ref.watch(destinationNarrationRepositoryProvider)
+      .destinationDefaultVoiceId(destId);
 });

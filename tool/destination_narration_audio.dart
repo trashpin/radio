@@ -83,14 +83,19 @@ Future<void> main(List<String> args) async {
       if (script.trim().isEmpty) continue;
       final words = (r['word_count'] as num?)?.toInt() ?? wordCount(script);
       final dur = (r['speaking_seconds'] as num?)?.toInt() ?? speakingSeconds(words);
+      // Prefer the narration's own selected voice; fall back to the CLI voice.
+      final rowVoiceId = (r['voice_id'] ?? '').toString();
+      final vId = rowVoiceId.isNotEmpty ? rowVoiceId : voiceId;
+      final vName =
+          rowVoiceId.isNotEmpty ? ((r['voice'] ?? rowVoiceId).toString()) : voiceName;
       if (dryRun) {
         stdout.writeln('  [dry] ${r['script_type']} v${r['variant']}: '
-            '$words words (~${formatSeconds(dur)}) -> voice $voiceId');
+            '$words words (~${formatSeconds(dur)}) -> voice $vId');
         continue;
       }
       try {
         final ttsReq = await http.postUrl(Uri.parse(
-            'https://api.elevenlabs.io/v1/text-to-speech/$voiceId?output_format=mp3_44100_128'));
+            'https://api.elevenlabs.io/v1/text-to-speech/$vId?output_format=mp3_44100_128'));
         ttsReq.headers.set('xi-api-key', xi);
         ttsReq.headers.set('accept', 'audio/mpeg');
         ttsReq.headers.contentType = ContentType.json;
@@ -125,8 +130,10 @@ Future<void> main(List<String> args) async {
         patchReq.headers.contentType = ContentType.json;
         patchReq.add(utf8.encode(jsonEncode({
           'audio_url': publicUrl,
-          'voice': voiceName,
+          'voice': vName,
+          'voice_id': vId,
           'duration_seconds': dur,
+          'audio_generated_at': DateTime.now().toUtc().toIso8601String(),
           // Audio is generated but NOT published — the admin publishes explicitly.
           'status': 'audio_generated',
         })));

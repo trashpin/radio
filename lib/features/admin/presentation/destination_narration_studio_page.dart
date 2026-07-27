@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/destinations/models/master_destinati
 import 'package:explorer_os_mobile/features/narration/data/destination_narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
 import 'package:explorer_os_mobile/features/narration/narration_qc.dart';
+import 'package:explorer_os_mobile/features/narration/voices.dart';
 
 /// The per-destination AI Narration Studio: coverage header, generate actions,
 /// and every script type with its variants, QC metrics, and lifecycle actions.
@@ -87,6 +88,8 @@ class DestinationNarrationStudioPage extends ConsumerWidget {
             padding: const EdgeInsets.all(AppSpacing.xl),
             children: [
               _Header(destination: destination, coverage: coverage),
+              const Gap.v(AppSpacing.md),
+              _DestinationDefaultVoice(destination: destination),
               const Gap.v(AppSpacing.md),
               _ActionBar(
                 onGenerateAll: () => _generate(context, ref, 'all'),
@@ -413,6 +416,34 @@ class _ScriptTypeCard extends ConsumerWidget {
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.disabledColor, fontSize: 11.5),
                 ),
+                const Gap.v(AppSpacing.xs),
+                Row(children: [
+                  const Icon(Icons.record_voice_over_rounded, size: 14),
+                  const SizedBox(width: 6),
+                  _VoiceDropdown(
+                    value: n.voiceId,
+                    allowDefault: true,
+                    onChanged: (voiceId) {
+                      if (voiceId == null) {
+                        _act(context, ref, _repo(ref).clearVoice(n.id),
+                            'Voice reset to default');
+                      } else {
+                        _act(context, ref,
+                            _repo(ref).setVoice(n.id, voiceId, voiceNameForId(voiceId) ?? voiceId),
+                            'Voice set to ${voiceNameForId(voiceId)}');
+                      }
+                    },
+                  ),
+                ]),
+                if (n.hasAudio)
+                  Text(
+                    'Voice: ${n.voice ?? voiceNameForId(n.voiceId) ?? '—'}'
+                    '${n.voiceId != null ? '  ·  ID ${n.voiceId!.substring(0, n.voiceId!.length.clamp(0, 8))}' : ''}'
+                    '${n.audioGeneratedAt != null ? '  ·  generated ${_fmtDate(n.audioGeneratedAt!)}' : ''}'
+                    '  ·  ${formatSeconds(n.durationSeconds ?? n.speakingSeconds)}',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.disabledColor, fontSize: 11.5),
+                  ),
               ],
             ),
           ),
@@ -420,6 +451,11 @@ class _ScriptTypeCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  static String _fmtDate(DateTime d) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${d.year}-${two(d.month)}-${two(d.day)} ${two(d.hour)}:${two(d.minute)}';
   }
 
   Widget _statusChip(DestinationNarration n) {
@@ -467,6 +503,9 @@ class _ScriptTypeCard extends ConsumerWidget {
           case 'audio':
             _act(context, ref, _repo(ref).enqueueAudio(n),
                 'Queued audio generation (run the audio worker)');
+          case 'regen_audio':
+            _act(context, ref, _repo(ref).regenerateAudio(n),
+                'Regenerating audio with ${n.voice ?? voiceNameForId(n.voiceId) ?? 'the default voice'}');
           case 'publish':
             _act(context, ref, _repo(ref).publish(n.id), 'Published');
           case 'archive':
@@ -497,6 +536,10 @@ class _ScriptTypeCard extends ConsumerWidget {
             value: 'audio',
             enabled: canAudio,
             child: const Text('Generate Audio')),
+        PopupMenuItem(
+            value: 'regen_audio',
+            enabled: n.hasAudio,
+            child: const Text('Regenerate Audio (new voice)')),
         PopupMenuItem(
             value: 'publish',
             enabled: canPublish,
@@ -574,6 +617,80 @@ class _ScriptTypeCard extends ConsumerWidget {
                   'Saved');
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A compact voice picker used per-narration and for defaults.
+class _VoiceDropdown extends StatelessWidget {
+  const _VoiceDropdown({
+    required this.value,
+    required this.onChanged,
+    this.allowDefault = false,
+  });
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final bool allowDefault;
+
+  @override
+  Widget build(BuildContext context) {
+    final known = narrationVoices.any((v) => v.id == value);
+    return DropdownButton<String?>(
+      value: known ? value : null,
+      isDense: true,
+      hint: Text(allowDefault ? 'Use default voice' : 'Select voice',
+          style: const TextStyle(fontSize: 12)),
+      underline: const SizedBox.shrink(),
+      style: Theme.of(context).textTheme.bodySmall,
+      items: [
+        if (allowDefault)
+          const DropdownMenuItem<String?>(
+              value: null, child: Text('Use default voice', style: TextStyle(fontSize: 12))),
+        for (final v in narrationVoices)
+          DropdownMenuItem<String?>(
+              value: v.id, child: Text(v.name, style: const TextStyle(fontSize: 12))),
+      ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+/// The per-destination default voice (voice_defaults scope=destination).
+class _DestinationDefaultVoice extends ConsumerWidget {
+  const _DestinationDefaultVoice({required this.destination});
+  final MasterDestination destination;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.watch(destinationDefaultVoiceProvider(destination.id)).value;
+    return AdminSectionCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Row(
+        children: [
+          const Icon(Icons.record_voice_over_rounded, size: 18),
+          const Gap.h(AppSpacing.sm),
+          const Expanded(
+            child: Text('Default voice for this destination',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+          _VoiceDropdown(
+            value: current,
+            allowDefault: false,
+            onChanged: (voiceId) async {
+              if (voiceId == null) return;
+              final messenger = ScaffoldMessenger.of(context);
+              await ref
+                  .read(destinationNarrationRepositoryProvider)
+                  .setDestinationDefaultVoice(
+                      destination.id, voiceId, voiceNameForId(voiceId) ?? voiceId);
+              ref.read(narrationRefreshProvider.notifier).bump();
+              messenger.showSnackBar(SnackBar(
+                  content: Text('Default voice set to ${voiceNameForId(voiceId)} '
+                      '(used when a narration has no voice)')));
+            },
           ),
         ],
       ),
