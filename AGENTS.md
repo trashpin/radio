@@ -100,6 +100,18 @@ Run from repo root (see Flutter docs for details):
   `.env` is not used by them. Run e.g.
   `dart run tool/research_destination.dart --destination "Rainbow Springs State Park" --category state_park --state Florida`
   (add `--dry-run` to validate wiring without calling OpenAI).
+- **Central audio engine: `lib/features/playback/`.** `PlaybackManager`
+  (`playback_manager.dart`) is the single source of truth for all music +
+  narration playback; other systems (GPS, Explorer Radio, narration, POIs)
+  should route audio through it, never touch `just_audio` directly. It runs two
+  `AudioOutput` channels (music + narration) so music is ducked/faded and resumed
+  around narration, and it uses a priority queue (emergency 100 → music 10).
+  State transitions are **optimistic**: state/events update synchronously and the
+  actual source load runs in the background (load failures surface via the
+  `errorOccurred` event), so never rely on `play()` resolving before the state
+  flips. Riverpod entry points are in `playback_providers.dart`; unit tests use a
+  fake `AudioOutput` (`test/playback_manager_test.dart`). The admin **Playback
+  Debug** module (Platform group) exercises the engine end-to-end in a browser.
 - **Narration "Generate" buttons only enqueue `generation_jobs`** — they do not
   create scripts/audio directly (the AI keys are server-side only). A worker must
   drain the queue: either the `supabase/functions/narration-worker` Edge Function

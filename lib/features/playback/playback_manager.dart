@@ -360,17 +360,30 @@ class PlaybackManager {
       return;
     }
 
-    try {
-      await _music.setVolume(_effectiveMusicVolume);
-      await _music.play(track.audioUrl);
-      _musicLoaded = true;
-      _musicStatus = ChannelStatus.playing;
-      _setState(PlaybackState.playingMusic);
-      _emit(PlaybackEventType.musicStarted, item: track);
-      _emit(PlaybackEventType.playbackStarted, item: track);
-    } catch (e, st) {
-      _handlePlaybackError(track, e, st, isMusic: true);
-    }
+    // Update state optimistically so the UI reflects intent immediately. The
+    // actual source load runs without blocking the state machine (web audio can
+    // take a moment to load), and load failures are handled via [_fire].
+    _musicLoaded = true;
+    _musicStatus = ChannelStatus.playing;
+    _setState(PlaybackState.playingMusic);
+    _emit(PlaybackEventType.musicStarted, item: track);
+    _emit(PlaybackEventType.playbackStarted, item: track);
+    _fire(_music, track.audioUrl, _effectiveMusicVolume, track, isMusic: true);
+  }
+
+  /// Set volume and start playback on [out] without blocking the state machine;
+  /// route any load/playback failure through [_handlePlaybackError].
+  void _fire(
+    AudioOutput out,
+    String url,
+    double volume,
+    PlaybackItem item, {
+    required bool isMusic,
+  }) {
+    unawaited(out.setVolume(volume));
+    unawaited(out.play(url).catchError((Object e, StackTrace st) {
+      _handlePlaybackError(item, e, st, isMusic: isMusic);
+    }));
   }
 
   void _onMusicComplete() {
@@ -435,23 +448,39 @@ class PlaybackManager {
     final playing = item.copyWith(status: PlaybackItemStatus.playing);
     _currentNarration = playing;
 
-    // Duck music if it's playing.
+    // Duck music if it's playing — fade it out (over [fadeDuration]) and pause,
+    // without blocking the narration from starting.
     if (_musicStatus == ChannelStatus.playing) {
       _resumeMusicAfterNarration = true;
-      await _fade(_music, _effectiveMusicVolume, 0.0);
-      await _music.pause();
-      _musicStatus = ChannelStatus.paused;
+      unawaited(_duckMusic());
     }
 
+    // Reflect narration immediately, then start the source load in the
+    // background.
+    _narrationStatus = ChannelStatus.playing;
+    _setState(PlaybackState.playingNarration);
+    _emit(PlaybackEventType.narrationStarted, item: playing);
+    _emit(PlaybackEventType.playbackStarted, item: playing);
+    _fire(_narration, playing.audioUrl, _effectiveNarrationVolume, playing,
+        isMusic: false);
+  }
+
+  Future<void> _duckMusic() async {
+    await _fade(_music, _effectiveMusicVolume, 0.0);
+    await _music.pause();
+    if (_currentNarration != null) _musicStatus = ChannelStatus.paused;
+    _pushSnapshot();
+  }
+
+  Future<void> _fadeMusicBackIn() async {
     try {
-      await _narration.setVolume(_effectiveNarrationVolume);
-      await _narration.play(playing.audioUrl);
-      _narrationStatus = ChannelStatus.playing;
-      _setState(PlaybackState.playingNarration);
-      _emit(PlaybackEventType.narrationStarted, item: playing);
-      _emit(PlaybackEventType.playbackStarted, item: playing);
+      await _music.setVolume(0.0);
+      await _music.resume();
+      await _fade(_music, 0.0, _effectiveMusicVolume);
     } catch (e, st) {
-      _handlePlaybackError(playing, e, st, isMusic: false);
+      if (_currentMusic != null) {
+        _handlePlaybackError(_currentMusic!, e, st, isMusic: true);
+      }
     }
   }
 
@@ -484,16 +513,11 @@ class PlaybackManager {
       return;
     }
     if (_musicLoaded) {
-      try {
-        await _music.setVolume(0.0);
-        await _music.resume();
-        _musicStatus = ChannelStatus.playing;
-        _setState(PlaybackState.playingMusic);
-        _emit(PlaybackEventType.musicStarted, item: _currentMusic);
-        await _fade(_music, 0.0, _effectiveMusicVolume);
-      } catch (e, st) {
-        _handlePlaybackError(_currentMusic!, e, st, isMusic: true);
-      }
+      _musicStatus = ChannelStatus.playing;
+      _setState(PlaybackState.playingMusic);
+      _emit(PlaybackEventType.musicStarted, item: _currentMusic);
+      // Fade the ducked music back in over [fadeDuration] without blocking.
+      unawaited(_fadeMusicBackIn());
     } else {
       // Selected during narration but never loaded — start it fresh now.
       await _startCurrentMusic();

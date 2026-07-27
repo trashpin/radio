@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,16 +26,65 @@ class PlaybackDebugPage extends ConsumerStatefulWidget {
 }
 
 class _PlaybackDebugPageState extends ConsumerState<PlaybackDebugPage> {
-  // CORS-friendly sample clips so the panel plays real audio in a browser.
-  static const _music1 =
-      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-  static const _music2 =
-      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3';
-  static const _narrationUrl =
-      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3';
-  static const _badUrl = 'https://invalid.example/does-not-exist.mp3';
+  // Self-contained generated tones (WAV data URIs) so the panel plays real audio
+  // in any browser with no network dependency. Music tracks are long so they can
+  // be ducked under a short narration and then resumed.
+  late final String _music1 = _toneDataUri(seconds: 30, freq: 196); // low G
+  late final String _music2 = _toneDataUri(seconds: 30, freq: 261); // C
+  late final String _narrationUrl = _toneDataUri(seconds: 8, freq: 440); // A
+  // A deliberately malformed data URI to demonstrate error handling.
+  static const _badUrl = 'data:audio/wav;base64,AAAA';
 
   int _narrationCounter = 0;
+
+  /// Builds a mono 8-bit PCM WAV sine tone and returns it as a `data:` URI.
+  static String _toneDataUri({
+    required double seconds,
+    required double freq,
+    int sampleRate = 8000,
+    double amplitude = 42,
+  }) {
+    final n = (seconds * sampleRate).round();
+    final bytes = Uint8List(44 + n);
+    final bd = ByteData.view(bytes.buffer);
+    var p = 0;
+    void str(String s) {
+      for (final c in s.codeUnits) {
+        bytes[p++] = c;
+      }
+    }
+
+    void u32(int v) {
+      bd.setUint32(p, v, Endian.little);
+      p += 4;
+    }
+
+    void u16(int v) {
+      bd.setUint16(p, v, Endian.little);
+      p += 2;
+    }
+
+    str('RIFF');
+    u32(36 + n);
+    str('WAVE');
+    str('fmt ');
+    u32(16);
+    u16(1); // PCM
+    u16(1); // mono
+    u32(sampleRate);
+    u32(sampleRate); // byte rate (1 byte/sample, mono)
+    u16(1); // block align
+    u16(8); // bits per sample
+    str('data');
+    u32(n);
+    for (var i = 0; i < n; i++) {
+      // Short fade in/out to avoid clicks.
+      final fade = math.min(1.0, math.min(i, n - i) / 400.0);
+      final s = 128 + amplitude * fade * math.sin(2 * math.pi * freq * i / sampleRate);
+      bytes[44 + i] = s.round().clamp(0, 255);
+    }
+    return 'data:audio/wav;base64,${base64Encode(bytes)}';
+  }
 
   PlaybackManager get _pm => ref.read(playbackManagerProvider);
 
