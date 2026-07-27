@@ -176,5 +176,40 @@ void main() {
       final dest = targetNamed('Destinations');
       expect(requiredMapped(dest, const {}), isTrue);
     });
+
+    test('Destinations uses destination_code business key + auto destination_id',
+        () {
+      final dest = targetNamed('Destinations');
+      expect(dest.upsertKey, 'destination_code');
+      expect(dest.autoUuidColumn, 'destination_id');
+    });
+
+    test('destination_id auto-generates when blank; never null', () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'destination_code', 'destination_id'];
+      final rec = buildRecord(
+          dest, headers, ['Blue Spring', 'FLSP9', ''], const {},
+          uuid: () => 'generated-uuid');
+      expect(rec, isNotNull);
+      expect(rec!['destination_id'], 'generated-uuid');
+      expect(rec['destination_id'], isNotNull);
+    });
+
+    test('a supplied destination_id is kept as-is', () {
+      final dest = targetNamed('Destinations');
+      final headers = ['name', 'destination_code', 'destination_id'];
+      final rec = buildRecord(dest, headers,
+          ['Blue Spring', 'FLSP9', 'existing-id-123'], const {},
+          uuid: () => 'generated-uuid');
+      expect(rec!['destination_id'], 'existing-id-123');
+    });
+
+    test('destination_id generated even when the column is absent from the CSV',
+        () {
+      final dest = targetNamed('Destinations');
+      final rec = buildRecord(dest, ['name', 'destination_code'],
+          ['Blue Spring', 'FLSP9'], const {}, uuid: () => 'gen');
+      expect(rec!['destination_id'], 'gen');
+    });
   });
 }

@@ -52,6 +52,8 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
 
   bool _importing = false;
   int _inserted = 0;
+  int _updated = 0;
+  int _skipped = 0;
   int _failed = 0;
   final List<String> _errors = [];
   bool _done = false;
@@ -67,6 +69,8 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
 
   void _resetResult() {
     _inserted = 0;
+    _updated = 0;
+    _skipped = 0;
     _failed = 0;
     _errors.clear();
     _done = false;
@@ -190,6 +194,29 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
     }
   }
 
+  /// Updates the row identified by [keyCol]=[keyVal], dropping columns the table
+  /// doesn't have (schema drift) so one missing column can't fail the update.
+  Future<void> _updateResilient(
+      String keyCol, String keyVal, Map<String, dynamic> payload) async {
+    final client = SupabaseService.client;
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await client
+            .from(_target.table)
+            .update(_stripDropped(payload))
+            .eq(keyCol, keyVal);
+        return;
+      } catch (e) {
+        final col = _missingColumn('$e');
+        if (col != null && !_droppedColumns.contains(col)) {
+          _droppedColumns.add(col);
+          continue;
+        }
+        rethrow;
+      }
+    }
+  }
+
   Future<void> _import() async {
     setState(() {
       _importing = true;
@@ -206,31 +233,36 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
         valid.add(rec);
       }
     }
-    const batch = 100;
-    for (var i = 0; i < valid.length; i += batch) {
-      final chunk = valid.sublist(i, min(i + batch, valid.length));
-      try {
-        await _insertResilient(chunk);
-        _inserted += chunk.length;
-      } catch (_) {
-        // Retry row-by-row to isolate the failures.
-        for (final rec in chunk) {
-          try {
-            await _insertResilient([rec]);
-            _inserted++;
-          } catch (e2) {
-            _failed++;
-            if (_errors.length < 20) {
-              _errors.add('Row "${rec.values.first}": ${_friendly('$e2')}');
+
+    if (_target.upsertKey != null) {
+      await _upsertByKey(valid);
+    } else {
+      const batch = 100;
+      for (var i = 0; i < valid.length; i += batch) {
+        final chunk = valid.sublist(i, min(i + batch, valid.length));
+        try {
+          await _insertResilient(chunk);
+          _inserted += chunk.length;
+        } catch (_) {
+          for (final rec in chunk) {
+            try {
+              await _insertResilient([rec]);
+              _inserted++;
+            } catch (e2) {
+              _failed++;
+              if (_errors.length < 20) {
+                _errors.add('Row "${rec.values.first}": ${_friendly('$e2')}');
+              }
             }
           }
         }
+        if (mounted) setState(() {});
       }
-      if (mounted) setState(() {});
     }
+
     setState(() {
       _importing = false;
-      _failed += invalid;
+      _skipped += invalid;
       if (invalid > 0) {
         _errors.insert(
             0,
@@ -245,6 +277,47 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
       }
       _done = true;
     });
+  }
+
+  /// Insert-or-update by the target's business key (e.g. destination_code):
+  /// existing rows are UPDATED (preserving the auto-UUID column so the id/PK is
+  /// never changed); new rows are INSERTED (with the generated/supplied UUID).
+  Future<void> _upsertByKey(List<Map<String, dynamic>> recs) async {
+    final client = SupabaseService.client;
+    final keyCol = _target.upsertKey!;
+    final idCol = _target.autoUuidColumn;
+    for (final rec in recs) {
+      final keyVal = rec[keyCol]?.toString().trim();
+      try {
+        var exists = false;
+        if (keyVal != null && keyVal.isNotEmpty) {
+          final found = await client
+              .from(_target.table)
+              .select(keyCol)
+              .eq(keyCol, keyVal)
+              .limit(1) as List;
+          exists = found.isNotEmpty;
+        }
+        if (exists) {
+          // Preserve the existing id: never send the auto-UUID column on update.
+          final payload = Map<String, dynamic>.from(rec);
+          if (idCol != null) payload.remove(idCol);
+          await _updateResilient(keyCol, keyVal!, payload);
+          _updated++;
+        } else {
+          await _insertResilient([rec]);
+          _inserted++;
+        }
+      } catch (e) {
+        _failed++;
+        if (_errors.length < 20) {
+          _errors.add('Row "${keyVal ?? rec.values.first}": ${_friendly('$e')}');
+        }
+      }
+      if (mounted && (_inserted + _updated + _failed) % 25 == 0) {
+        setState(() {});
+      }
+    }
   }
 
   /// Turns common Postgres/PostgREST errors into a plain-English hint.
@@ -535,17 +608,20 @@ class _CsvImporterTabState extends State<CsvImporterTab> {
                               strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.cloud_upload_rounded, size: 18),
                   label: Text(_importing
-                      ? 'Importing… ($_inserted done)'
+                      ? 'Importing… (${_inserted + _updated} done)'
                       : 'Import ${_rows.length - _invalidRows} rows into ${_target.table}'),
                 ),
                 if (_done || _errors.isNotEmpty) ...[
                   const Gap.v(AppSpacing.md),
                   if (_done)
-                    Text('Imported $_inserted'
-                        '${_failed > 0 ? ', $_failed failed/skipped' : ''}.',
+                    Text(
+                        'Inserted $_inserted · Updated $_updated · '
+                        'Skipped $_skipped · Failed $_failed',
                         style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
-                            color: _failed > 0 ? Colors.orange : Colors.green)),
+                            color: (_failed > 0)
+                                ? Colors.orange
+                                : Colors.green)),
                   for (final e in _errors) ...[
                     const Gap.v(AppSpacing.xs),
                     Text('• $e',

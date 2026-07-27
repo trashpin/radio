@@ -23,12 +23,24 @@ class CsvTarget {
     this.matchKeyFrom,
     this.note,
     this.passthrough = false,
+    this.upsertKey,
+    this.autoUuidColumn,
   });
 
   final String label;
   final String table;
   final List<CsvCol> columns;
   final Map<String, dynamic> defaults;
+
+  /// Business key used to decide insert-vs-update (e.g. `destination_code`). When
+  /// set, the importer looks the row up by this column: existing → update
+  /// (preserving [autoUuidColumn]); missing → insert.
+  final String? upsertKey;
+
+  /// A UUID column that must never be null: if the CSV leaves it blank, the
+  /// importer generates a UUID before inserting (e.g. `destination_id`). A
+  /// supplied value is kept as-is.
+  final String? autoUuidColumn;
 
   /// Direct-mapping mode: every CSV header is sent straight to the matching
   /// table column (by snake_cased header name) with no value validation and no
@@ -89,12 +101,13 @@ List<CsvTarget> buildCsvTargets() => [
         label: 'Destinations',
         table: 'destinations',
         passthrough: true,
+        upsertKey: 'destination_code',
+        autoUuidColumn: 'destination_id',
         note: 'Direct import: every column maps straight to the destinations '
-            'table by name, values are sent as-is (e.g. "USA", "State Park"), '
-            'and the database validates each row. destination_id, slug, and a '
-            'scalable destination_code auto-generate when omitted (migration '
-            '0020). Required by the table: name (and destination_code/slug '
-            'unless 0020 is applied).',
+            'table by name (values sent as-is, e.g. "USA", "State Park"). '
+            'destination_id is OPTIONAL — a UUID is generated automatically when '
+            'blank. Rows are matched by destination_code: existing codes update '
+            '(keeping their destination_id), new codes insert.',
         columns: [],
       ),
       const CsvTarget(
@@ -276,7 +289,17 @@ Map<String, dynamic>? buildRecord(
       if (val == null) continue;
       rec[key] = val;
     }
-    return rec.isEmpty ? null : rec;
+    if (rec.isEmpty) return null;
+    // Never send NULL for the auto-UUID column: generate one when blank, keep a
+    // supplied value as-is. The admin never has to create UUIDs by hand.
+    final idCol = target.autoUuidColumn;
+    if (idCol != null) {
+      final v = rec[idCol];
+      if (v == null || v.toString().trim().isEmpty) {
+        rec[idCol] = (uuid ?? uuidV4)();
+      }
+    }
+    return rec;
   }
   final rec = <String, dynamic>{...target.defaults};
   for (final col in target.columns) {
