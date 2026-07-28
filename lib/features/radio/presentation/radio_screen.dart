@@ -1,16 +1,17 @@
-import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
-import 'package:explorer_os_mobile/core/theme/app_radius.dart';
-import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/i_see_something_modal.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
@@ -18,29 +19,25 @@ import 'package:explorer_os_mobile/features/radio/providers/radio_session_provid
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 
-/// Palette for the immersive (dark) Radio player — warm sunset orange accent.
+/// Premium automotive-infotainment palette: black canvas, Explorer Green accent,
+/// white type, soft panels with large radii.
 class _RadioPalette {
-  static const Color bg = Color(0xFF0C120F);
-  static const Color panel = Color(0xFF171F1B);
-  static const Color panelAlt = Color(0xFF212B26);
-  static const Color accent = Color(0xFFEE7B2E); // sunset orange
+  static const Color bg = Color(0xFF000000);
+  static const Color panel = Color(0xFF121815);
+  static const Color panelAlt = Color(0xFF1B231F);
+  static const Color green = Color(0xFF35C56A); // Explorer Green
+  static const Color greenSoft = Color(0xFF2A7D48);
   static const Color textPrimary = Color(0xFFF3F6F2);
   static const Color textSecondary = Color(0xFF9AA6A0);
   static const Color textFaint = Color(0xFF6E7A74);
+  static const double radius = 22;
 }
 
-/// Guide narration intensity (Light / Standard / Immersive).
-enum GuideExperience { light, standard, immersive }
+/// The broadcast host shown throughout the station (a UI label — the interface
+/// never exposes the underlying content type, only what's on air and its host).
+const String _stationHost = 'Ranger Jake';
 
-extension _GuideLabel on GuideExperience {
-  String get label => switch (this) {
-        GuideExperience.light => 'Light',
-        GuideExperience.standard => 'Standard',
-        GuideExperience.immersive => 'Immersive',
-      };
-}
-
-/// The Explorer Radio player (automotive infotainment style).
+/// The Explorer Radio player — a luxury-vehicle infotainment layout.
 class RadioScreen extends ConsumerWidget {
   const RadioScreen({super.key});
 
@@ -72,7 +69,8 @@ class RadioScreen extends ConsumerWidget {
 }
 
 class _RadioMessage extends StatelessWidget {
-  const _RadioMessage({required this.message, this.spinner = false, this.onRetry});
+  const _RadioMessage(
+      {required this.message, this.spinner = false, this.onRetry});
 
   final String message;
   final bool spinner;
@@ -82,23 +80,23 @@ class _RadioMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
+        padding: const EdgeInsets.all(28),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (spinner) ...[
-              const CircularProgressIndicator(color: _RadioPalette.accent),
-              const Gap.v(AppSpacing.lg),
+              const CircularProgressIndicator(color: _RadioPalette.green),
+              const SizedBox(height: 20),
             ],
             Text(message,
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: _RadioPalette.textSecondary)),
             if (onRetry != null) ...[
-              const Gap.v(AppSpacing.lg),
+              const SizedBox(height: 20),
               TextButton(
                 onPressed: onRetry,
                 child: const Text('Try again',
-                    style: TextStyle(color: _RadioPalette.accent)),
+                    style: TextStyle(color: _RadioPalette.green)),
               ),
             ],
           ],
@@ -117,11 +115,6 @@ class _Player extends ConsumerStatefulWidget {
 }
 
 class _PlayerState extends ConsumerState<_Player> {
-  bool _favorite = false;
-  bool _shuffle = false;
-  bool _repeat = false;
-  GuideExperience _guide = GuideExperience.standard;
-
   Destination? _destination() {
     final all = ref.read(destinationsProvider).value ?? const [];
     for (final d in all) {
@@ -134,586 +127,523 @@ class _PlayerState extends ConsumerState<_Player> {
   Widget build(BuildContext context) {
     final playback = ref.watch(radioEngineControllerProvider);
     final controller = ref.read(radioEngineControllerProvider.notifier);
+    final obs = ref.watch(observationControllerProvider);
     final nowPlaying = playback.current?.segment;
     final isPlaying = playback.status == PlaybackStatus.playing;
     final dest = _destination();
-    final obs = ref.watch(observationControllerProvider);
 
-    const stationTitle = 'OCALA NATIONAL FOREST RADIO';
-    const tagline = 'Music • Stories • Discovery';
-    final upNext =
-        playback.queue.where((q) => q.segment.title.isNotEmpty).take(3).toList();
+    // Dynamic "now playing" title — whatever is on air right now, never its
+    // internal category. In observation mode it's the species being explored.
+    final title = obs.active
+        ? obs.species!.commonName
+        : (nowPlaying?.title.isNotEmpty ?? false
+            ? nowPlaying!.title
+            : 'ExplorerOS Radio');
+    final playing = isPlaying || (obs.active && obs.narrating);
 
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 130),
-      children: [
-        _hero(overrideImage: obs.species?.heroImageUrl, glowing: obs.narrating),
-        const Gap.v(AppSpacing.lg),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl),
-          child: Column(
-            children: [
-              Text(stationTitle,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: _RadioPalette.textPrimary,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5)),
-              const Gap.v(AppSpacing.xs),
-              Text(tagline,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: _RadioPalette.accent,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500)),
-              const Gap.v(AppSpacing.lg),
-              _InfoStrip(park: dest?.name, location: dest?.location),
-              const Gap.v(AppSpacing.xl),
-              if (obs.active)
-                _exploring(obs)
-              else ...[
-                _nowPlaying(
-                    nowPlaying?.title, nowPlaying?.artist, nowPlaying?.album),
-                const Gap.v(AppSpacing.lg),
-                _TrackProgress(
-                  trackKey: nowPlaying?.id ?? '',
-                  duration:
-                      (nowPlaying?.duration ?? Duration.zero) > Duration.zero
-                          ? nowPlaying!.duration
-                          : null,
-                  isPlaying: isPlaying,
-                ),
-              ],
-              const Gap.v(AppSpacing.lg),
-              _transport(isPlaying: isPlaying, controller: controller),
-              const Gap.v(AppSpacing.xl),
-              Row(
-                children: [
-                  Expanded(child: _guideCard()),
-                  const Gap.h(AppSpacing.md),
-                  Expanded(child: _iSeeSomethingButton()),
-                ],
-              ),
-              const Gap.v(AppSpacing.xl),
-              _upNext(upNext),
-            ],
-          ),
+    final heroImage = obs.species?.heroImageUrl ?? widget.station.imageUrl;
+
+    final upNext = playback.queue
+        .where((q) => q.segment.title.trim().isNotEmpty)
+        .take(3)
+        .toList();
+
+    return SafeArea(
+      bottom: false,
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Header(
+              park: dest?.name ?? 'ExplorerOS',
+              location: dest?.location ?? 'Florida, USA',
+              onSettings: _openSettings,
+            ),
+            const SizedBox(height: 16),
+            _ScenicCard(
+              imageUrl: heroImage,
+              location: dest?.name ?? 'ExplorerOS',
+              landmark: _landmark(playback),
+              glowing: obs.active && obs.narrating,
+            ),
+            const SizedBox(height: 16),
+            _NowPlayingCard(
+              title: title,
+              host: _stationHost,
+              playing: playing,
+              subtitle: obs.active ? obs.species!.scientificName : null,
+              onBackToRadio: obs.active
+                  ? ref.read(observationControllerProvider.notifier).clear
+                  : null,
+            ),
+            const SizedBox(height: 18),
+            _Controls(
+              isPlaying: isPlaying,
+              onPrevious: controller.previous,
+              onPlayPause: isPlaying ? controller.pause : controller.play,
+              onNext: controller.skip,
+            ),
+            const SizedBox(height: 20),
+            _PrimaryAction(
+              icon: Icons.near_me_rounded,
+              title: "What's Near Me?",
+              description:
+                  'Discover nearby attractions, wildlife, trails, history and '
+                  'hidden gems.',
+              onTap: () => context.go(AppRoute.aroundMe.path),
+            ),
+            const SizedBox(height: 12),
+            _PrimaryAction(
+              icon: Icons.visibility_rounded,
+              title: 'I See Something',
+              description:
+                  'Take a photo or describe what you see and ExplorerOS will '
+                  'identify and explain it.',
+              tint: const Color(0xFF2C6E8F),
+              onTap: () => showISeeSomething(context, ref),
+            ),
+            const SizedBox(height: 22),
+            _ComingUpNext(items: upNext),
+          ],
         ),
-      ],
-    );
-  }
-
-  Widget _hero({String? overrideImage, bool glowing = false}) {
-    final url = overrideImage ?? widget.station.imageUrl;
-    return SizedBox(
-      height: 320,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (url != null && url.isNotEmpty)
-            Image.network(url, key: ValueKey(url), fit: BoxFit.cover)
-          else
-            const ColoredBox(color: _RadioPalette.panel),
-          if (glowing)
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: _RadioPalette.accent, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                        color: _RadioPalette.accent.withValues(alpha: 0.5),
-                        blurRadius: 24,
-                        spreadRadius: 1),
-                  ],
-                ),
-              ),
-            ),
-          // Fade the bottom into the page background.
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.center,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, _RadioPalette.bg],
-              ),
-            ),
-          ),
-          SafeArea(
-            bottom: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg, vertical: AppSpacing.sm),
-              child: Row(
-                children: [
-                  _circleButton(
-                    Icons.grid_view_rounded,
-                    () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                          builder: (_) => const StationsScreen()),
-                    ),
-                  ),
-                  const Spacer(),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.filter_hdr_rounded,
-                          color: Colors.white, size: 20),
-                      const SizedBox(height: 2),
-                      RichText(
-                        text: const TextSpan(
-                          children: [
-                            TextSpan(
-                                text: 'OCALA',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1)),
-                            TextSpan(
-                                text: ' RADIO',
-                                style: TextStyle(
-                                    color: _RadioPalette.accent,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 1)),
-                          ],
-                        ),
-                      ),
-                      const Text('— RADIO —',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 9,
-                              letterSpacing: 3)),
-                    ],
-                  ),
-                  const Spacer(),
-                  _circleButton(
-                    _favorite
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    () => setState(() => _favorite = !_favorite),
-                    tint: _favorite ? _RadioPalette.accent : Colors.white,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _circleButton(IconData icon, VoidCallback onTap, {Color tint = Colors.white}) {
+  String? _landmark(PlaybackState playback) {
+    final t = playback.current?.segment.title.trim();
+    return (t == null || t.isEmpty) ? null : t;
+  }
+
+  // ── Advanced settings, moved off the main screen ─────────────────────────
+  void _openSettings() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _RadioPalette.panel,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: _RadioPalette.panelAlt,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.grid_view_rounded,
+                    color: _RadioPalette.green),
+                title: const Text('Browse stations',
+                    style: TextStyle(color: _RadioPalette.textPrimary)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                        builder: (_) => const StationsScreen()),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.settings_rounded,
+                    color: _RadioPalette.green),
+                title: const Text('App settings',
+                    style: TextStyle(color: _RadioPalette.textPrimary)),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  context.push(AppRoute.settings.path);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Header ────────────────────────────────────────────────────────────────
+
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.park,
+    required this.location,
+    required this.onSettings,
+  });
+
+  final String park;
+  final String location;
+  final VoidCallback onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            const SizedBox(width: 40), // balances the gear on the right
+            const Expanded(
+              child: Center(
+                child: _WordmarkAndLive(),
+              ),
+            ),
+            _IconButton(icon: Icons.settings_rounded, onTap: onSettings),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.location_on_rounded,
+                color: _RadioPalette.green, size: 16),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(park,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _RadioPalette.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700)),
+                  Text(location,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: _RadioPalette.textSecondary, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _WordmarkAndLive extends StatelessWidget {
+  const _WordmarkAndLive();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        RichText(
+          text: const TextSpan(
+            children: [
+              TextSpan(
+                  text: 'ExplorerOS ',
+                  style: TextStyle(
+                      color: _RadioPalette.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800)),
+              TextSpan(
+                  text: 'Radio',
+                  style: TextStyle(
+                      color: _RadioPalette.green,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        const _LiveBadge(),
+      ],
+    );
+  }
+}
+
+class _LiveBadge extends StatelessWidget {
+  const _LiveBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: _RadioPalette.green,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text('LIVE',
+          style: TextStyle(
+              color: Colors.black,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5)),
+    );
+  }
+}
+
+class _IconButton extends StatelessWidget {
+  const _IconButton({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withValues(alpha: 0.35),
+      color: Colors.transparent,
       shape: const CircleBorder(),
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.sm),
-          child: Icon(icon, color: tint, size: 22),
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, color: _RadioPalette.textSecondary, size: 24),
         ),
       ),
     );
   }
+}
 
-  Widget _nowPlaying(String? title, String? artist, String? album) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title ?? 'Press play to start',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: _RadioPalette.textPrimary,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700)),
-              if (artist != null && artist.isNotEmpty) ...[
-                const SizedBox(height: 3),
-                Text(artist,
-                    style: const TextStyle(
-                        color: _RadioPalette.textSecondary, fontSize: 14)),
-              ],
-              if (album != null && album.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(album,
-                    style: const TextStyle(
-                        color: _RadioPalette.textFaint,
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic)),
-              ],
-            ],
-          ),
-        ),
-        IconButton(
-          onPressed: () => setState(() => _favorite = !_favorite),
-          icon: Icon(
-            _favorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-            color: _favorite ? _RadioPalette.accent : _RadioPalette.textSecondary,
-          ),
-        ),
-        const Icon(Icons.more_vert_rounded, color: _RadioPalette.textSecondary),
-      ],
-    );
-  }
+// ── Scenic panoramic card ───────────────────────────────────────────────────
 
-  Widget _transport({required bool isPlaying, required RadioEngineController controller}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        _transportBtn(Icons.shuffle_rounded, 'SHUFFLE', _shuffle,
-            () => setState(() => _shuffle = !_shuffle)),
-        _transportBtn(Icons.skip_previous_rounded, 'PREV', false,
-            controller.previous),
-        _playButton(isPlaying, controller),
-        _transportBtn(Icons.skip_next_rounded, 'NEXT', false, controller.skip),
-        _transportBtn(Icons.repeat_rounded, 'REPEAT', _repeat,
-            () => setState(() => _repeat = !_repeat)),
-      ],
-    );
-  }
+class _ScenicCard extends StatelessWidget {
+  const _ScenicCard({
+    required this.imageUrl,
+    required this.location,
+    this.landmark,
+    this.glowing = false,
+  });
 
-  Widget _transportBtn(IconData icon, String label, bool active, VoidCallback onTap) {
-    final color = active ? _RadioPalette.accent : _RadioPalette.textSecondary;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: AppRadius.pillAll,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xs, vertical: AppSpacing.xs),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 4),
-            Text(label,
-                style: TextStyle(
-                    color: color, fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 1)),
-          ],
-        ),
-      ),
-    );
-  }
+  final String? imageUrl;
+  final String location;
+  final String? landmark;
+  final bool glowing;
 
-  Widget _playButton(bool isPlaying, RadioEngineController controller) {
-    return GestureDetector(
-      onTap: isPlaying ? controller.pause : controller.play,
-      child: Container(
-        width: 72,
-        height: 72,
+  @override
+  Widget build(BuildContext context) {
+    final h = (MediaQuery.of(context).size.height * 0.22).clamp(120.0, 190.0);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_RadioPalette.radius),
+      child: DecoratedBox(
         decoration: BoxDecoration(
-          color: _RadioPalette.accent,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-                color: _RadioPalette.accent.withValues(alpha: 0.5),
-                blurRadius: 26,
-                spreadRadius: 2),
-          ],
+          borderRadius: BorderRadius.circular(_RadioPalette.radius),
+          border: glowing
+              ? Border.all(color: _RadioPalette.green, width: 2)
+              : null,
         ),
-        child: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            color: Colors.white, size: 40),
-      ),
-    );
-  }
-
-  Widget _guideCard() {
-    return _panelCard(
-      child: Row(
-        children: [
-          const Icon(Icons.equalizer_rounded, color: _RadioPalette.accent, size: 24),
-          const Gap.h(AppSpacing.sm),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('GUIDE EXPERIENCE',
-                    style: TextStyle(
-                        color: _RadioPalette.accent,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1)),
-                const SizedBox(height: 2),
-                Text(_guide.label,
-                    style: const TextStyle(
-                        color: _RadioPalette.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          PopupMenuButton<GuideExperience>(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                color: _RadioPalette.textSecondary),
-            onSelected: (g) => setState(() => _guide = g),
-            itemBuilder: (context) => [
-              for (final g in GuideExperience.values)
-                PopupMenuItem(value: g, child: Text(g.label)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _iSeeSomethingButton() {
-    return _panelCard(
-      onTap: () => showISeeSomething(context, ref),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text('DISCOVER',
-                    style: TextStyle(
-                        color: _RadioPalette.accent,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1)),
-                SizedBox(height: 2),
-                Text('I See\nSomething',
-                    style: TextStyle(
-                        color: _RadioPalette.textPrimary,
-                        fontSize: 15,
-                        height: 1.2,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: _RadioPalette.accent.withValues(alpha: 0.9),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.visibility_rounded,
-                color: Colors.white, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// The "NOW EXPLORING" panel shown while an observation is selected.
-  Widget _exploring(ObservationState obs) {
-    final s = obs.species!;
-    final controller = ref.read(observationControllerProvider.notifier);
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                  color: _RadioPalette.accent, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 8),
-            const Text('NOW EXPLORING',
-                style: TextStyle(
-                    color: _RadioPalette.accent,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5)),
-          ],
-        ),
-        const Gap.v(AppSpacing.sm),
-        Text(s.commonName,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-                color: _RadioPalette.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w800)),
-        if (s.scientificName != null)
-          Text(s.scientificName!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: _RadioPalette.textSecondary,
-                  fontStyle: FontStyle.italic)),
-        const Gap.v(AppSpacing.md),
-        if (obs.narrating)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: SizedBox(
+          height: h,
+          width: double.infinity,
+          child: Stack(
+            fit: StackFit.expand,
             children: [
-              const _Equalizer(),
-              const SizedBox(width: 10),
-              const Icon(Icons.mic_rounded,
-                  color: _RadioPalette.accent, size: 16),
-              const SizedBox(width: 4),
-              const Text('Narrating…',
-                  style: TextStyle(color: _RadioPalette.textSecondary)),
-              const Spacer(),
-              TextButton(
-                  onPressed: controller.stop,
-                  child: const Text('Stop',
-                      style: TextStyle(color: _RadioPalette.accent))),
-            ],
-          )
-        else ...[
-          const Text('You may also like:',
-              style: TextStyle(color: _RadioPalette.textSecondary, fontSize: 12)),
-          const Gap.v(AppSpacing.sm),
-          Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final c in const [
-                'Similar species',
-                'Calls & sounds',
-                'Nearby sightings',
-                'Habitat',
-                'Conservation'
-              ])
-                Chip(
-                  label: Text(c, style: const TextStyle(fontSize: 12)),
-                  backgroundColor: _RadioPalette.panel,
-                  side: BorderSide(
-                      color: _RadioPalette.accent.withValues(alpha: 0.4)),
-                  labelStyle: const TextStyle(color: _RadioPalette.textPrimary),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 600),
+                child: (imageUrl != null && imageUrl!.isNotEmpty)
+                    ? Image.network(imageUrl!,
+                        key: ValueKey(imageUrl), fit: BoxFit.cover)
+                    : const ColoredBox(
+                        key: ValueKey('placeholder'),
+                        color: _RadioPalette.panel),
+              ),
+              // Legibility gradient.
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Color(0xCC000000)],
+                    stops: [0.45, 1],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 14,
+                bottom: 12,
+                child: _OverlayChip(
+                  icon: Icons.wb_sunny_rounded,
+                  label: '72°F',
+                ),
+              ),
+              if (landmark != null)
+                Positioned(
+                  right: 14,
+                  bottom: 12,
+                  child: _OverlayChip(
+                    icon: Icons.near_me_rounded,
+                    label: 'Near ${_shorten(landmark!)}',
+                  ),
                 ),
             ],
           ),
-          const Gap.v(AppSpacing.sm),
-          TextButton.icon(
-            onPressed: controller.clear,
-            icon: const Icon(Icons.radio_rounded,
-                color: _RadioPalette.accent, size: 18),
-            label: const Text('Back to radio',
-                style: TextStyle(color: _RadioPalette.accent)),
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _panelCard({required Widget child, VoidCallback? onTap}) {
-    return Material(
-      color: _RadioPalette.panel,
-      borderRadius: AppRadius.lgAll,
-      child: InkWell(
-        borderRadius: AppRadius.lgAll,
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.all(AppSpacing.md), child: child),
+        ),
       ),
     );
   }
 
-  Widget _upNext(List<PlaybackQueueItem> items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('UP NEXT',
-                style: TextStyle(
-                    color: _RadioPalette.textPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700)),
-            Row(
-              children: const [
-                Text('View Queue',
+  static String _shorten(String s) => s.length <= 22 ? s : '${s.substring(0, 21)}…';
+}
+
+class _OverlayChip extends StatelessWidget {
+  const _OverlayChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 15),
+          const SizedBox(width: 6),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Now Playing card ────────────────────────────────────────────────────────
+
+class _NowPlayingCard extends StatelessWidget {
+  const _NowPlayingCard({
+    required this.title,
+    required this.host,
+    required this.playing,
+    this.subtitle,
+    this.onBackToRadio,
+  });
+
+  final String title;
+  final String host;
+  final bool playing;
+  final String? subtitle;
+  final VoidCallback? onBackToRadio;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+      decoration: BoxDecoration(
+        color: _RadioPalette.panel,
+        borderRadius: BorderRadius.circular(_RadioPalette.radius),
+        border: Border.all(color: _RadioPalette.panelAlt),
+      ),
+      child: Column(
+        children: [
+          const Text('NOW PLAYING',
+              style: TextStyle(
+                  color: _RadioPalette.green,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2)),
+          const SizedBox(height: 10),
+          Text(title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: _RadioPalette.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15)),
+          if (subtitle != null && subtitle!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(subtitle!,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: _RadioPalette.textSecondary,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 13)),
+          ],
+          const SizedBox(height: 14),
+          _Waveform(active: playing),
+          const SizedBox(height: 14),
+          RichText(
+            text: TextSpan(
+              children: [
+                const TextSpan(
+                    text: 'Hosted by ',
                     style: TextStyle(
-                        color: _RadioPalette.accent,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-                Icon(Icons.chevron_right_rounded, color: _RadioPalette.accent, size: 18),
+                        color: _RadioPalette.textSecondary, fontSize: 14)),
+                TextSpan(
+                    text: host,
+                    style: const TextStyle(
+                        color: _RadioPalette.green,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        fontStyle: FontStyle.italic)),
               ],
+            ),
+          ),
+          if (onBackToRadio != null) ...[
+            const SizedBox(height: 6),
+            TextButton.icon(
+              onPressed: onBackToRadio,
+              icon: const Icon(Icons.radio_rounded,
+                  color: _RadioPalette.green, size: 18),
+              label: const Text('Back to radio',
+                  style: TextStyle(color: _RadioPalette.green)),
             ),
           ],
-        ),
-        const Gap.v(AppSpacing.sm),
-        if (items.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
-            child: Text('Nothing queued',
-                style: TextStyle(color: _RadioPalette.textSecondary)),
-          )
-        else
-          for (final q in items) _upNextTile(q),
-      ],
-    );
-  }
-
-  Widget _upNextTile(PlaybackQueueItem q) {
-    final seg = q.segment;
-    final dur = seg.duration > Duration.zero
-        ? '${seg.duration.inMinutes}:${(seg.duration.inSeconds % 60).toString().padLeft(2, '0')}'
-        : '';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.smAll,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF3A2A1A), Color(0xFF6B4A2B)],
-              ),
-            ),
-            child: const Icon(Icons.music_note_rounded,
-                color: Colors.white70, size: 20),
-          ),
-          const Gap.h(AppSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(seg.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _RadioPalette.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
-                if (seg.artist != null)
-                  Text(seg.artist!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: _RadioPalette.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-          if (dur.isNotEmpty)
-            Text(dur,
-                style: const TextStyle(
-                    color: _RadioPalette.textSecondary, fontSize: 12)),
-          const Gap.h(AppSpacing.sm),
-          const Icon(Icons.drag_handle_rounded,
-              color: _RadioPalette.textFaint, size: 20),
         ],
       ),
     );
   }
-
 }
 
-/// Animated equalizer bars shown while narrating.
-class _Equalizer extends StatefulWidget {
-  const _Equalizer();
+/// Subtle broadcast waveform; animates only while audio is playing.
+class _Waveform extends StatefulWidget {
+  const _Waveform({required this.active});
+  final bool active;
+
   @override
-  State<_Equalizer> createState() => _EqualizerState();
+  State<_Waveform> createState() => _WaveformState();
 }
 
-class _EqualizerState extends State<_Equalizer>
+class _WaveformState extends State<_Waveform>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 700))
-    ..repeat(reverse: true);
+      vsync: this, duration: const Duration(milliseconds: 900));
+
+  static const int _bars = 21;
+  // Stable per-bar heights so the waveform looks organic (not uniform).
+  static final List<double> _seed = () {
+    final rng = Random(7);
+    return [for (var i = 0; i < _bars; i++) 0.35 + 0.65 * rng.nextDouble()];
+  }();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _c.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _Waveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !_c.isAnimating) {
+      _c.repeat(reverse: true);
+    } else if (!widget.active && _c.isAnimating) {
+      _c.stop();
+    }
+  }
 
   @override
   void dispose() {
@@ -723,219 +653,330 @@ class _EqualizerState extends State<_Equalizer>
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        double h(int i) {
-          final phase = (_c.value + i * 0.28) % 1.0;
-          return 6 + (phase < 0.5 ? phase : 1 - phase) * 24;
-        }
+    return SizedBox(
+      height: 34,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (var i = 0; i < _bars; i++) _bar(i),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            for (var i = 0; i < 4; i++)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1.5),
-                child: Container(
-                  width: 4,
-                  height: h(i),
-                  decoration: BoxDecoration(
-                    color: _RadioPalette.accent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+  Widget _bar(int i) {
+    final base = _seed[i.clamp(0, _seed.length - 1)];
+    // When idle, show a low, flat centerline; when playing, animate around base.
+    final phase = ((_c.value + i * 0.12) % 1.0);
+    final wobble = widget.active ? (phase < 0.5 ? phase : 1 - phase) : 0.06;
+    final height = (6 + (base * 22) * (0.4 + wobble)).clamp(4.0, 32.0);
+    // Center bars slightly brighter for a focal point.
+    final mid = (i - _bars / 2).abs() / (_bars / 2);
+    final color = Color.lerp(
+        _RadioPalette.green, _RadioPalette.greenSoft, mid.clamp(0, 1))!;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: Container(
+        width: 3,
+        height: height,
+        decoration: BoxDecoration(
+          color: widget.active
+              ? color
+              : _RadioPalette.greenSoft.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
     );
   }
 }
 
-/// ON AIR pill + Current Park / Location / Elevation info strip.
-class _InfoStrip extends StatelessWidget {
-  const _InfoStrip({this.park, this.location});
-  final String? park;
-  final String? location;
+// ── Playback controls ───────────────────────────────────────────────────────
+
+class _Controls extends StatelessWidget {
+  const _Controls({
+    required this.isPlaying,
+    required this.onPrevious,
+    required this.onPlayPause,
+    required this.onNext,
+  });
+
+  final bool isPlaying;
+  final VoidCallback onPrevious;
+  final VoidCallback onPlayPause;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _SecondaryControl(icon: Icons.skip_previous_rounded, onTap: onPrevious),
+        const SizedBox(width: 28),
+        _PlayButton(isPlaying: isPlaying, onTap: onPlayPause),
+        const SizedBox(width: 28),
+        _SecondaryControl(icon: Icons.skip_next_rounded, onTap: onNext),
+      ],
+    );
+  }
+}
+
+class _SecondaryControl extends StatelessWidget {
+  const _SecondaryControl({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _RadioPalette.panel,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Icon(icon, color: _RadioPalette.textPrimary, size: 30),
+        ),
+      ),
+    );
+  }
+}
+
+/// The largest control on screen; press animation + green glow.
+class _PlayButton extends StatefulWidget {
+  const _PlayButton({required this.isPlaying, required this.onTap});
+  final bool isPlaying;
+  final VoidCallback onTap;
+
+  @override
+  State<_PlayButton> createState() => _PlayButtonState();
+}
+
+class _PlayButtonState extends State<_PlayButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _down ? 0.92 : 1,
+        duration: const Duration(milliseconds: 110),
+        child: Container(
+          width: 88,
+          height: 88,
+          decoration: BoxDecoration(
+            color: _RadioPalette.green,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: _RadioPalette.green.withValues(alpha: 0.45),
+                blurRadius: 28,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Icon(
+            widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            color: Colors.black,
+            size: 46,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Primary actions ─────────────────────────────────────────────────────────
+
+class _PrimaryAction extends StatelessWidget {
+  const _PrimaryAction({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+    this.tint = _RadioPalette.green,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+  final Color tint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _RadioPalette.panel,
+      borderRadius: BorderRadius.circular(_RadioPalette.radius),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(_RadioPalette.radius),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_RadioPalette.radius),
+            border: Border.all(color: tint.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: 0.16),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: tint, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            color: _RadioPalette.textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 3),
+                    Text(description,
+                        style: const TextStyle(
+                            color: _RadioPalette.textSecondary,
+                            fontSize: 12.5,
+                            height: 1.25)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.chevron_right_rounded,
+                  color: _RadioPalette.textFaint),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Coming up next ──────────────────────────────────────────────────────────
+
+class _ComingUpNext extends StatelessWidget {
+  const _ComingUpNext({required this.items});
+  final List<PlaybackQueueItem> items;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md, vertical: AppSpacing.md),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _RadioPalette.panel,
-        borderRadius: AppRadius.lgAll,
+        borderRadius: BorderRadius.circular(_RadioPalette.radius),
+        border: Border.all(color: _RadioPalette.panelAlt),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.pillAll,
-              border: Border.all(color: _RadioPalette.accent),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.podcasts_rounded, color: _RadioPalette.accent, size: 14),
-                SizedBox(width: 4),
-                Text('ON AIR',
-                    style: TextStyle(
-                        color: _RadioPalette.accent,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700)),
-              ],
-            ),
-          ),
-          _divider(),
-          _col(Icons.forest_rounded, 'CURRENT PARK', park ?? '—'),
-          _divider(),
-          _col(Icons.place_rounded, 'LOCATION', location ?? 'On the road'),
-          _divider(),
-          _col(Icons.terrain_rounded, 'ELEVATION', '—'),
-        ],
-      ),
-    );
-  }
-
-  Widget _divider() => Container(
-        width: 1,
-        height: 34,
-        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-        color: _RadioPalette.panelAlt,
-      );
-
-  Widget _col(IconData icon, String label, String value) {
-    return Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: _RadioPalette.accent, size: 12),
-              const SizedBox(width: 3),
-              Flexible(
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: _RadioPalette.accent,
-                        fontSize: 8,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Text(value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: _RadioPalette.textPrimary,
+          const Text('COMING UP NEXT',
+              style: TextStyle(
+                  color: _RadioPalette.green,
                   fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  height: 1.15)),
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.5)),
+          const SizedBox(height: 12),
+          if (items.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: Text('Nothing queued yet',
+                  style: TextStyle(color: _RadioPalette.textSecondary)),
+            )
+          else
+            for (var i = 0; i < items.length; i++) ...[
+              _row(items[i]),
+              if (i != items.length - 1)
+                const Divider(color: _RadioPalette.panelAlt, height: 18),
+            ],
         ],
       ),
     );
   }
+
+  Widget _row(PlaybackQueueItem item) {
+    final seg = item.segment;
+    return Row(
+      children: [
+        const _MiniWave(),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(seg.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: _RadioPalette.textPrimary,
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              const Text('Hosted by $_stationHost',
+                  style: TextStyle(
+                      color: _RadioPalette.textSecondary, fontSize: 12)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text('${_estMinutes(seg)} min',
+            style: const TextStyle(
+                color: _RadioPalette.textSecondary, fontSize: 12)),
+      ],
+    );
+  }
+
+  /// A light estimate of how long an item runs (used as the "up next" time).
+  /// Uses the real duration when known, else a sensible default by content.
+  static int _estMinutes(AudioSegment seg) {
+    final secs = seg.duration.inSeconds;
+    if (secs > 0) return (secs / 60).ceil().clamp(1, 99);
+    return seg.type == AudioSegmentType.music ? 3 : 2;
+  }
 }
 
-/// Playback progress bar. The engine carries no live audio position, so this
-/// advances a local elapsed timer while playing (reset on track change).
-class _TrackProgress extends StatefulWidget {
-  const _TrackProgress({
-    required this.trackKey,
-    required this.duration,
-    required this.isPlaying,
-  });
-
-  final String trackKey;
-  final Duration? duration;
-  final bool isPlaying;
-
-  @override
-  State<_TrackProgress> createState() => _TrackProgressState();
-}
-
-class _TrackProgressState extends State<_TrackProgress> {
-  Timer? _timer;
-  double _elapsed = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncTimer();
-  }
-
-  @override
-  void didUpdateWidget(covariant _TrackProgress oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.trackKey != widget.trackKey) _elapsed = 0;
-    if (oldWidget.isPlaying != widget.isPlaying ||
-        oldWidget.trackKey != widget.trackKey) {
-      _syncTimer();
-    }
-  }
-
-  void _syncTimer() {
-    _timer?.cancel();
-    if (widget.isPlaying) {
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        final total = widget.duration?.inSeconds.toDouble();
-        setState(() {
-          _elapsed += 1;
-          if (total != null && _elapsed > total) _elapsed = total;
-        });
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  String _fmt(double seconds) {
-    final s = seconds.round();
-    return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
-  }
+/// A small static three-bar glyph for queued items.
+class _MiniWave extends StatelessWidget {
+  const _MiniWave();
 
   @override
   Widget build(BuildContext context) {
-    final total = widget.duration?.inSeconds.toDouble();
-    final fraction =
-        (total != null && total > 0) ? (_elapsed / total).clamp(0.0, 1.0) : 0.0;
-    return Row(
-      children: [
-        Text(_fmt(_elapsed),
-            style: const TextStyle(color: _RadioPalette.textSecondary, fontSize: 12)),
-        const Gap.h(AppSpacing.md),
-        Expanded(
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: _RadioPalette.accent,
-              inactiveTrackColor: _RadioPalette.panelAlt,
-              thumbColor: _RadioPalette.accent,
-              trackHeight: 4,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+    const heights = [10.0, 18.0, 8.0, 14.0];
+    return SizedBox(
+      width: 28,
+      height: 22,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          for (final h in heights)
+            Container(
+              width: 3,
+              height: h,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              decoration: BoxDecoration(
+                color: _RadioPalette.green,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-            child: Slider(
-              value: total != null ? fraction : 0,
-              onChanged: (_) {},
-            ),
-          ),
-        ),
-        const Gap.h(AppSpacing.md),
-        Text(total != null ? _fmt(total) : '--:--',
-            style: const TextStyle(color: _RadioPalette.textSecondary, fontSize: 12)),
-      ],
+        ],
+      ),
     );
   }
 }
