@@ -1,6 +1,9 @@
 import 'dart:math';
 
 import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/banter_category.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_clip.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/models/dj_clip.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
@@ -54,6 +57,78 @@ class DjBanterScheduler {
     _automation = engine;
     _rules = rules;
     _segments = segments;
+  }
+
+  // ── GPS-Aware DJ Banter Studio integration ────────────────────────────────
+  // When a per-destination banter library is loaded, the DJ speaks those
+  // GPS-aware, conversational lines between songs (in the DJ's voice, or via TTS
+  // for unvoiced clips) — taking precedence over the generic template banter.
+
+  GpsBanterDirector? _gpsDirector;
+  BanterTrip _banterTrip = BanterTrip();
+  List<DjBanterClip> _banterLibrary = const [];
+  GpsBanterContext Function()? _banterContext;
+  void Function(String clipId)? _onBanterPlayed;
+
+  /// Priority of categories to consider between songs (context-relevant teases
+  /// first, then general transitions).
+  static const List<BanterCategory> _banterPriority = [
+    BanterCategory.wildlifeTease,
+    BanterCategory.historyTease,
+    BanterCategory.geologyTease,
+    BanterCategory.plantTease,
+    BanterCategory.birdTease,
+    BanterCategory.hiddenGem,
+    BanterCategory.scenicObservation,
+    BanterCategory.interestingFact,
+    BanterCategory.photoOpportunity,
+    BanterCategory.trailSuggestion,
+    BanterCategory.songOutro,
+    BanterCategory.promotion,
+    BanterCategory.stationId,
+  ];
+
+  /// Wires the GPS banter director + a live-context supplier + play callback.
+  void setGpsBanter({
+    required GpsBanterDirector director,
+    required BanterTrip trip,
+    required GpsBanterContext Function() context,
+    void Function(String clipId)? onPlayed,
+  }) {
+    _gpsDirector = director;
+    _banterTrip = trip;
+    _banterContext = context;
+    _onBanterPlayed = onPlayed;
+  }
+
+  /// Refreshes the published banter library (called as the destination changes).
+  void setBanterLibrary(List<DjBanterClip> library) =>
+      _banterLibrary = library;
+
+  bool get hasGpsBanter =>
+      _gpsDirector != null && _banterContext != null && _banterLibrary.isNotEmpty;
+
+  /// Picks a GPS-aware library clip for the current moment, or null.
+  AudioSegment? _gpsBanter() {
+    final director = _gpsDirector;
+    final ctxFn = _banterContext;
+    if (director == null || ctxFn == null || _banterLibrary.isEmpty) return null;
+    final sel = director.pickAny(
+        _banterLibrary, _banterPriority, ctxFn(), _banterTrip);
+    if (sel == null) return null;
+    _onBanterPlayed?.call(sel.clip.id);
+    final hasAudio = sel.clip.hasAudio;
+    return AudioSegment(
+      id: 'djgps:${sel.clip.id}:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'On air',
+      artist: sel.clip.voiceName ?? 'DJ',
+      type: AudioSegmentType.announcement,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      audioUrl: hasAudio ? sel.clip.audioUrl : null,
+      spokenText: hasAudio ? null : sel.text,
+      interruptible: true,
+      resumeAfter: false,
+    );
   }
 
   /// Builds a playable segment from a library [RadioSegment] (its own audio if
@@ -130,6 +205,11 @@ class DjBanterScheduler {
 
     // 2) Otherwise, the default DJ banter every N songs.
     if (everyNSongs <= 0 || _count % everyNSongs != 0) return null;
+
+    // 3) Prefer the GPS-aware, per-destination banter library when loaded, so
+    // the DJ references the actual surroundings and never repeats in a trip.
+    final gps = _gpsBanter();
+    if (gps != null) return gps;
 
     final station = stationFor(radioStationName);
 

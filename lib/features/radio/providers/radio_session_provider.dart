@@ -6,7 +6,11 @@ import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_repository.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
+import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
@@ -15,7 +19,6 @@ import 'package:explorer_os_mobile/features/radio/providers/radio_engine_provide
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/repositories/song_repository.dart';
 import 'package:explorer_os_mobile/features/radio/services/background_discovery_scheduler.dart';
-import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_scheduler.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
@@ -38,6 +41,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Feed the Background Discovery Engine with nearby environmental content so
   // the radio can teach about the surroundings during quiet stretches.
   _attachDiscovery(ref, engine);
+
+  // Wire the GPS-aware DJ Banter library so the DJ references the surroundings
+  // between songs (defensive no-op when there's no library / GPS yet).
+  _attachGpsBanter(ref, engine);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -165,6 +172,73 @@ void _attachDiscovery(Ref ref, RadioEngineService engine) {
   ref.listen<List<Experience>>(
     aroundMeExperiencesProvider,
     (_, next) => push(next),
+  );
+}
+
+/// Wires the GPS-Aware DJ Banter Studio library into the live radio: loads the
+/// published clips and gives the DJ banter scheduler a director + a live GPS
+/// context supplier + a play recorder. The scheduler prefers these per-
+/// destination, GPS-aware lines between songs (never repeating within a trip),
+/// falling back to template banter when the library is empty.
+void _attachGpsBanter(Ref ref, RadioEngineService engine) {
+  final repo = ref.read(djBanterRepositoryProvider);
+  engine.djBanter.setGpsBanter(
+    director: GpsBanterDirector(),
+    trip: BanterTrip(),
+    context: () => _banterContext(ref, engine),
+    onPlayed: (id) => repo.recordPlay(id),
+  );
+  // Load the published library once (the director filters by location context);
+  // reload as the visitor's surroundings change is unnecessary since matching
+  // is done per-pick against the live context.
+  Future<void> load() async {
+    try {
+      engine.djBanter.setBanterLibrary(await repo.publishedFor());
+    } catch (_) {}
+  }
+
+  load();
+}
+
+bool _hasWord(String c, List<String> words) => words.any(c.contains);
+
+/// Builds the live [GpsBanterContext] from the GPS engine + Around Me feed at
+/// the moment the DJ is about to speak, so `{placeholders}` resolve to the
+/// visitor's actual surroundings.
+GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
+  final t = ref.read(gpsControllerProvider);
+  List<Experience> exps;
+  try {
+    exps = ref.read(aroundMeExperiencesProvider);
+  } catch (_) {
+    exps = const [];
+  }
+  List<String> named(List<String> words) => [
+        for (final e in exps)
+          if (_hasWord(e.category.toLowerCase(), words)) e.name,
+      ].take(3).toList();
+
+  final stationName = engine.getCurrentStation()?.name;
+  final park = t.currentParkId ?? stationName?.replaceAll(' Radio', '');
+  final upcoming = t.nextAttraction?.name ??
+      t.nearestAttraction?.name ??
+      (exps.isNotEmpty ? exps.first.name : null);
+
+  return GpsBanterContext(
+    latitude: t.location?.latitude,
+    longitude: t.location?.longitude,
+    park: park,
+    county: t.currentCounty,
+    road: t.currentRoad,
+    upcomingAttraction: upcoming,
+    nearbyWildlife:
+        named(['wildlife', 'animal', 'mammal', 'bear', 'gator', 'deer']),
+    nearbySprings: named(['spring']),
+    nearbyRivers: named(['river', 'creek']),
+    nearbyLakes: named(['lake']),
+    nearbyTrails: named(['trail']),
+    nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
+    station: stationName ?? 'Explorer Radio',
   );
 }
 

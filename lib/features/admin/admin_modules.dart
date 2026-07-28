@@ -140,6 +140,13 @@ enum AdminModule {
       ready: true,
       description: 'DJ personalities + AI/template banter and song-intro '
           'generators so stations sound like a live FM station.'),
+  djBanterStudio('DJ Banter Studio', Icons.spatial_audio_off_rounded,
+      AdminGroup.audio,
+      ready: true,
+      description: 'GPS-aware, per-destination banter library: generate, edit, '
+          'preview, voice, assign destination/region, bulk-fill, and version '
+          'history — thousands of unique DJ transitions across Florida.',
+      table: 'dj_banter'),
   radioAutomation('Radio Automation', Icons.settings_input_antenna_rounded,
       AdminGroup.audio,
       ready: true,

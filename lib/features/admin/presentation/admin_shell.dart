@@ -14,6 +14,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.da
 import 'package:explorer_os_mobile/features/admin/presentation/admin_settings_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/database_tools_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/destination_dashboard_page.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/dj_banter_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
@@ -87,6 +88,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const VoiceManagerPage();
       case AdminModule.djStudio:
         return const DjStudioPage();
+      case AdminModule.djBanterStudio:
+        return const DjBanterStudioPage();
       case AdminModule.radioAutomation:
         return const RadioAutomationPage();
       case AdminModule.radioDirector:
