@@ -127,20 +127,34 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
   static const _engine = ProgrammingDirector();
   static const _clock = ProgrammingClock.station;
 
-  Timer? _timer;
+  Timer? _safety;
+  StreamSubscription<PlaybackEvent>? _pbSub;
   int _position = 0;
+  bool _currentIsMusic = false;
   final Set<String> _played = {};
   final List<String> _log = [];
 
-  /// Preview cadence: how long each item airs before the clock advances so the
-  /// rotation is observable. (Production would advance on real completion.)
-  Duration slotDuration = const Duration(seconds: 5);
+  /// Safety net: if an item never signals completion (e.g. a load error), the
+  /// clock still advances after this long so the rotation never stalls.
+  Duration maxSlot = const Duration(seconds: 120);
 
   PlaybackManager get _pm => ref.read(playbackManagerProvider);
 
   @override
   ProgrammingSnapshot build() {
-    ref.onDispose(() => _timer?.cancel());
+    // Advance the rotation when the current item finishes playing (songs air in
+    // full; short DJ/ID/narration clips advance as soon as they end).
+    _pbSub = _pm.events.listen((e) {
+      if (!state.running) return;
+      final narrationDone = e.type == PlaybackEventType.narrationFinished;
+      final musicDone =
+          e.type == PlaybackEventType.playbackFinished && _currentIsMusic;
+      if (narrationDone || musicDone) _step();
+    });
+    ref.onDispose(() {
+      _safety?.cancel();
+      _pbSub?.cancel();
+    });
     return const ProgrammingSnapshot();
   }
 
@@ -153,13 +167,11 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
     if (state.running) return;
     state = state.copyWith(running: true);
     _step();
-    _timer?.cancel();
-    _timer = Timer.periodic(slotDuration, (_) => _step());
   }
 
   Future<void> stop() async {
-    _timer?.cancel();
-    _timer = null;
+    _safety?.cancel();
+    _safety = null;
     await _pm.pauseMusic();
     await _pm.cancelNarration();
     state = state.copyWith(running: false);
@@ -180,8 +192,15 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
     ));
     _position = result.nextPosition;
 
+    // Arm the safety timer so the clock never stalls on a failed item.
+    _safety?.cancel();
+    _safety = Timer(maxSlot, () {
+      if (state.running) _step();
+    });
+
     if (result.hasAsset) {
       final a = result.asset!;
+      _currentIsMusic = a.slotType.isMusic;
       _played.add(a.key);
       _enact(a);
       _appendLog('▶ $result');
