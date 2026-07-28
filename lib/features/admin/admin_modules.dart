@@ -112,6 +112,12 @@ enum AdminModule {
       ready: true,
       description: 'Generate, edit, and store narration for every record.',
       table: 'narrations'),
+  audioProduction('Audio Production Studio', Icons.graphic_eq_rounded,
+      AdminGroup.audio,
+      ready: true,
+      description: 'Dashboard, production queue, voice library, audio library, '
+          'batch generator, audit, and settings — narration for every record.',
+      table: 'audio_assets'),
   safetyMessages('Safety Messages', Icons.health_and_safety_rounded,
       AdminGroup.audio,
       ready: true,
