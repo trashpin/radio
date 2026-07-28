@@ -10,6 +10,9 @@ import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_repositor
 import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/location_intelligence.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
@@ -137,42 +140,70 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   return station;
 });
 
-/// Maps the live Around Me feed (GPS-ranked nearby content) into discovery
-/// candidates and keeps the engine's [BackgroundDiscoveryScheduler] up to date
-/// as the traveler moves. Only environmental topics (wildlife, plants, birds,
-/// trees, geology, history, facts, hidden gems) are forwarded; everything else
-/// is ignored. Fully defensive — a no-op when GPS/content are unavailable.
+/// Feeds the Background Discovery scheduler from the Location Intelligence
+/// Engine: distance-priority, geocoded, ranked-nearest-first content within
+/// ~20 miles — so the radio always teaches about where the visitor is RIGHT
+/// NOW and never about a place 100 miles away. Updates continuously as GPS
+/// changes; defensive no-op when GPS/content are unavailable.
 void _attachDiscovery(Ref ref, RadioEngineService engine) {
-  void push(List<Experience> experiences) {
+  // Location Intelligence caps relevance at 20 miles (the priority-band edge).
+  engine.discovery.radiusMeters = 20 * 1609.344;
+
+  void push(LocationContext ctx) {
     final candidates = <DiscoveryCandidate>[];
-    for (final e in experiences) {
-      final category = discoveryCategoryFor(
-        e.category,
-        subcategory: e.subcategory,
-        name: e.name,
-      );
+    for (final r in ctx.nearby) {
+      final category = _discoveryCategoryFor(r.item.category);
       if (category == null) continue;
-      final desc = (e.description ?? '').trim();
+      final desc = (r.item.text ?? '').trim();
       candidates.add(DiscoveryCandidate(
-        id: e.id,
+        id: r.item.id,
         category: category,
-        title: e.name,
-        distanceMeters: e.distanceMeters,
-        audioUrl: e.audioUrl,
-        spokenText:
-            desc.isEmpty ? "You're near ${e.name}." : "You're near ${e.name}. $desc",
+        title: r.item.title,
+        distanceMeters: r.distanceMeters,
+        audioUrl: r.item.audioUrl,
+        spokenText: desc.isEmpty
+            ? "You're near ${r.item.title}."
+            : "You're near ${r.item.title}. $desc",
       ));
     }
     engine.discovery.updateNearby(candidates);
   }
 
   try {
-    push(ref.read(aroundMeExperiencesProvider));
+    push(ref.read(locationContextProvider));
   } catch (_) {}
-  ref.listen<List<Experience>>(
-    aroundMeExperiencesProvider,
+  ref.listen<LocationContext>(
+    locationContextProvider,
     (_, next) => push(next),
   );
+}
+
+/// Maps a rich [ContentCategory] to the discovery scheduler's smaller taxonomy
+/// (null = not a "teach the environment" topic).
+DiscoveryCategory? _discoveryCategoryFor(ContentCategory c) {
+  switch (c) {
+    case ContentCategory.wildlife:
+      return DiscoveryCategory.wildlife;
+    case ContentCategory.plants:
+      return DiscoveryCategory.plants;
+    case ContentCategory.birds:
+      return DiscoveryCategory.birds;
+    case ContentCategory.trees:
+      return DiscoveryCategory.trees;
+    case ContentCategory.water:
+      return DiscoveryCategory.geology;
+    case ContentCategory.history:
+    case ContentCategory.historicLandmark:
+    case ContentCategory.countyHistory:
+    case ContentCategory.parkStory:
+      return DiscoveryCategory.history;
+    case ContentCategory.hiddenGem:
+      return DiscoveryCategory.hiddenGem;
+    case ContentCategory.interestingFact:
+      return DiscoveryCategory.interestingFact;
+    default:
+      return null;
+  }
 }
 
 /// Wires the GPS-Aware DJ Banter Studio library into the live radio: loads the
