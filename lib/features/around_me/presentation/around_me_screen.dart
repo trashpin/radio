@@ -113,6 +113,11 @@ class _AroundMeScreenState extends ConsumerState<AroundMeScreen> {
           ),
         ),
         IconButton(
+          tooltip: 'Programming Director',
+          onPressed: () => context.push(AppRoute.programmingDirector.path),
+          icon: const Icon(Icons.queue_music_rounded),
+        ),
+        IconButton(
           tooltip: 'Radio Director',
           onPressed: () => context.push(AppRoute.radioDirector.path),
           icon: const Icon(Icons.radio_rounded),

@@ -118,6 +118,11 @@ enum AdminModule {
       description: 'Dashboard, production queue, voice library, audio library, '
           'batch generator, audit, and settings — narration for every record.',
       table: 'audio_assets'),
+  audioRecall('Audio Recall', Icons.inventory_2_rounded, AdminGroup.audio,
+      ready: true,
+      description: 'One searchable inventory across every audio catalog — '
+          'nothing lost, orphaned, or silently duplicated.',
+      table: 'audio_assets'),
   safetyMessages('Safety Messages', Icons.health_and_safety_rounded,
       AdminGroup.audio,
       ready: true,

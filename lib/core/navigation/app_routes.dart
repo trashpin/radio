@@ -24,6 +24,7 @@ enum AppRoute {
   wildlife('/wildlife'),
   gps('/gps'),
   radioDirector('/radio-director'),
+  programmingDirector('/programming-director'),
   destinationDetails('/destination/:id');
 
   const AppRoute(this.path);
