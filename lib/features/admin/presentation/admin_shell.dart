@@ -17,6 +17,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/destination_dashb
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
+import 'package:explorer_os_mobile/features/admin/media_manager/presentation/media_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
@@ -99,6 +100,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const SpeciesAdminPage();
       case AdminModule.musicLibrary:
         return const SongUploaderPage();
+      case AdminModule.mediaManager:
+        return const MediaManagerPage();
       default:
         return ModulePlaceholder(module: module);
     }

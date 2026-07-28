@@ -98,6 +98,11 @@ enum AdminModule {
       ready: true,
       description: 'Photos, videos, audio, documents.',
       table: 'media'),
+  mediaManager('Media Manager', Icons.photo_library_rounded, AdminGroup.assets,
+      ready: true,
+      description: 'Dashboard, library, audit, upload center, and settings for '
+          'all record media (hero, gallery, video, audio, narration, PDFs).',
+      table: 'media_assets'),
   imageMatching('Image Matching', Icons.image_search_rounded, AdminGroup.assets,
       ready: true,
       description: 'Auto-match uploaded images to species by filename.',
