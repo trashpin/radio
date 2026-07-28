@@ -15,6 +15,7 @@ import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
 import 'package:explorer_os_mobile/features/profile/presentation/profile_screen.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/radio_screen.dart';
+import 'package:explorer_os_mobile/features/radio_director/presentation/radio_director_debug_page.dart';
 import 'package:explorer_os_mobile/features/settings/presentation/settings_screen.dart';
 import 'package:explorer_os_mobile/features/stories/presentation/stories_screen.dart';
 import 'package:explorer_os_mobile/features/wildlife/presentation/wildlife_screen.dart';
@@ -55,6 +56,7 @@ class AppRouter {
       _route(AppRoute.downloads.path, const DownloadsScreen()),
       _route(AppRoute.wildlife.path, const WildlifeScreen()),
       _route(AppRoute.gps.path, const GpsDebugScreen()),
+      _route(AppRoute.radioDirector.path, const RadioDirectorDebugPage()),
       GoRoute(
         path: AppRoute.destinationDetails.path,
         builder: (context, state) => DestinationDetailsScreen(

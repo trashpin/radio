@@ -23,6 +23,7 @@ enum AppRoute {
   downloads('/downloads'),
   wildlife('/wildlife'),
   gps('/gps'),
+  radioDirector('/radio-director'),
   destinationDetails('/destination/:id');
 
   const AppRoute(this.path);

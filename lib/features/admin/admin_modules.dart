@@ -141,6 +141,10 @@ enum AdminModule {
       description: 'Segment library (banter/IDs/intros/promos), scheduling '
           'rules, voices, and templates — broadcast automation.',
       table: 'radio_segments'),
+  radioDirector('Radio Director', Icons.radio_rounded, AdminGroup.audio,
+      ready: true,
+      description: 'Automatic DJ rules: priority ladder, silence engine, GPS '
+          'triggers, fades, volumes, and guide defaults.'),
   aiContent('AI Content', Icons.auto_awesome_rounded, AdminGroup.assets,
       description: 'Generate descriptions, stories, metadata.'),
   downloads('Downloads', Icons.download_rounded, AdminGroup.assets,
