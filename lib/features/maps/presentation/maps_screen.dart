@@ -9,10 +9,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/maps/marker_style.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
-import 'package:explorer_os_mobile/features/maps/providers/map_places_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
@@ -504,8 +504,15 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final userLocation = ref.watch(mapCenterProvider);
     final hits = ref.watch(nearbyItemsProvider);
     final radius = ref.watch(searchRadiusProvider);
-    // Always-on POI + campground markers (not gated by the search radius).
-    final places = ref.watch(mapPlacesProvider);
+    // Location Intelligence: plot only places within ~20 miles of the user
+    // (dynamic — recomputes as they drive; out-of-range places fall away).
+    // Falls back to all places until the first GPS fix.
+    final visible = ref.watch(visibleMapPlacesProvider);
+    final places = [for (final v in visible) v.item];
+    final highlightedIds = {
+      for (final v in visible)
+        if (v.highlight) v.item.id,
+    };
 
     final markers = <Marker>{
       if (layers.contains(MapLayer.parks))
@@ -606,6 +613,17 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           strokeWidth: 1,
           fillColor: const Color(0x223F8FD0),
         ),
+      // Highlight places within 5 miles of the user (Location Intelligence).
+      if (layers.contains(MapLayer.locations))
+        for (final p in places.where((p) => highlightedIds.contains(p.id)))
+          Circle(
+            circleId: CircleId('hl_${p.id}'),
+            center: LatLng(p.latitude, p.longitude),
+            radius: 160,
+            strokeColor: _MapPalette.green,
+            strokeWidth: 2,
+            fillColor: _MapPalette.green.withValues(alpha: 0.12),
+          ),
     };
 
     final initialTarget = mappable.isNotEmpty
