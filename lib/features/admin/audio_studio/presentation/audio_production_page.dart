@@ -543,8 +543,11 @@ class _BatchTabState extends ConsumerState<_BatchTab> {
               _rowControl(
                 theme,
                 'Generate Category',
-                DropdownButton<VoiceCategory>(
-                  value: _category,
+                DropdownButtonFormField<VoiceCategory>(
+                  isExpanded: true,
+                  initialValue: _category,
+                  decoration: const InputDecoration(
+                      isDense: true, border: OutlineInputBorder()),
                   items: [for (final c in VoiceCategory.values) DropdownMenuItem(value: c, child: Text(c.label))],
                   onChanged: (c) => setState(() => _category = c ?? _category),
                 ),
@@ -554,9 +557,13 @@ class _BatchTabState extends ConsumerState<_BatchTab> {
               _rowControl(
                 theme,
                 'Generate / Publish Destination',
-                DropdownButton<Destination>(
-                  value: _destination,
-                  hint: const Text('Choose destination'),
+                DropdownButtonFormField<Destination>(
+                  isExpanded: true,
+                  initialValue: _destination,
+                  decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      hintText: 'Choose destination'),
                   items: [for (final d in destinations) DropdownMenuItem(value: d, child: Text(d.name, overflow: TextOverflow.ellipsis))],
                   onChanged: (d) => setState(() => _destination = d),
                 ),
@@ -572,10 +579,19 @@ class _BatchTabState extends ConsumerState<_BatchTab> {
 
   Widget _rowControl(ThemeData theme, String label, Widget control,
       VoidCallback? onAction, {String actionLabel = 'Generate'}) {
-    return Row(
+    // Fixed widths (no Expanded) so the control + action button always render,
+    // regardless of the surrounding layout constraints.
+    return Wrap(
+      spacing: AppSpacing.md,
+      runSpacing: AppSpacing.sm,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Expanded(flex: 2, child: Text(label, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600))),
-        Expanded(flex: 3, child: Align(alignment: Alignment.centerLeft, child: control)),
+        SizedBox(
+            width: 220,
+            child: Text(label,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.w600))),
+        SizedBox(width: 260, child: control),
         FilledButton.tonal(onPressed: onAction, child: Text(actionLabel)),
       ],
     );
