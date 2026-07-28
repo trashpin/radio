@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/playback/playback_manager.dart';
 import 'package:explorer_os_mobile/features/playback/playback_models.dart';
 import 'package:explorer_os_mobile/features/playback/playback_providers.dart';
 import 'package:explorer_os_mobile/features/programming_director/programming_director.dart';
+import 'package:explorer_os_mobile/features/radio/services/smart_music_rotation.dart';
 
 /// Maps a unified-inventory item to the programming slot it can fill.
 ProgrammingSlotType? slotForInventory(AudioInventoryItem i) {
@@ -134,6 +135,10 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
   final Set<String> _played = {};
   final List<String> _log = [];
 
+  /// Music selection for song/music slots. A fresh engine per run (new random
+  /// seed) so every session plays a different, non-repeating order.
+  SmartMusicRotationEngine _rotation = SmartMusicRotationEngine();
+
   /// Safety net: if an item never signals completion (e.g. a load error), the
   /// clock still advances after this long so the rotation never stalls.
   Duration maxSlot = const Duration(seconds: 120);
@@ -161,10 +166,48 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
   Map<ProgrammingSlotType, List<ProgrammingAsset>> _pools() =>
       buildProgrammingPools(ref.read(audioInventoryProvider).value ?? const []);
 
+  /// Chooses the next music asset via the Smart Music Rotation Engine over the
+  /// station's song pool (enriched with inventory metadata for scoring).
+  ProgrammingAsset? _pickMusic(
+      Map<ProgrammingSlotType, List<ProgrammingAsset>> pools) {
+    final candidates = <String, ProgrammingAsset>{};
+    for (final a in [
+      ...?pools[ProgrammingSlotType.song],
+      ...?pools[ProgrammingSlotType.music],
+    ]) {
+      candidates.putIfAbsent(a.id, () => a);
+    }
+    if (candidates.isEmpty) return null;
+
+    final items =
+        ref.read(audioInventoryProvider).value ?? const <AudioInventoryItem>[];
+    final byId = <String, AudioInventoryItem>{
+      for (final i in items)
+        if (i.source == AudioSource.songs) i.id: i,
+    };
+    final songs = [
+      for (final a in candidates.values)
+        RotationSong(
+          id: a.id,
+          audioUrl: a.audioUrl,
+          title: a.title,
+          park: byId[a.id]?.destinationCode,
+          tags: byId[a.id]?.tags ?? const [],
+          durationSeconds: byId[a.id]?.durationSeconds?.round(),
+        ),
+    ];
+    final picked = _rotation.pickNext(songs, RotationContext.now());
+    if (picked == null) return null;
+    return candidates[picked.id];
+  }
+
   Future<void> togglePlay() => state.running ? stop() : start();
 
   Future<void> start() async {
     if (state.running) return;
+    // Fresh rotation trip: new seed + no carried-over repeats, so each run of
+    // the station sounds different even with the same music library.
+    _rotation = SmartMusicRotationEngine();
     state = state.copyWith(running: true);
     _step();
   }
@@ -198,12 +241,25 @@ class ProgrammingDirectorController extends Notifier<ProgrammingSnapshot> {
       if (state.running) _step();
     });
 
-    if (result.hasAsset) {
-      final a = result.asset!;
-      _currentIsMusic = a.slotType.isMusic;
+    // For music slots, replace the sequential pick with the Smart Music
+    // Rotation Engine (scored, anti-repeat, non-sequential).
+    ProgrammingAsset? asset = result.asset;
+    var reason = result.reason;
+    if (result.slotType?.isMusic ?? false) {
+      final rotated = _pickMusic(pools);
+      if (rotated != null) {
+        asset = rotated;
+        reason = 'rotation';
+      }
+    }
+
+    if (asset != null) {
+      final a = asset;
+      _currentIsMusic = (result.slotType?.isMusic ?? false) || a.slotType.isMusic;
       _played.add(a.key);
       _enact(a);
-      _appendLog('▶ $result');
+      _appendLog('▶ ${result.slotType?.label ?? a.slotType.label}: '
+          '${a.title} · $reason');
       // Record the play against the canonical index.
       if (a.source == AudioSource.audioAssets.name) {
         ref.read(audioRecallRepositoryProvider)
