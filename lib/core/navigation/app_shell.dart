@@ -84,9 +84,9 @@ class AppShell extends StatelessWidget {
                   onDestinationSelected: _goToBranch,
                   destinations: const [
                     NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home_rounded),
-                      label: 'Home',
+                      icon: Icon(Icons.near_me_outlined),
+                      selectedIcon: Icon(Icons.near_me_rounded),
+                      label: 'Around Me',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.podcasts_outlined),

@@ -6,9 +6,10 @@ import 'package:explorer_os_mobile/core/navigation/app_shell.dart';
 import 'package:explorer_os_mobile/features/companion/presentation/ai_ranger_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destinations_screen.dart';
+import 'package:explorer_os_mobile/features/around_me/presentation/around_me_screen.dart';
+import 'package:explorer_os_mobile/features/around_me/presentation/gps_debug_screen.dart';
 import 'package:explorer_os_mobile/features/discovery/presentation/discovery_categories_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
-import 'package:explorer_os_mobile/features/gps/presentation/gps_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
@@ -29,15 +30,15 @@ class AppRouter {
   const AppRouter._();
 
   static final GoRouter router = GoRouter(
-    initialLocation: AppRoute.home.path,
+    initialLocation: AppRoute.aroundMe.path,
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
         // Branch order MUST match the nav bar in AppShell:
-        // Home, Radio, AI Ranger, Stories, Map, More.
+        // Around Me, Radio, AI Ranger, Stories, Map, More.
         branches: [
-          _branch(AppRoute.home.path, const HomeScreen()),
+          _branch(AppRoute.aroundMe.path, const AroundMeScreen()),
           _branch(AppRoute.radio.path, const RadioScreen()),
           _branch(AppRoute.aiRanger.path, const AiRangerScreen()),
           _branch(AppRoute.stories.path, const StoriesScreen()),
@@ -45,14 +46,15 @@ class AppRouter {
           _branch(AppRoute.more.path, const MoreScreen()),
         ],
       ),
-      // Pushed / full-screen routes reachable from Home, More, and detail links.
+      // Pushed / full-screen routes reachable from Around Me, More, and links.
+      _route(AppRoute.home.path, const HomeScreen()),
       _route(AppRoute.discover.path, const DiscoveryCategoriesScreen()),
       _route(AppRoute.explore.path, const DestinationsScreen()),
       _route(AppRoute.profile.path, const ProfileScreen()),
       _route(AppRoute.settings.path, const SettingsScreen()),
       _route(AppRoute.downloads.path, const DownloadsScreen()),
       _route(AppRoute.wildlife.path, const WildlifeScreen()),
-      _route(AppRoute.gps.path, const GpsScreen()),
+      _route(AppRoute.gps.path, const GpsDebugScreen()),
       GoRoute(
         path: AppRoute.destinationDetails.path,
         builder: (context, state) => DestinationDetailsScreen(

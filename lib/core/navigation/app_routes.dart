@@ -5,8 +5,9 @@
 /// tabs; the rest are pushed detail routes (prepared for upcoming features so
 /// the dashboard can already link to them).
 enum AppRoute {
-  // Bottom-navigation tabs (order matches the nav bar): Home, Radio, AI Ranger,
-  // Stories, Map, More.
+  // Bottom-navigation tabs (order matches the nav bar): Around Me, Radio, AI
+  // Ranger, Stories, Map, More.
+  aroundMe('/around-me'),
   home('/home'),
   radio('/radio'),
   aiRanger('/ai-ranger'),
