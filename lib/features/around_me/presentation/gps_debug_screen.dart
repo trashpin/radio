@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/around_me/logic/around_me_events.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
@@ -186,7 +187,10 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       ('Nearby Experiences', '$expCount'),
       ('Current Radius', snap.radius.label),
       ('GPS Status', _lost ? 'signal lost' : snap.status.name),
-      ('Last Event', snap.lastEvent?.runtimeType.toString() ?? '—'),
+      (
+        'Last Event',
+        snap.lastEvent == null ? '—' : describeAroundMeEvent(snap.lastEvent!)
+      ),
     ];
 
     return Container(

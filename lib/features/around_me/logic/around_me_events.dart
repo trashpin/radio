@@ -68,3 +68,18 @@ class GpsSignalLost extends AroundMeEvent {
 class GpsSignalRestored extends AroundMeEvent {
   const GpsSignalRestored(super.at);
 }
+
+/// A short human-readable label for an event (safe in release builds, where
+/// `runtimeType` is minified).
+String describeAroundMeEvent(AroundMeEvent e) => switch (e) {
+      NearbyExperiencesUpdated(:final count) => 'Nearby updated ($count)',
+      EnteredPoi(:final name) => 'Entered POI · $name',
+      ExitedPoi(:final name) => 'Exited POI · $name',
+      EnteredTrail(:final name) => 'Entered trail · $name',
+      ExitedTrail(:final name) => 'Exited trail · $name',
+      ZoneChanged(:final zone) => 'Zone changed · ${zone ?? 'none'}',
+      VehicleStopped() => 'Stopped',
+      VehicleMoving() => 'Moving',
+      GpsSignalLost() => 'GPS signal lost',
+      GpsSignalRestored() => 'GPS signal restored',
+    };
