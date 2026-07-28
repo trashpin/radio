@@ -9,6 +9,7 @@ import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geolocator_location_provider.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/gps_logger.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_provider.dart';
@@ -35,8 +36,13 @@ import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_se
 /// (tests) or a future Google/Apple/offline provider without touching the
 /// engine. Constructing it does not prompt for permission — that happens lazily
 /// on `startTracking()`.
+/// Structured GPS logger (events + counters + a bounded ring buffer for the
+/// debug screen). Shared so the provider and UI observe the same log.
+final gpsLoggerProvider = Provider<GpsLogger>((ref) => GpsLogger());
+
 final locationProviderProvider = Provider<LocationProvider>((ref) {
-  final provider = GeolocatorLocationProvider();
+  final provider =
+      GeolocatorLocationProvider(logger: ref.watch(gpsLoggerProvider));
   ref.onDispose(provider.dispose);
   return provider;
 });

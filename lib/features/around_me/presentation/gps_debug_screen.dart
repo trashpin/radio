@@ -10,7 +10,9 @@ import 'package:explorer_os_mobile/features/around_me/logic/around_me_events.dar
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
+import 'package:explorer_os_mobile/features/gps/models/gps_status.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_providers.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// A developer panel that shows live GPS Intelligence state and a Simulator that
@@ -32,10 +34,15 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   double _speed = 1.4; // m/s (walking)
   bool _lost = false;
   Timer? _timer;
+  Timer? _clock;
 
   @override
   void initState() {
     super.initState();
+    // Tick the clock so "Current Device Time" stays live.
+    _clock = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Make sure the coordinator/engine are alive, then seed an initial fix so
       // the debug panel + Around Me have a position to work with.
@@ -47,6 +54,7 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _clock?.cancel();
     super.dispose();
   }
 
@@ -137,6 +145,7 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   @override
   Widget build(BuildContext context) {
     final snap = ref.watch(aroundMeControllerProvider);
+    final gps = ref.watch(gpsStatusProvider);
     final experiences = ref.watch(aroundMeExperiencesProvider);
     final theme = Theme.of(context);
 
@@ -160,7 +169,9 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
-          _debugPanel(theme, snap, experiences.length),
+          _debugPanel(theme, snap, gps, experiences.length),
+          const Gap.v(AppSpacing.lg),
+          _deviceGps(theme, gps),
           const Gap.v(AppSpacing.lg),
           _simulator(theme),
         ],
@@ -168,9 +179,11 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
     );
   }
 
-  Widget _debugPanel(ThemeData theme, AroundMeSnapshot snap, int expCount) {
+  Widget _debugPanel(
+      ThemeData theme, AroundMeSnapshot snap, GpsStatus gps, int expCount) {
     String f(double? v, {int digits = 5, String suffix = ''}) =>
         v == null ? '—' : '${v.toStringAsFixed(digits)}$suffix';
+    String time(DateTime? t) => t == null ? '—' : t.toIso8601String().substring(11, 19);
 
     final rows = <(String, String)>[
       ('Latitude', f(snap.latitude, digits: 6)),
@@ -186,6 +199,11 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       ('Current Zone', snap.zone ?? '—'),
       ('Nearby Experiences', '$expCount'),
       ('Current Radius', snap.radius.label),
+      ('Permission Status', gps.permission.name),
+      ('GPS Enabled', _lost ? 'no (signal lost)' : '${gps.serviceEnabled}'),
+      ('Last Update Time', time(gps.lastUpdate)),
+      ('Updates Received', '${gps.updateCount}'),
+      ('Current Device Time', time(DateTime.now())),
       ('GPS Status', _lost ? 'signal lost' : snap.status.name),
       (
         'Last Event',
@@ -228,6 +246,38 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deviceGps(ThemeData theme, GpsStatus gps) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Device GPS',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const Gap.v(AppSpacing.xs),
+          Text(gps.permission.message, style: theme.textTheme.bodySmall),
+          const Gap.v(AppSpacing.sm),
+          Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
+            _btn('Request permission & start', Icons.my_location_rounded,
+                () => ref.read(gpsStatusProvider.notifier).requestAndStart()),
+            _btn('Re-check permission', Icons.refresh_rounded,
+                () => ref.read(gpsStatusProvider.notifier).refreshPermission()),
+            if (!gps.isGranted &&
+                gps.permission != LocationPermissionStatus.unknown)
+              _btn('Open settings', Icons.settings_rounded,
+                  () => ref.read(gpsStatusProvider.notifier).openSettings()),
+          ]),
         ],
       ),
     );

@@ -8,8 +8,9 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/around_me/presentation/widgets/experience_card.dart';
 import 'package:explorer_os_mobile/features/around_me/presentation/widgets/mini_map.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
-import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
+import 'package:explorer_os_mobile/features/gps/models/gps_status.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 
 /// The primary ExplorerOS experience: "What's around me right now?".
@@ -42,13 +43,10 @@ class _AroundMeScreenState extends ConsumerState<AroundMeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(aroundMeControllerProvider);
-      // Best-effort: on web/without permission (or in tests without the
-      // geolocator plugin) this fails quietly; the GPS Simulator can drive the
-      // engine instead.
-      ref
-          .read(gpsControllerProvider.notifier)
-          .startTracking()
-          .catchError((_) {});
+      // Request permission and begin live tracking. Never throws; permission
+      // state is reflected via gpsStatusProvider, and the GPS Simulator can
+      // drive the engine when device GPS is unavailable.
+      ref.read(gpsStatusProvider.notifier).requestAndStart();
     });
   }
 
@@ -56,6 +54,7 @@ class _AroundMeScreenState extends ConsumerState<AroundMeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final snap = ref.watch(aroundMeControllerProvider);
+    final gps = ref.watch(gpsStatusProvider);
     final experiences = ref.watch(aroundMeExperiencesProvider);
 
     return Scaffold(
@@ -74,7 +73,10 @@ class _AroundMeScreenState extends ConsumerState<AroundMeScreen> {
             _statusBar(theme, snap, experiences.length),
             const Gap.v(AppSpacing.md),
             if (!snap.gpsAvailable && snap.latitude == null)
-              _waitingForGps(theme)
+              (!gps.isGranted &&
+                      gps.permission != LocationPermissionStatus.unknown)
+                  ? _permissionCard(theme, gps)
+                  : _waitingForGps(theme)
             else if (experiences.isEmpty)
               _empty(theme)
             else ...[
@@ -180,6 +182,53 @@ class _AroundMeScreenState extends ConsumerState<AroundMeScreen> {
             ),
           ),
           Text('$count nearby', style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+
+  Widget _permissionCard(ThemeData theme, GpsStatus gps) {
+    final needsSettings =
+        gps.permission == LocationPermissionStatus.deniedForever ||
+            gps.permission == LocationPermissionStatus.serviceDisabled;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.xl),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer.withValues(alpha: 0.35),
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: theme.colorScheme.error.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.location_disabled_rounded,
+              size: 40, color: theme.colorScheme.error),
+          const Gap.v(AppSpacing.md),
+          Text('Location needed',
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+          const Gap.v(AppSpacing.xs),
+          Text(gps.permission.message,
+              textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+          const Gap.v(AppSpacing.md),
+          FilledButton.icon(
+            onPressed: () {
+              if (needsSettings) {
+                ref.read(gpsStatusProvider.notifier).openSettings();
+              } else {
+                ref.read(gpsStatusProvider.notifier).requestAndStart();
+              }
+            },
+            icon: Icon(needsSettings
+                ? Icons.settings_rounded
+                : Icons.my_location_rounded),
+            label: Text(needsSettings ? 'Open settings' : 'Allow location'),
+          ),
+          const Gap.v(AppSpacing.sm),
+          TextButton(
+            onPressed: () => context.push(AppRoute.gps.path),
+            child: const Text('Open GPS Simulator instead'),
+          ),
         ],
       ),
     );
