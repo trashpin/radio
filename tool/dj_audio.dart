@@ -110,6 +110,87 @@ Future<void> _voiceSegments(HttpClient http, Map<String, String> sbh,
   stdout.writeln('\n=== Done (segments) ===  voiced: $ok  failed: $fail');
 }
 
+/// Voices every dj_banter row that has text but no audio (optionally scoped to
+/// a destination code via --code), uploads the MP3 to voiceovers/banter/, and
+/// sets audio_url + voice fields. Uses the row's voice_id when present, else the
+/// --voice CLI value.
+Future<void> _voiceDjBanter(HttpClient http, Map<String, String> sbh,
+    String url, String xi, String fallbackVoiceId, String fallbackVoiceName,
+    String? code, bool dryRun) async {
+  var filter = 'select=*&audio_url=is.null&text=not.is.null';
+  if (code != null && code.isNotEmpty) filter += '&destination_code=eq.$code';
+  final getReq =
+      await http.getUrl(Uri.parse('$url/rest/v1/dj_banter?$filter'));
+  sbh.forEach(getReq.headers.set);
+  final getRes = await getReq.close();
+  final body = await getRes.transform(utf8.decoder).join();
+  if (getRes.statusCode >= 300) {
+    stderr.writeln('load dj_banter ${getRes.statusCode}: $body');
+    return;
+  }
+  final rows = (jsonDecode(body) as List).cast<Map<String, dynamic>>();
+  stdout.writeln('dj_banter rows needing audio: ${rows.length}');
+  var ok = 0, fail = 0;
+  for (final r in rows) {
+    final id = r['id'].toString();
+    final text = (r['text'] ?? '').toString();
+    if (text.trim().isEmpty) continue;
+    final voiceId = (r['voice_id'] ?? fallbackVoiceId).toString();
+    final voiceName = (r['voice_name'] ?? fallbackVoiceName).toString();
+    if (dryRun) {
+      stdout.writeln('  [dry] ${r['category']}: "$text"');
+      continue;
+    }
+    try {
+      final ttsReq = await http.postUrl(Uri.parse(
+          'https://api.elevenlabs.io/v1/text-to-speech/$voiceId?output_format=mp3_44100_128'));
+      ttsReq.headers.set('xi-api-key', xi);
+      ttsReq.headers.set('accept', 'audio/mpeg');
+      ttsReq.headers.contentType = ContentType.json;
+      ttsReq.add(utf8.encode(
+          jsonEncode({'text': text, 'model_id': 'eleven_multilingual_v2'})));
+      final ttsRes = await ttsReq.close();
+      if (ttsRes.statusCode >= 300) throw 'ElevenLabs ${ttsRes.statusCode}';
+      final bytes = <int>[];
+      await for (final c in ttsRes) {
+        bytes.addAll(c);
+      }
+      final path = 'banter/$id.mp3';
+      final upReq =
+          await http.postUrl(Uri.parse('$url/storage/v1/object/$_bucket/$path'));
+      sbh.forEach(upReq.headers.set);
+      upReq.headers.set('x-upsert', 'true');
+      upReq.headers.contentType = ContentType('audio', 'mpeg');
+      upReq.add(bytes);
+      final upRes = await upReq.close();
+      await upRes.drain<void>();
+      if (upRes.statusCode >= 300) throw 'upload ${upRes.statusCode}';
+      final publicUrl = '$url/storage/v1/object/public/$_bucket/$path';
+
+      final patchReq = await http.openUrl(
+          'PATCH', Uri.parse('$url/rest/v1/dj_banter?id=eq.$id'));
+      sbh.forEach(patchReq.headers.set);
+      patchReq.headers.set('Prefer', 'return=minimal');
+      patchReq.headers.contentType = ContentType.json;
+      patchReq.add(utf8.encode(jsonEncode({
+        'audio_url': publicUrl,
+        'voice_id': voiceId,
+        'voice_name': voiceName,
+        'status': 'published',
+      })));
+      final patchRes = await patchReq.close();
+      await patchRes.drain<void>();
+      if (patchRes.statusCode >= 300) throw 'update ${patchRes.statusCode}';
+      ok++;
+      stdout.writeln('  ✓ ${r['category']} (${(bytes.length / 1024).round()} KB)');
+    } catch (e) {
+      fail++;
+      stderr.writeln('  ✗ ${r['category']}: $e');
+    }
+  }
+  stdout.writeln('\n=== Done (dj_banter) ===  voiced: $ok  failed: $fail');
+}
+
 Future<void> main(List<String> args) async {
   final stationName = _arg(args, 'station', 'all');
   final station = _stationFor(stationName);
@@ -148,6 +229,16 @@ Future<void> main(List<String> args) async {
   // radio_segments that have a script but no audio_url yet).
   if (args.contains('--from-segments')) {
     await _voiceSegments(http, sbh, url, xi, dryRun);
+    http.close(force: true);
+    return;
+  }
+
+  // Mode 3: voice GPS-aware DJ Banter Studio clips (dj_banter rows with text
+  // but no audio_url). Scope with --code <destination_code>.
+  if (args.contains('--from-dj-banter')) {
+    final code = _arg(args, 'code', '');
+    await _voiceDjBanter(http, sbh, url, xi, voiceId, voiceName,
+        code.isEmpty ? null : code, dryRun);
     http.close(force: true);
     return;
   }
