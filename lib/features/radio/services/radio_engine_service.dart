@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dar
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
+import 'package:explorer_os_mobile/features/radio/services/background_discovery_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/history_manager.dart';
@@ -55,10 +56,12 @@ class RadioEngineService {
     OfflinePlaybackService? offline,
     StationIdentificationService? stationIds,
     DjBanterScheduler? djBanter,
+    BackgroundDiscoveryScheduler? discovery,
   })  : audioFocus = audioFocus ?? AudioFocusManager(),
         offline = offline ?? OfflinePlaybackService(),
         stationIds = stationIds ?? StationIdentificationService(),
-        djBanter = djBanter ?? DjBanterScheduler();
+        djBanter = djBanter ?? DjBanterScheduler(),
+        discovery = discovery ?? BackgroundDiscoveryScheduler();
 
   final QueueManagerService queue;
   final PlaybackController playback;
@@ -73,6 +76,11 @@ class RadioEngineService {
   final OfflinePlaybackService offline;
   final StationIdentificationService stationIds;
   final DjBanterScheduler djBanter;
+
+  /// Fills quiet gaps between songs with nearby environmental content (wildlife,
+  /// plants, birds, trees, geology, history, facts, hidden gems) so the radio
+  /// keeps teaching even without a major destination.
+  final BackgroundDiscoveryScheduler discovery;
 
   final StreamController<RadioEvent> _events =
       StreamController<RadioEvent>.broadcast();
@@ -130,6 +138,14 @@ class RadioEngineService {
     if (finished != null) {
       history.record(finished.segment);
       _emit(SegmentCompleted(DateTime.now(), finished.segment));
+
+      // Any spoken narration (a story, a GPS story, or a discovery insert)
+      // resets the discovery quiet gap — it only fills genuine silences.
+      final t = finished.segment.type;
+      if (t == AudioSegmentType.narration ||
+          t == AudioSegmentType.gpsNarration) {
+        discovery.notifyNarration();
+      }
 
       // If an interruption just ended, restore the music it displaced.
       if (finished.segment.resumeAfter && queue.pausedMusic != null) {
@@ -282,6 +298,9 @@ class RadioEngineService {
   void dispose() => _events.close();
 
   void _injectScheduledContent(AudioSegment finishedMusic) {
+    // A song just aired — advance the discovery quiet-gap counter.
+    discovery.tick();
+
     final due = <AudioSegment>[];
     if (preferences.narrationsEnabled) {
       final narration = stories.onMusicPlayed();
@@ -290,6 +309,12 @@ class RadioEngineService {
     if (preferences.announcementsEnabled) {
       final announcement = announcements.onMusicPlayed();
       if (announcement != null) due.add(announcement);
+    }
+    // Background discovery: when it's been quiet for a while, teach something
+    // about the nearby environment (before falling back to generic DJ banter).
+    if (due.isEmpty && preferences.narrationsEnabled) {
+      final discovered = discovery.due();
+      if (discovered != null) due.add(discovered);
     }
     // DJ banter fills the space between songs when nothing else is scheduled,
     // so the station sounds hosted rather than a bare playlist.

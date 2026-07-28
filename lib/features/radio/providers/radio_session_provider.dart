@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
+import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
@@ -12,6 +14,8 @@ import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_contr
 import 'package:explorer_os_mobile/features/radio/providers/radio_engine_providers.dart';
 import 'package:explorer_os_mobile/features/radio/providers/stations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/repositories/song_repository.dart';
+import 'package:explorer_os_mobile/features/radio/services/background_discovery_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_scheduler.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
@@ -30,6 +34,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   ref.read(radioAudioServiceProvider);
 
   final engine = ref.read(radioEngineServiceProvider);
+
+  // Feed the Background Discovery Engine with nearby environmental content so
+  // the radio can teach about the surroundings during quiet stretches.
+  _attachDiscovery(ref, engine);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -121,6 +129,44 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
 
   return station;
 });
+
+/// Maps the live Around Me feed (GPS-ranked nearby content) into discovery
+/// candidates and keeps the engine's [BackgroundDiscoveryScheduler] up to date
+/// as the traveler moves. Only environmental topics (wildlife, plants, birds,
+/// trees, geology, history, facts, hidden gems) are forwarded; everything else
+/// is ignored. Fully defensive — a no-op when GPS/content are unavailable.
+void _attachDiscovery(Ref ref, RadioEngineService engine) {
+  void push(List<Experience> experiences) {
+    final candidates = <DiscoveryCandidate>[];
+    for (final e in experiences) {
+      final category = discoveryCategoryFor(
+        e.category,
+        subcategory: e.subcategory,
+        name: e.name,
+      );
+      if (category == null) continue;
+      final desc = (e.description ?? '').trim();
+      candidates.add(DiscoveryCandidate(
+        id: e.id,
+        category: category,
+        title: e.name,
+        distanceMeters: e.distanceMeters,
+        audioUrl: e.audioUrl,
+        spokenText:
+            desc.isEmpty ? "You're near ${e.name}." : "You're near ${e.name}. $desc",
+      ));
+    }
+    engine.discovery.updateNearby(candidates);
+  }
+
+  try {
+    push(ref.read(aroundMeExperiencesProvider));
+  } catch (_) {}
+  ref.listen<List<Experience>>(
+    aroundMeExperiencesProvider,
+    (_, next) => push(next),
+  );
+}
 
 /// Starts the programming scheduler for the session: it injects due
 /// announcements (safety/wildlife with audio) into the engine's interruption
