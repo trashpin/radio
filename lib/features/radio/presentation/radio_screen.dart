@@ -8,6 +8,8 @@ import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
+import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/i_see_something_modal.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
@@ -261,15 +263,28 @@ class _PlayerState extends ConsumerState<_Player> {
     );
   }
 
-  /// "What's Near Me?" is a temporary live report: it interrupts the radio,
-  /// narrates the closest place, then the station resumes where it paused.
+  /// "What's Near Me?" opens a list of nearby places (within ~20 miles). Picking
+  /// one plays it as a temporary live report — the radio interrupts, narrates
+  /// the chosen place, then resumes exactly where it paused.
   void _whatsNearMe() {
-    ref.read(nearbyNarrationControllerProvider.notifier).narrateNearest();
-    final msg = ref.read(nearbyNarrationControllerProvider).message;
-    if (msg != null && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(msg)));
-    }
+    // Make sure GPS is acquiring so the list can populate.
+    ref.read(gpsStatusProvider.notifier).requestAndStart();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _RadioPalette.panel,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => _NearbyListSheet(
+        onPick: (loc) {
+          Navigator.of(context).pop();
+          ref
+              .read(nearbyNarrationControllerProvider.notifier)
+              .narrateLocation(loc);
+        },
+      ),
+    );
   }
 
   String? _landmark(PlaybackState playback) {
@@ -578,6 +593,101 @@ class _OverlayChip extends StatelessWidget {
 }
 
 // ── Now Playing card ────────────────────────────────────────────────────────
+
+/// The "What's Near Me?" picker: nearby places within ~20 miles. Tapping one
+/// plays it as a temporary report, then the radio resumes where it paused.
+class _NearbyListSheet extends ConsumerWidget {
+  const _NearbyListSheet({required this.onPick});
+  final void Function(MasterLocation) onPick;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(nearbyReportOptionsProvider);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _RadioPalette.panelAlt,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Row(children: [
+              Text('📍 ', style: TextStyle(fontSize: 16)),
+              Text("What's Near Me",
+                  style: TextStyle(
+                      color: _RadioPalette.textPrimary,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800)),
+            ]),
+            const SizedBox(height: 2),
+            const Text('Tap a place to hear about it, then back to the radio.',
+                style:
+                    TextStyle(color: _RadioPalette.textSecondary, fontSize: 12)),
+            const SizedBox(height: 12),
+            if (options.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: Center(
+                  child: Text('Getting your location…',
+                      style: TextStyle(color: _RadioPalette.textSecondary)),
+                ),
+              )
+            else
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.55),
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: options.length,
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, color: _RadioPalette.panelAlt),
+                  itemBuilder: (_, i) {
+                    final o = options[i];
+                    final l = o.location;
+                    final miles = o.distanceMeters / 1609.344;
+                    return ListTile(
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      leading: Icon(
+                        l.isReady
+                            ? Icons.volume_up_rounded
+                            : Icons.mic_none_rounded,
+                        color: l.isReady
+                            ? _RadioPalette.green
+                            : _RadioPalette.textSecondary,
+                      ),
+                      title: Text(l.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              color: _RadioPalette.textPrimary,
+                              fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        '${l.type.label} · ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} mi',
+                        style: const TextStyle(
+                            color: _RadioPalette.textSecondary, fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.play_circle_fill_rounded,
+                          color: _RadioPalette.green),
+                      onTap: () => onPick(l),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// The station/report indicator: 🎵 ExplorerOS Radio normally, or 👁 / 📍 while
 /// a temporary report is on air. Switches back automatically when it ends.
