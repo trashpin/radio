@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.d
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_health.dart';
+import 'package:explorer_os_mobile/features/locations/media_match.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
 String _fmtDate(DateTime d) {
@@ -62,6 +63,71 @@ class _OverviewTab extends ConsumerStatefulWidget {
 
 class _OverviewTabState extends ConsumerState<_OverviewTab> {
   bool _generating = false;
+  bool _importing = false;
+
+  /// Bulk photo import with auto-match: pick many images, match each to a
+  /// location by filename (hero vs gallery), upload to storage, and attach.
+  /// Unmatched files are reported as unassigned.
+  Future<void> _bulkPhotoImport(List<MasterLocation> all) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      allowMultiple: true,
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    setState(() => _importing = true);
+    final repo = ref.read(locationRepositoryProvider);
+    final media = ref.read(mediaManagerRepositoryProvider);
+    var matched = 0, unassigned = 0, failed = 0;
+    // Track per-location image edits so multiple files stack correctly.
+    final edits = <String, List<String>>{};
+    List<String> current(MasterLocation l) =>
+        edits[l.id] ??= [...l.images];
+    try {
+      for (final f in res.files) {
+        if (f.bytes == null) {
+          failed++;
+          continue;
+        }
+        final m = matchMediaToLocation(f.name, all);
+        if (m.location == null) {
+          unassigned++;
+          continue;
+        }
+        try {
+          final url = await media.upload(
+            folder: 'locations',
+            filename: '${DateTime.now().millisecondsSinceEpoch}_${f.name}',
+            bytes: f.bytes!,
+            contentType: 'image/jpeg',
+          );
+          final imgs = current(m.location!);
+          if (m.isHero) {
+            imgs
+              ..remove(url)
+              ..insert(0, url); // hero goes first
+          } else {
+            imgs.add(url);
+          }
+          matched++;
+        } catch (_) {
+          failed++;
+        }
+      }
+      for (final entry in edits.entries) {
+        await repo.update(entry.key, {'images': entry.value});
+      }
+      ref.read(locationRefreshProvider.notifier).bump();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Imported $matched photo(s) to '
+                '${edits.length} location(s) · $unassigned unassigned'
+                '${failed > 0 ? ' · $failed failed' : ''}')));
+      }
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
 
   Future<void> _generateMissingAudio(List<MasterLocation> all) async {
     final pending =
@@ -107,6 +173,38 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
         Expanded(child: AdminStatCard(
             label: label, value: '$value', icon: icon, tint: tint));
 
+    return _body(context, theme, all, health, showPending, byType, sorted, stat);
+  }
+
+  Widget _pill(String label, int value, ThemeData theme, {Color? tint}) {
+    final c = tint ?? theme.colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('$value',
+            style: TextStyle(
+                color: c, fontSize: 16, fontWeight: FontWeight.w800)),
+        const Gap.h(AppSpacing.xs),
+        Text(label, style: theme.textTheme.bodySmall),
+      ]),
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    ThemeData theme,
+    List<MasterLocation> all,
+    LocationHealth health,
+    bool showPending,
+    Map<LocationType, int> byType,
+    List<MapEntry<LocationType, int>> sorted,
+    Widget Function(String, int, IconData, {Color? tint}) stat,
+  ) {
+
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
@@ -116,6 +214,16 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
               'One canonical location database. Users only see READY locations; '
               'PENDING need narration; DISABLED are hidden everywhere.',
           actions: [
+            OutlinedButton.icon(
+              onPressed: _importing ? null : () => _bulkPhotoImport(all),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _importing
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.add_photo_alternate_rounded, size: 18),
+              label: Text(_importing ? 'Importing…' : 'Bulk Photo Import'),
+            ),
+            const Gap.h(AppSpacing.sm),
             FilledButton.icon(
               onPressed: _generating ? null : () => _generateMissingAudio(all),
               style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
@@ -183,6 +291,31 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
           const Gap.h(AppSpacing.md),
           stat('Types in use', byType.length, Icons.category_rounded),
         ]),
+        const Gap.v(AppSpacing.lg),
+        Builder(builder: (_) {
+          final img = computeImageHealth(all);
+          return AdminSectionCard(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Image health', style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+              const Gap.v(AppSpacing.sm),
+              Wrap(spacing: AppSpacing.md, runSpacing: AppSpacing.sm, children: [
+                _pill('Total images', img.totalImages, theme),
+                _pill('With hero', img.withHero, theme,
+                    tint: const Color(0xFF2E7D32)),
+                _pill('Missing / unassigned', img.missingHero, theme,
+                    tint: const Color(0xFFC0392B)),
+                _pill('Missing gallery', img.missingGallery, theme),
+                _pill('Broken links', img.brokenImageLinks, theme,
+                    tint: const Color(0xFFC0392B)),
+                _pill('Duplicates', img.duplicateImages, theme),
+                _pill('100% complete', img.locationsComplete, theme,
+                    tint: const Color(0xFF2E7D32)),
+              ]),
+            ]),
+          );
+        }),
         const Gap.v(AppSpacing.lg),
         AdminSectionCard(
           child: SwitchListTile(
@@ -456,21 +589,32 @@ class _Row extends ConsumerWidget {
               else 'no coordinates',
               if ((item.source ?? '').isNotEmpty) 'from ${item.source}',
             ].whereType<String>().join(' · '), style: theme.textTheme.bodySmall),
-            if (item.narrationIds.isNotEmpty ||
-                item.audioFiles.isNotEmpty ||
-                item.images.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text([
-                  if (item.narrationIds.isNotEmpty)
-                    '${item.narrationIds.length} narration',
-                  if (item.audioFiles.isNotEmpty)
-                    '${item.audioFiles.length} audio',
-                  if (item.images.isNotEmpty) '${item.images.length} image',
-                ].join(' · '),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary)),
-              ),
+            const Gap.v(AppSpacing.xs),
+            Builder(builder: (_) {
+              final c = completionFor(item);
+              Widget chk(String l, bool ok) => Text(
+                    '${ok ? '✓' : '✗'} $l',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: ok
+                            ? const Color(0xFF2E7D32)
+                            : theme.colorScheme.error),
+                  );
+              return Wrap(spacing: 10, runSpacing: 2, children: [
+                Text('${c.percent}%',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: c.complete
+                            ? const Color(0xFF2E7D32)
+                            : theme.colorScheme.primary)),
+                chk('Hero', c.hero),
+                chk('Gallery', c.gallery),
+                chk('Narration', c.narration),
+                chk('GPS', c.gps),
+                chk('Map', c.map),
+              ]);
+            }),
           ]),
         ),
         PopupMenuButton<String>(

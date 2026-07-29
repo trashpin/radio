@@ -345,7 +345,8 @@ class _PhotoGallery extends StatelessWidget {
         itemBuilder: (_, i) => InteractiveViewer(
           child: Center(
             child: Image.network(images[i], fit: BoxFit.contain,
-                errorBuilder: (_, _, _) => const Icon(Icons.broken_image_rounded,
+                errorBuilder: (_, _, _) => const Icon(
+                    Icons.photo_outlined,
                     color: Colors.white38, size: 64)),
           ),
         ),
