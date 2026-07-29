@@ -67,6 +67,12 @@ enum AdminModule {
       description: 'Master content engine: research destinations, build a '
           'knowledge base, and queue story/audio jobs at scale.',
       table: 'generation_jobs'),
+  locationContent('Location Content', Icons.pin_drop_rounded, AdminGroup.content,
+      ready: true,
+      description: 'Counties, cities, communities, rivers, lakes, scenic roads, '
+          'historic sites, forests & parks — the geocoded "where you are" '
+          'narrations the Location Intelligence Engine airs by GPS.',
+      table: 'location_content'),
 
   explorerRadio('Explorer Radio', Icons.podcasts_rounded, AdminGroup.audio,
       description: 'Stations, programs, playlists, announcements.',
