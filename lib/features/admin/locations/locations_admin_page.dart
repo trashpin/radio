@@ -1,8 +1,12 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
@@ -119,11 +123,38 @@ class _ListTab extends ConsumerStatefulWidget {
 class _ListTabState extends ConsumerState<_ListTab> {
   final _search = TextEditingController();
   LocationType? _type;
+  bool _busy = false;
 
   @override
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  /// Resolve + persist narration links (from Location Content) for the given
+  /// locations, writing narration_ids + audio_files.
+  Future<void> _attachAll(List<MasterLocation> items) async {
+    setState(() => _busy = true);
+    final repo = ref.read(locationRepositoryProvider);
+    final content = ref.read(locationContentItemsProvider);
+    var linked = 0;
+    try {
+      for (final l in items) {
+        final links = resolveNarrationLinks(l, content);
+        if (links.isEmpty) continue;
+        await repo.attachNarration(l.id,
+            narrationIds: links.narrationIds, audioFiles: links.audioFiles);
+        linked++;
+      }
+      ref.read(locationRefreshProvider.notifier).bump();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Attached narration to $linked of ${items.length} '
+                'location(s) from Location Content.')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   List<MasterLocation> _filter(List<MasterLocation> all) {
@@ -149,8 +180,20 @@ class _ListTabState extends ConsumerState<_ListTab> {
       children: [
         AdminPageHeader(
           title: 'Locations',
-          subtitle: 'Create, edit, move, merge, toggle map/radio visibility.',
+          subtitle: 'Create, edit, move, merge, upload media, attach narration, '
+              'toggle map/radio visibility.',
           actions: [
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _attachAll(items),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.link_rounded, size: 18),
+              label: Text(_busy ? 'Attaching…' : 'Attach narration'),
+            ),
+            const Gap.h(AppSpacing.sm),
             FilledButton.icon(
               onPressed: () => _openEditor(context),
               style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
@@ -198,7 +241,11 @@ class _ListTabState extends ConsumerState<_ListTab> {
           Text('${items.length} location(s)', style: theme.textTheme.bodySmall),
           const Gap.v(AppSpacing.sm),
           for (final l in items) ...[
-            _Row(item: l, onEdit: () => _openEditor(context, item: l)),
+            _Row(
+              item: l,
+              all: async.value ?? const [],
+              onEdit: () => _openEditor(context, item: l),
+            ),
             const Gap.v(AppSpacing.sm),
           ],
         ],
@@ -214,9 +261,45 @@ class _ListTabState extends ConsumerState<_ListTab> {
 }
 
 class _Row extends ConsumerWidget {
-  const _Row({required this.item, required this.onEdit});
+  const _Row({required this.item, required this.all, required this.onEdit});
   final MasterLocation item;
+  final List<MasterLocation> all;
   final VoidCallback onEdit;
+
+  Future<void> _attach(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(locationRepositoryProvider);
+    final content = ref.read(locationContentItemsProvider);
+    final links = resolveNarrationLinks(item, content);
+    if (links.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No matching Location Content narration nearby.')));
+      }
+      return;
+    }
+    await repo.attachNarration(item.id,
+        narrationIds: links.narrationIds, audioFiles: links.audioFiles);
+    ref.read(locationRefreshProvider.notifier).bump();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Attached ${links.narrationIds.length} narration(s), '
+              '${links.audioFiles.length} audio file(s).')));
+    }
+  }
+
+  Future<void> _merge(BuildContext context, WidgetRef ref) async {
+    final target = await showDialog<MasterLocation>(
+      context: context,
+      builder: (_) => _MergePicker(current: item, all: all),
+    );
+    if (target == null) return;
+    await ref.read(locationRepositoryProvider).merge(target, item);
+    ref.read(locationRefreshProvider.notifier).bump();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Merged "${item.name}" into "${target.name}".')));
+    }
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -259,6 +342,21 @@ class _Row extends ConsumerWidget {
               else 'no coordinates',
               if ((item.source ?? '').isNotEmpty) 'from ${item.source}',
             ].whereType<String>().join(' · '), style: theme.textTheme.bodySmall),
+            if (item.narrationIds.isNotEmpty ||
+                item.audioFiles.isNotEmpty ||
+                item.images.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text([
+                  if (item.narrationIds.isNotEmpty)
+                    '${item.narrationIds.length} narration',
+                  if (item.audioFiles.isNotEmpty)
+                    '${item.audioFiles.length} audio',
+                  if (item.images.isNotEmpty) '${item.images.length} image',
+                ].join(' · '),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary)),
+              ),
           ]),
         ),
         PopupMenuButton<String>(
@@ -266,6 +364,8 @@ class _Row extends ConsumerWidget {
           onSelected: (v) async {
             switch (v) {
               case 'edit': onEdit();
+              case 'attach': await _attach(context, ref);
+              case 'merge': await _merge(context, ref);
               case 'active':
                 await repo.update(item.id, {'active': !item.active}); refresh();
               case 'featured':
@@ -277,7 +377,10 @@ class _Row extends ConsumerWidget {
             }
           },
           itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
+            const PopupMenuItem(value: 'edit', child: Text('Edit / upload media')),
+            const PopupMenuItem(
+                value: 'attach', child: Text('Attach narration')),
+            const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
             PopupMenuItem(value: 'active',
                 child: Text(item.active ? 'Disable' : 'Enable')),
             PopupMenuItem(value: 'featured',
@@ -289,6 +392,72 @@ class _Row extends ConsumerWidget {
           ],
         ),
       ]),
+    );
+  }
+}
+
+class _MergePicker extends StatefulWidget {
+  const _MergePicker({required this.current, required this.all});
+  final MasterLocation current;
+  final List<MasterLocation> all;
+  @override
+  State<_MergePicker> createState() => _MergePickerState();
+}
+
+class _MergePickerState extends State<_MergePicker> {
+  String _q = '';
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.trim().toLowerCase();
+    final candidates = widget.all
+        .where((l) => l.id != widget.current.id)
+        .where((l) => q.isEmpty || l.name.toLowerCase().contains(q))
+        .take(40)
+        .toList();
+    return AlertDialog(
+      title: Text('Merge "${widget.current.name}" into…'),
+      content: SizedBox(
+        width: 460,
+        height: 420,
+        child: Column(children: [
+          const Text('The selected location keeps its record; this one\'s '
+              'media + narration move onto it, then it is deleted.',
+              style: TextStyle(fontSize: 12)),
+          const Gap.v(AppSpacing.sm),
+          TextField(
+            autofocus: true,
+            onChanged: (v) => setState(() => _q = v),
+            decoration: const InputDecoration(
+                labelText: 'Search target', isDense: true,
+                prefixIcon: Icon(Icons.search_rounded),
+                border: OutlineInputBorder()),
+          ),
+          const Gap.v(AppSpacing.sm),
+          Expanded(
+            child: candidates.isEmpty
+                ? const Center(child: Text('No matches'))
+                : ListView.builder(
+                    itemCount: candidates.length,
+                    itemBuilder: (_, i) {
+                      final l = candidates[i];
+                      return ListTile(
+                        dense: true,
+                        title: Text(l.name),
+                        subtitle: Text([l.type.label, l.placeLine]
+                            .whereType<String>()
+                            .join(' · ')),
+                        onTap: () => Navigator.pop(context, l),
+                      );
+                    },
+                  ),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+      ],
     );
   }
 }
@@ -315,7 +484,10 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late bool _active = widget.item?.active ?? true;
   late bool _featured = widget.item?.featured ?? false;
   late bool _hidden = widget.item?.hidden ?? false;
+  late final List<String> _images = [...?widget.item?.images];
+  late final List<String> _audio = [...?widget.item?.audioFiles];
   bool _saving = false;
+  bool _uploading = false;
 
   @override
   void dispose() {
@@ -343,6 +515,8 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'active': _active,
       'featured': _featured,
       'hidden': _hidden,
+      'images': _images,
+      'audio_files': _audio,
     };
     try {
       if (widget.item == null) {
@@ -401,7 +575,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
             _f(_trigger, 'Trigger radius (meters)'),
             const Gap.v(AppSpacing.sm),
             _f(_desc, 'Description', maxLines: 3),
-            const Gap.v(AppSpacing.sm),
+            const Divider(height: AppSpacing.lg),
+            _mediaSection(),
+            const Divider(height: AppSpacing.lg),
             Row(children: [
               _toggle('Active', _active, (v) => setState(() => _active = v)),
               _toggle('Featured', _featured, (v) => setState(() => _featured = v)),
@@ -417,6 +593,115 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
         FilledButton(
             onPressed: _saving ? null : _save,
             child: Text(_saving ? 'Saving…' : 'Save')),
+      ],
+    );
+  }
+
+  Future<void> _uploadMedia({required bool image}) async {
+    final res = await FilePicker.platform.pickFiles(
+      type: image ? FileType.image : FileType.audio,
+      withData: true,
+    );
+    if (res == null || res.files.isEmpty) return;
+    final file = res.files.first;
+    if (file.bytes == null) return;
+    setState(() => _uploading = true);
+    try {
+      final url = await ref.read(mediaManagerRepositoryProvider).upload(
+            folder: image ? 'locations' : 'locations/audio',
+            filename: '${DateTime.now().millisecondsSinceEpoch}_${file.name}',
+            bytes: file.bytes!,
+            contentType: image ? 'image/jpeg' : 'audio/mpeg',
+          );
+      setState(() => (image ? _images : _audio).add(url));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _addByUrl({required bool image}) async {
+    final ctrl = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Add ${image ? 'image' : 'audio'} URL'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              hintText: 'https://…', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Add')),
+        ],
+      ),
+    );
+    if (url != null && url.isNotEmpty) {
+      setState(() => (image ? _images : _audio).add(url));
+    }
+  }
+
+  Widget _mediaSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _mediaRow('Images', Icons.image_rounded, _images, image: true),
+        const Gap.v(AppSpacing.sm),
+        _mediaRow('Audio', Icons.audiotrack_rounded, _audio, image: false),
+      ],
+    );
+  }
+
+  Widget _mediaRow(String label, IconData icon, List<String> urls,
+      {required bool image}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, size: 18),
+          const Gap.h(AppSpacing.xs),
+          Text('$label (${urls.length})',
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          const Spacer(),
+          TextButton.icon(
+            onPressed: _uploading ? null : () => _uploadMedia(image: image),
+            icon: const Icon(Icons.upload_rounded, size: 16),
+            label: const Text('Upload'),
+          ),
+          TextButton.icon(
+            onPressed: () => _addByUrl(image: image),
+            icon: const Icon(Icons.link_rounded, size: 16),
+            label: const Text('URL'),
+          ),
+        ]),
+        for (final u in urls)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Row(children: [
+              Expanded(
+                child: Text(u,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11)),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                iconSize: 16,
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => setState(() => urls.remove(u)),
+              ),
+            ]),
+          ),
       ],
     );
   }
