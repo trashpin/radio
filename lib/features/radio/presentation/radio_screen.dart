@@ -288,8 +288,11 @@ class _PlayerState extends ConsumerState<_Player> {
   }
 
   String? _landmark(PlaybackState playback) {
-    final t = playback.current?.segment.title.trim();
-    return (t == null || t.isEmpty) ? null : t;
+    final seg = playback.current?.segment;
+    // Only spoken/location content is a "landmark"; a song title is not.
+    if (seg == null || seg.type == AudioSegmentType.music) return null;
+    final t = seg.title.trim();
+    return t.isEmpty ? null : t;
   }
 
   // ── Advanced settings, moved off the main screen ─────────────────────────
