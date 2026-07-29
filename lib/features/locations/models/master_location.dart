@@ -82,6 +82,20 @@ enum LocationType {
   }
 }
 
+/// Lifecycle/readiness of a location, derived from its content + flags.
+///  • ready    — has audio; appears on the map, radio & GPS eligible.
+///  • pending  — active but no audio yet ("Needs Narration"); hidden from
+///               users by default, visible in admin.
+///  • disabled — inactive or hidden; off the map, radio, and search.
+enum LocationStatus {
+  ready('Ready'),
+  pending('Needs Narration'),
+  disabled('Disabled');
+
+  const LocationStatus(this.label);
+  final String label;
+}
+
 /// The one canonical location record every system reads (`public.locations`).
 class MasterLocation {
   const MasterLocation({
@@ -109,6 +123,7 @@ class MasterLocation {
     this.source,
     this.sourceId,
     this.destinationCode,
+    this.updatedAt,
   });
 
   final String id;
@@ -135,10 +150,26 @@ class MasterLocation {
   final String? source;
   final String? sourceId;
   final String? destinationCode;
+  final DateTime? updatedAt;
 
   bool get hasCoordinates =>
       latitude != null && longitude != null &&
       !(latitude == 0 && longitude == 0);
+
+  /// Has playable recorded audio.
+  bool get hasAudio => audioFiles.any((u) => u.trim().isNotEmpty);
+
+  /// Has narration (a script/link) or audio.
+  bool get hasNarration => narrationIds.isNotEmpty || hasAudio;
+
+  /// Derived readiness — the single gate used by the map, radio, GPS & search.
+  LocationStatus get status {
+    if (!active || hidden) return LocationStatus.disabled;
+    return hasAudio ? LocationStatus.ready : LocationStatus.pending;
+  }
+
+  bool get isReady => status == LocationStatus.ready;
+  bool get isPending => status == LocationStatus.pending;
 
   String? get placeLine {
     final parts = [city ?? community, county == null ? null : '$county County']
@@ -178,6 +209,7 @@ class MasterLocation {
         source: j['source'] as String?,
         sourceId: j['source_id']?.toString(),
         destinationCode: j['destination_code'] as String?,
+        updatedAt: DateTime.tryParse('${j['updated_at']}'),
       );
 
   /// Column map for insert/update (id/timestamps/provenance managed elsewhere).

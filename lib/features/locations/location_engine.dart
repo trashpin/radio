@@ -64,10 +64,12 @@ class LocationEngine {
     double maxMiles = 20,
     Set<LocationType>? types,
     Set<String> exclude = const {},
+    bool requireAudio = false,
   }) {
     final out = <NearbyLocation>[];
     for (final l in all) {
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (requireAudio && !l.hasAudio) continue;
       if (exclude.contains(l.id)) continue;
       if (types != null && types.isNotEmpty && !types.contains(l.type)) continue;
       final m = GeoMath.distanceMeters(
@@ -92,9 +94,11 @@ class LocationEngine {
     double maxMiles = 20,
     Set<LocationType>? types,
     Set<String> exclude = const {},
+    bool requireAudio = false,
   }) {
     final list = nearby(latitude, longitude, all,
-        maxMiles: maxMiles, types: types, exclude: exclude);
+        maxMiles: maxMiles, types: types, exclude: exclude,
+        requireAudio: requireAudio);
     return list.isEmpty ? null : list.first;
   }
 
@@ -121,7 +125,8 @@ class LocationEngine {
     }
 
     final scored = all
-        .where((l) => l.active && rank(l) < 99)
+        .where((l) =>
+            l.status != LocationStatus.disabled && rank(l) < 99)
         .map((l) => (l, rank(l)))
         .toList()
       ..sort((a, b) {
