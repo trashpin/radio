@@ -10,8 +10,10 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
 import 'package:explorer_os_mobile/features/maps/marker_style.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
@@ -351,6 +353,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     required MarkerCategoryStyle style,
     required _MapSelection selection,
     bool clustered = false,
+    VoidCallback? onTap,
   }) {
     final selected = _selection?.markerId == id;
     return Marker(
@@ -360,8 +363,30 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
       anchor: const Offset(0.5, 1),
       zIndexInt: selected ? 3 : 1,
       clusterManagerId: clustered ? _placesCluster : null,
-      onTap: () => _select(selection),
+      onTap: onTap ?? () => _select(selection),
     );
+  }
+
+  /// Opens the ONE universal Destination Detail card for a tapped place marker
+  /// (master locations). Falls back to the legacy selection card otherwise.
+  void _openPlaceDetail(NearbyItem p, _MapSelection selection) {
+    const prefix = 'locations:';
+    if (p.id.startsWith(prefix)) {
+      final locId = p.id.substring(prefix.length);
+      final all = ref.read(masterLocationsProvider).value ?? const [];
+      for (final l in all) {
+        if (l.id == locId) {
+          final center = ref.read(mapCenterProvider);
+          final dist = center == null
+              ? null
+              : GeoMath.distanceMeters(
+                  center.latitude, center.longitude, p.latitude, p.longitude);
+          showDestinationDetail(context, l, distanceMeters: dist);
+          return;
+        }
+      }
+    }
+    _select(selection);
   }
 
   // --- Bottom info card actions -------------------------------------------
@@ -576,20 +601,25 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
       // clustered when zoomed out, each with a selectable info card.
       if (layers.contains(MapLayer.locations))
         for (final p in places)
-          _placeMarker(
-            id: 'place_${p.id}',
-            position: LatLng(p.latitude, p.longitude),
-            style: markerStyleForItem(p.category, p.name, p.subcategory),
-            clustered: true,
-            selection: _MapSelection(
+          () {
+            final selection = _MapSelection(
               markerId: 'place_${p.id}',
               name: p.name,
               style: markerStyleForItem(p.category, p.name, p.subcategory),
               position: LatLng(p.latitude, p.longitude),
               imageUrl: p.imageUrl,
               audioUrl: p.audioUrl,
-            ),
-          ),
+            );
+            return _placeMarker(
+              id: 'place_${p.id}',
+              position: LatLng(p.latitude, p.longitude),
+              style: markerStyleForItem(p.category, p.name, p.subcategory),
+              clustered: true,
+              selection: selection,
+              // Tapping a place opens the ONE universal Destination Detail card.
+              onTap: () => _openPlaceDetail(p, selection),
+            );
+          }(),
       // User location (blue dot).
       if (userLocation != null)
         Marker(
@@ -986,6 +1016,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         child: _LocationSearchSheet(onPick: (l) {
           Navigator.of(context).pop();
           _goToLocation(l);
+          showDestinationDetail(context, l);
         }),
       ),
     );
