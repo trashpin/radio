@@ -38,14 +38,14 @@ dependencies:
   supabase_flutter: ^2.16.0
   go_router: ^17.3.0
   flutter_dotenv: ^6.0.1
-  geolocator: ^14.0.3
+  geolocator: ^13.0.0
   just_audio: ^0.10.6
   audio_service: ^0.18.19
   csv: ^8.0.0
   archive: ^4.0.9
   google_maps_flutter: ^2.18.0
   flutter_tts: ^4.2.5
-  file_picker: ^3.0.4
+  file_picker: ^8.0.0
   dart_tags: ^0.4.1
 
 dev_dependencies:
