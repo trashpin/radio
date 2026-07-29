@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/core/data/read_repository.dart';
 import 'package:explorer_os_mobile/core/data/supabase_tables.dart';
 import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 
 /// User-selectable search radius (meters). `Entire Park` = unbounded.
@@ -39,10 +40,14 @@ final mapLocationRepositoryProvider = Provider<MapLocationRepository>((ref) {
   );
 });
 
-/// All geolocated records (from Supabase; empty until the table/content exist).
-/// Overridable with seeded demo data. A future step queries only a bounding box
-/// server-side for performance.
+/// All geolocated records for "Around Me".
+///
+/// SINGLE SOURCE: prefers the master `locations` table (migration 0031) so
+/// Around Me, the Map, and the Radio all read the ONE database. Falls back to
+/// the legacy `map_locations` query when the master table is empty.
 final mapLocationsProvider = FutureProvider<List<NearbyItem>>((ref) async {
+  final master = ref.watch(masterNearbyItemsProvider);
+  if (master.isNotEmpty) return master;
   try {
     return await ref.watch(mapLocationRepositoryProvider).getAll();
   } catch (_) {

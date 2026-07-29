@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 
 /// Always-on map "places" — Points of Interest (`map_locations`) and
@@ -108,12 +109,24 @@ final poiPlacesProvider = FutureProvider<List<NearbyItem>>(
 final campgroundPlacesProvider = FutureProvider<List<NearbyItem>>(
     (ref) => _query(ref, 'campgrounds', forcedCategory: 'campgrounds'));
 
-/// All always-on places to plot (POI + campgrounds), merged.
+/// All always-on places to plot.
+///
+/// SINGLE SOURCE: once the master `locations` table has data (migration 0031),
+/// it is the source of truth for every place; `campgrounds` (not yet migrated)
+/// is merged alongside it. Before migration, this falls back to the legacy
+/// `map_locations` + `campgrounds` query so nothing breaks.
 final mapPlacesProvider = Provider<List<NearbyItem>>((ref) {
-  final poi = ref.watch(poiPlacesProvider).value ?? const [];
+  final master = ref.watch(masterNearbyItemsProvider);
   final camps = ref.watch(campgroundPlacesProvider).value ?? const [];
+  if (master.isNotEmpty) {
+    final all = [...master, ...camps];
+    debugPrint('[Map] total places to plot: ${all.length} '
+        '(master locations=${master.length}, campgrounds=${camps.length})');
+    return all;
+  }
+  final poi = ref.watch(poiPlacesProvider).value ?? const [];
   final all = [...poi, ...camps];
   debugPrint('[Map] total places to plot: ${all.length} '
-      '(points_of_interest=${poi.length}, campgrounds=${camps.length})');
+      '(legacy points_of_interest=${poi.length}, campgrounds=${camps.length})');
   return all;
 });

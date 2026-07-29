@@ -30,6 +30,11 @@ enum AdminModule {
       description: 'Upload media to storage, manage songs, import CSVs, '
           'browse files, and manage narration.'),
 
+  masterLocations('Master Locations', Icons.hub_rounded, AdminGroup.content,
+      ready: true,
+      description: 'The ONE location database. Every place exists once and '
+          'powers the map, radio, GPS triggers, nearby, narration, and search.',
+      table: 'locations'),
   destinations('Destinations', Icons.travel_explore_rounded, AdminGroup.content,
       ready: true,
       description: 'Master destination system: AI content status, filters, '
