@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/discovery/data/species_repository.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
 
 /// Forest palette for the discovery experience.
@@ -65,6 +66,17 @@ class _ISeeState extends ConsumerState<_ISeeSomethingScreen> {
     Navigator.of(context).pop(); // back to radio; narration starts
   }
 
+  void _narrateHere() {
+    ref.read(nearbyNarrationControllerProvider.notifier).narrateNearest();
+    final msg = ref.read(nearbyNarrationControllerProvider).message;
+    if (msg != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
+      return;
+    }
+    Navigator.of(context).pop(); // back to radio; the location narrates
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -97,6 +109,57 @@ class _ISeeState extends ConsumerState<_ISeeSomethingScreen> {
   }
 
   Widget _grid() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: _narrateHere,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: LinearGradient(colors: [
+                    _Forest.accent.withValues(alpha: 0.85),
+                    _Forest.accent.withValues(alpha: 0.55),
+                  ]),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.my_location_rounded, color: Color(0xFF0B120E)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text('What\'s right here?',
+                              style: TextStyle(
+                                  color: Color(0xFF0B120E),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800)),
+                          Text('Narrate the closest place around you',
+                              style: TextStyle(
+                                  color: Color(0xFF0B120E), fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.play_circle_fill_rounded,
+                        color: Color(0xFF0B120E)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(child: _categoryGrid()),
+      ],
+    );
+  }
+
+  Widget _categoryGrid() {
     return GridView.count(
       padding: const EdgeInsets.all(16),
       crossAxisCount: 2,
