@@ -91,42 +91,71 @@ Future<void> main(List<String> args) async {
   final rows = (jsonDecode(body) as List).cast<Map<String, dynamic>>();
   stdout.writeln('$county County POIs found: ${rows.length}');
 
+  // PostgREST bulk insert requires identical keys on every row.
+  Map<String, dynamic> row({
+    required String title,
+    required String category,
+    String? subcategory,
+    required num latitude,
+    required num longitude,
+    String? city,
+    String? park,
+    num? radius,
+    int priority = 0,
+    int estimatedDuration = 120,
+    String? text,
+    String? audioUrl,
+    String? destinationCode,
+  }) =>
+      {
+        'title': title,
+        'category': category,
+        'subcategory': subcategory,
+        'latitude': latitude,
+        'longitude': longitude,
+        'county': county,
+        'city': city,
+        'state': state,
+        'park': park,
+        'radius': radius,
+        'priority': priority,
+        'estimated_duration': estimatedDuration,
+        'cooldown': 21600,
+        'text': text,
+        'audio_url': audioUrl,
+        'destination_code': destinationCode,
+      };
+
   final payload = <Map<String, dynamic>>[
     // Synthesized county welcome so entering the county triggers a narration.
-    {
-      'title': 'Welcome to $county County',
-      'category': 'county_history',
-      'latitude': centroid[0],
-      'longitude': centroid[1],
-      'county': county,
-      'state': state,
-      'priority': 20,
-      'estimated_duration': 90,
-      'text': "You're now traveling through $county County, $state. "
+    row(
+      title: 'Welcome to $county County',
+      category: 'county_history',
+      latitude: centroid[0],
+      longitude: centroid[1],
+      priority: 20,
+      estimatedDuration: 90,
+      text: "You're now traveling through $county County, $state. "
           'Stay tuned as we explore the springs, forests, history, and '
           'wildlife all around you.',
-    },
+    ),
   ];
 
   for (final r in rows) {
     final cat = _mapCategory(r['category'] as String?);
     final name = (r['name'] ?? '').toString();
-    payload.add({
-      'title': name,
-      'category': cat,
-      'subcategory': r['subcategory'],
-      'latitude': r['latitude'],
-      'longitude': r['longitude'],
-      'county': county,
-      'state': state,
-      if (cat == 'city_intro') 'city': name,
-      'radius': r['trigger_radius_m'],
-      'priority': 0,
-      'estimated_duration': 120,
-      'text': r['description'],
-      'audio_url': r['audio_url'],
-      'destination_code': r['park_code'],
-    });
+    payload.add(row(
+      title: name,
+      category: cat,
+      subcategory: r['subcategory'] as String?,
+      latitude: r['latitude'] as num,
+      longitude: r['longitude'] as num,
+      city: cat == 'city_intro' ? name : null,
+      radius: r['trigger_radius_m'] as num?,
+      text: r['description'] as String?,
+      audioUrl: r['audio_url'] as String?,
+      destinationCode: r['park_code'] as String?,
+    ));
   }
 
   stdout.writeln('rows to insert (incl. county welcome): ${payload.length}');
