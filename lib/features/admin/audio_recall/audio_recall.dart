@@ -2,16 +2,20 @@
 /// of these into one searchable inventory so ExplorerOS never loses track of a
 /// file (Phase 6: merge, never duplicate/delete).
 enum AudioSource {
-  audioAssets('Audio Studio'),
-  songs('Music'),
-  narration('Destination Narration'),
-  story('Story'),
-  djBanter('DJ Banter'),
-  radioSegment('Radio Segment'),
-  media('Media (Base44)');
+  audioAssets('Audio Studio', 'audio_assets'),
+  songs('Music', 'songs'),
+  narration('Destination Narration', 'destination_narrations'),
+  story('Story', 'story_library'),
+  djBanter('DJ Banter', 'dj_banter_clips'),
+  radioSegment('Radio Segment', 'radio_segments'),
+  locationContent('Location Narration', 'location_content'),
+  media('Media (Base44)', 'media');
 
-  const AudioSource(this.label);
+  const AudioSource(this.label, this.table);
   final String label;
+
+  /// The Supabase table this catalog reads from (used for delete).
+  final String table;
 }
 
 typedef Json = Map<String, dynamic>;
@@ -134,6 +138,16 @@ class AudioInventoryItem {
         voice: (j['voice'] ?? j['voice_id']) as String?,
         publicUrl: (j['audio_url'] ?? j['public_url']) as String?,
         status: j['status'] as String?,
+      );
+
+  static AudioInventoryItem fromLocationContent(Json j) => AudioInventoryItem(
+        source: AudioSource.locationContent,
+        id: (j['id'] ?? '').toString(),
+        title: (j['title'] ?? j['name'] ?? j['category']) as String?,
+        category: j['category'] as String?,
+        destinationCode: (j['county'] ?? j['city']) as String?,
+        publicUrl: j['audio_url'] as String?,
+        playCount: (j['play_count'] as num?)?.toInt() ?? 0,
       );
 
   static AudioInventoryItem fromMedia(Json j) => AudioInventoryItem(

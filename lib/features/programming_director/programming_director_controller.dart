@@ -31,6 +31,7 @@ ProgrammingSlotType? slotForInventory(AudioInventoryItem i) {
       return ProgrammingSlotType.story;
     case AudioSource.narration:
     case AudioSource.audioAssets:
+    case AudioSource.locationContent:
     case AudioSource.media:
       if (cat.contains('arrival') || cat.contains('welcome')) {
         return ProgrammingSlotType.arrival;

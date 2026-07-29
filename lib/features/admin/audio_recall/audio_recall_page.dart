@@ -226,9 +226,53 @@ class _AudioRecallPageState extends ConsumerState<AudioRecallPage> {
               icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
             ),
           ),
+          SizedBox(
+            width: 40,
+            child: IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Delete',
+              onPressed: () => _delete(i),
+              icon: Icon(Icons.delete_outline_rounded,
+                  size: 20, color: theme.colorScheme.error),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _delete(AudioInventoryItem i) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete this audio?'),
+        content: Text(
+            'Remove "${i.displayTitle}" (${i.source.label}) permanently? '
+            'This deletes it from the ${i.source.table} catalog'
+            '${(i.storagePath ?? '').isNotEmpty ? ' and storage' : ''}.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final ok =
+        await ref.read(audioRecallRepositoryProvider).delete(i);
+    if (ok) ref.read(audioRecallRefreshProvider.notifier).bump();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(ok
+              ? 'Deleted "${i.displayTitle}"'
+              : 'Could not delete "${i.displayTitle}"')));
+    }
   }
 
   void _preview(AudioInventoryItem i) {
