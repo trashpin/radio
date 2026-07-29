@@ -42,6 +42,9 @@ class AudioRecallRepository {
     for (final r in await _rows('radio_segments')) {
       out.add(AudioInventoryItem.fromRadioSegment(r));
     }
+    for (final r in await _rows('location_content')) {
+      out.add(AudioInventoryItem.fromLocationContent(r));
+    }
     for (final r
         in await _rows('media', select: 'id,title,media_type,file_url')) {
       if ((r['media_type'] ?? '').toString().toLowerCase() == 'audio') {
@@ -49,6 +52,34 @@ class AudioRecallRepository {
       }
     }
     return out;
+  }
+
+  /// Permanently removes an inventory item from its source catalog (song or
+  /// narration the admin doesn't want). Also deletes its Storage object when
+  /// the path is known. Returns true on success.
+  Future<bool> delete(AudioInventoryItem item) async {
+    if (!SupabaseService.isConfigured || item.id.isEmpty) return false;
+    try {
+      await SupabaseService.client
+          .from(item.source.table)
+          .delete()
+          .eq('id', item.id);
+      final path = (item.storagePath ?? '').trim();
+      if (path.isNotEmpty) {
+        try {
+          // storagePath may be "bucket/key" or just a key in a known bucket.
+          final slash = path.indexOf('/');
+          if (slash > 0) {
+            final bucket = path.substring(0, slash);
+            final key = path.substring(slash + 1);
+            await SupabaseService.client.storage.from(bucket).remove([key]);
+          }
+        } catch (_) {}
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Records a play against the canonical `audio_assets` index.
