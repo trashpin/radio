@@ -191,16 +191,39 @@ DiscoveryCategory? _discoveryCategoryFor(ContentCategory c) {
     case ContentCategory.trees:
       return DiscoveryCategory.trees;
     case ContentCategory.water:
+    case ContentCategory.riverStory:
+    case ContentCategory.lakeStory:
       return DiscoveryCategory.geology;
-    case ContentCategory.history:
-    case ContentCategory.historicLandmark:
+    case ContentCategory.forestStory:
+      return DiscoveryCategory.trees;
+    // Area stories — county / city / community / historic — air as spoken
+    // "where you are" narration (mapped to the discovery taxonomy).
+    case ContentCategory.welcome:
+    case ContentCategory.countyWelcome:
     case ContentCategory.countyHistory:
+    case ContentCategory.cityWelcome:
+    case ContentCategory.cityHistory:
+    case ContentCategory.cityIntro:
+    case ContentCategory.communityStory:
+    case ContentCategory.historicHighway:
+    case ContentCategory.historicLandmark:
+    case ContentCategory.history:
     case ContentCategory.parkStory:
+    case ContentCategory.arrival:
       return DiscoveryCategory.history;
-    case ContentCategory.hiddenGem:
-      return DiscoveryCategory.hiddenGem;
+    case ContentCategory.countyFunFacts:
+    case ContentCategory.cityFunFacts:
+    case ContentCategory.countyAgriculture:
+    case ContentCategory.countyEconomy:
     case ContentCategory.interestingFact:
       return DiscoveryCategory.interestingFact;
+    case ContentCategory.countyNature:
+      return DiscoveryCategory.wildlife;
+    case ContentCategory.countyHiddenGems:
+    case ContentCategory.hiddenGem:
+    case ContentCategory.scenicOverlook:
+    case ContentCategory.scenicDrive:
+      return DiscoveryCategory.hiddenGem;
     default:
       return null;
   }

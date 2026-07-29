@@ -3,10 +3,29 @@
 /// `interestingFact`, and `stationId` are non-location fillers.
 enum ContentCategory {
   welcome,
+  // County layer.
+  countyWelcome,
   countyHistory,
+  countyFunFacts,
+  countyNature,
+  countyAgriculture,
+  countyEconomy,
+  countyHiddenGems,
+  // City / community layer.
+  cityWelcome,
+  cityHistory,
+  cityFunFacts,
   cityIntro,
-  water, // river / lake / spring
+  communityStory,
+  // Natural + travel-corridor layer.
+  water, // generic river / lake / spring
+  riverStory,
+  lakeStory,
+  forestStory,
+  historicHighway,
+  scenicDrive,
   historicLandmark,
+  // Park layer (now just one layer of the experience).
   park, // state park / national forest
   arrival,
   parkStory,
@@ -30,10 +49,40 @@ enum ContentCategory {
 
   String get id {
     switch (this) {
+      case ContentCategory.countyWelcome:
+        return 'county_welcome';
       case ContentCategory.countyHistory:
         return 'county_history';
+      case ContentCategory.countyFunFacts:
+        return 'county_fun_facts';
+      case ContentCategory.countyNature:
+        return 'county_nature';
+      case ContentCategory.countyAgriculture:
+        return 'county_agriculture';
+      case ContentCategory.countyEconomy:
+        return 'county_economy';
+      case ContentCategory.countyHiddenGems:
+        return 'county_hidden_gems';
+      case ContentCategory.cityWelcome:
+        return 'city_welcome';
+      case ContentCategory.cityHistory:
+        return 'city_history';
+      case ContentCategory.cityFunFacts:
+        return 'city_fun_facts';
       case ContentCategory.cityIntro:
         return 'city_intro';
+      case ContentCategory.communityStory:
+        return 'community_story';
+      case ContentCategory.riverStory:
+        return 'river_story';
+      case ContentCategory.lakeStory:
+        return 'lake_story';
+      case ContentCategory.forestStory:
+        return 'forest_story';
+      case ContentCategory.historicHighway:
+        return 'historic_highway';
+      case ContentCategory.scenicDrive:
+        return 'scenic_drive';
       case ContentCategory.historicLandmark:
         return 'historic_landmark';
       case ContentCategory.parkStory:
@@ -70,13 +119,21 @@ enum ContentCategory {
     if (n.contains('wildlife') || n.contains('animal') || n.contains('mammal')) {
       return ContentCategory.wildlife;
     }
-    if (n.contains('spring') || n.contains('river') || n.contains('lake') ||
-        n.contains('water')) {
-      return ContentCategory.water;
+    if (n.contains('river') || n.contains('creek')) {
+      return ContentCategory.riverStory;
     }
+    if (n.contains('lake')) return ContentCategory.lakeStory;
+    if (n.contains('spring') || n.contains('water')) return ContentCategory.water;
     if (n.contains('trail')) return ContentCategory.trails;
+    if (n.contains('scenic') && (n.contains('drive') || n.contains('road') ||
+        n.contains('highway') || n.contains('byway'))) {
+      return ContentCategory.scenicDrive;
+    }
     if (n.contains('overlook') || n.contains('scenic') || n.contains('vista')) {
       return ContentCategory.scenicOverlook;
+    }
+    if (n.contains('community') || n.contains('unincorporated')) {
+      return ContentCategory.communityStory;
     }
     if (n.contains('hidden') || n.contains('gem')) return ContentCategory.hiddenGem;
     if (n.contains('histor') || n.contains('fort') || n.contains('heritage')) {
@@ -86,9 +143,8 @@ enum ContentCategory {
     if (n.contains('restaurant') || n.contains('food') || n.contains('dining')) {
       return ContentCategory.restaurant;
     }
-    if (n.contains('camp') || n.contains('forest') || n.contains('park')) {
-      return ContentCategory.park;
-    }
+    if (n.contains('forest')) return ContentCategory.forestStory;
+    if (n.contains('camp') || n.contains('park')) return ContentCategory.park;
     return ContentCategory.attraction;
   }
 }
