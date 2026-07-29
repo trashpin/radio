@@ -113,35 +113,49 @@ class TripState {
 /// category. Empty steps are skipped.
 const List<ContentCategory> kProgramOrder = [
   ContentCategory.welcome,
+  ContentCategory.countyWelcome,
+  ContentCategory.music,
   ContentCategory.countyHistory,
   ContentCategory.music,
-  ContentCategory.cityIntro,
+  ContentCategory.cityWelcome,
   ContentCategory.music,
-  ContentCategory.water,
+  ContentCategory.communityStory,
+  ContentCategory.music,
+  ContentCategory.riverStory,
   ContentCategory.music,
   ContentCategory.historicLandmark,
   ContentCategory.music,
-  ContentCategory.park,
+  ContentCategory.scenicDrive,
   ContentCategory.music,
-  ContentCategory.arrival,
+  ContentCategory.arrival, // park welcome (only when a park is near)
   ContentCategory.parkStory,
   ContentCategory.wildlife,
   ContentCategory.plants,
-  ContentCategory.history,
-  ContentCategory.scenicOverlook,
   ContentCategory.hiddenGem,
 ];
 
-/// Categories rotated through in steady state (after the opening sequence).
+/// Categories rotated through in steady state — the whole story of the area,
+/// with parks as just one layer among many.
 const List<ContentCategory> kDiscoveryRotation = [
+  ContentCategory.countyFunFacts,
+  ContentCategory.cityHistory,
+  ContentCategory.riverStory,
+  ContentCategory.countyNature,
   ContentCategory.wildlife,
+  ContentCategory.communityStory,
+  ContentCategory.countyAgriculture,
+  ContentCategory.lakeStory,
   ContentCategory.history,
   ContentCategory.plants,
+  ContentCategory.cityFunFacts,
+  ContentCategory.forestStory,
+  ContentCategory.countyEconomy,
   ContentCategory.birds,
+  ContentCategory.scenicOverlook,
   ContentCategory.trees,
   ContentCategory.trails,
-  ContentCategory.scenicOverlook,
   ContentCategory.hiddenGem,
+  ContentCategory.countyHiddenGems,
   ContentCategory.attraction,
   ContentCategory.museum,
   ContentCategory.water,
@@ -311,8 +325,11 @@ class LocationIntelligenceEngine {
       switch (tr) {
         case LocationTransition.enteredCounty:
           trip.currentCounty = ctx.county;
-          final r = _firstEligible(ctx, trip, now,
-              [ContentCategory.welcome, ContentCategory.countyHistory]);
+          final r = _firstEligible(ctx, trip, now, [
+            ContentCategory.countyWelcome,
+            ContentCategory.countyHistory,
+            ContentCategory.welcome,
+          ]);
           if (r != null) {
             trip.markPlayedContent(r.item, now: now);
             return RadioDecision(RadioSlotKind.narration,
@@ -320,7 +337,11 @@ class LocationIntelligenceEngine {
           }
         case LocationTransition.enteredCity:
           trip.currentCity = ctx.city;
-          final r = _firstEligible(ctx, trip, now, [ContentCategory.cityIntro]);
+          final r = _firstEligible(ctx, trip, now, [
+            ContentCategory.cityWelcome,
+            ContentCategory.cityIntro,
+            ContentCategory.communityStory,
+          ]);
           if (r != null) {
             trip.markPlayedContent(r.item, now: now);
             return RadioDecision(RadioSlotKind.narration,

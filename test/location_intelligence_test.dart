@@ -134,32 +134,43 @@ void main() {
     });
   });
 
-  group('opening programming order', () {
-    test('follows Welcome → County → Music → City → Music …, skipping gaps', () {
+  group('opening programming order (whole journey, parks last)', () {
+    test('tells the area story before the park: county → city → community → '
+        'river → landmark → scenic', () {
+      // No county/city fields → no transitions; tests the phase machine purely.
       final items = [
-        _item('welcome', ContentCategory.welcome, miles: 0.4),
-        _item('county', ContentCategory.countyHistory, miles: 0.4),
-        _item('city', ContentCategory.cityIntro, miles: 0.5),
-        // no water content → that step is skipped
-        _item('landmark', ContentCategory.historicLandmark, miles: 0.5),
+        _item('welcome', ContentCategory.welcome),
+        _item('cwelcome', ContentCategory.countyWelcome),
+        _item('chist', ContentCategory.countyHistory),
+        _item('citywelcome', ContentCategory.cityWelcome),
+        _item('community', ContentCategory.communityStory),
+        _item('river', ContentCategory.riverStory),
+        _item('landmark', ContentCategory.historicLandmark),
+        _item('scenic', ContentCategory.scenicDrive),
+        _item('wildlife', ContentCategory.wildlife),
       ];
       final ctx = _engine.deriveContext(0, 0, items);
-      // Suppress area transitions so we test the phase machine directly.
-      final trip = TripState()
-        ..currentCounty = ctx.county
-        ..currentCity = ctx.city
-        ..currentPark = ctx.park;
+      final trip = TripState();
       final now = DateTime(2026, 7, 28, 12);
 
-      final seq = <String>[];
-      for (var i = 0; i < 8; i++) {
+      final narrations = <String>[];
+      for (var i = 0; i < 24; i++) {
         final d = _engine.next(ctx, trip, now: now);
-        seq.add(d.kind == RadioSlotKind.narration ? d.item!.id : d.kind.name);
+        if (d.kind == RadioSlotKind.narration) narrations.add(d.item!.id);
       }
-      // welcome, county, music, city, music, landmark(after skipping water+music)…
-      expect(seq.take(5).toList(),
-          ['welcome', 'county', 'music', 'city', 'music']);
-      expect(seq, contains('landmark'));
+      // The area's story leads; the park layer (wildlife) comes after.
+      expect(narrations.take(7).toList(), [
+        'welcome',
+        'cwelcome',
+        'chist',
+        'citywelcome',
+        'community',
+        'river',
+        'landmark',
+      ]);
+      expect(narrations.indexOf('scenic'),
+          lessThan(narrations.indexOf('wildlife')),
+          reason: 'scenic drive (area) airs before wildlife (park layer)');
     });
   });
 
