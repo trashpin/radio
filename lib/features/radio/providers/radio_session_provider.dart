@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
@@ -13,7 +14,12 @@ import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart'
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/location_intelligence.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
+import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
+import 'package:explorer_os_mobile/features/weather/county_radio.dart';
+import 'package:explorer_os_mobile/features/weather/weather_service.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
@@ -48,6 +54,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Wire the GPS-aware DJ Banter library so the DJ references the surroundings
   // between songs (defensive no-op when there's no library / GPS yet).
   _attachGpsBanter(ref, engine);
+
+  // Welcome the traveler into each new county with a weather + recommendation
+  // report (once per county, like a live travel radio station).
+  _attachCountyWelcome(ref);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -252,6 +262,59 @@ void _attachGpsBanter(Ref ref, RadioEngineService engine) {
   }
 
   load();
+}
+
+/// Welcomes the traveler into each new county: on a county change, fetches the
+/// current weather and plays a spoken Station ID → Welcome → Weather →
+/// Recommendation report through the radio's interrupt→resume path (music
+/// resumes at the exact spot). Once per county per session.
+void _attachCountyWelcome(Ref ref) {
+  final director = CountyWelcomeDirector();
+  final weather = ref.read(weatherClientProvider);
+  var busy = false;
+
+  Future<void> maybeWelcome(LocationContext ctx) async {
+    final county = ctx.county;
+    if (county == null || county.trim().isEmpty) return;
+    if (busy || director.hasWelcomed(county)) return;
+    busy = true;
+    try {
+      final center = ref.read(mapCenterProvider);
+      final loc = ref.read(gpsControllerProvider).location;
+      final lat = center?.latitude ?? loc?.latitude;
+      final lng = center?.longitude ?? loc?.longitude;
+      final w = (lat != null && lng != null)
+          ? await weather.fetch(lat, lng)
+          : null;
+      final greetings = ref.read(countyGreetingsProvider);
+      final script = director.scriptFor(county, ctx.state, w,
+          greetings: greetings);
+      if (script == null) return;
+      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+            AudioSegment(
+              id: 'county:${county.toLowerCase()}'
+                  ':${DateTime.now().millisecondsSinceEpoch}',
+              title: 'Welcome to $county County',
+              type: AudioSegmentType.gpsNarration,
+              priority: PlaybackPriority.scheduledAnnouncement,
+              spokenText: script,
+              interruptible: true,
+              resumeAfter: true,
+            ),
+          );
+    } catch (_) {
+      // Never let a weather/network hiccup break the session.
+    } finally {
+      busy = false;
+    }
+  }
+
+  maybeWelcome(ref.read(locationContextProvider));
+  ref.listen<LocationContext>(locationContextProvider, (prev, next) {
+    if ((prev?.county ?? '').toLowerCase() != (next.county ?? '').toLowerCase()) {
+      maybeWelcome(next);
+    }
+  });
 }
 
 bool _hasWord(String c, List<String> words) => words.any(c.contains);

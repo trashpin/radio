@@ -72,6 +72,11 @@ enum AdminModule {
       description: 'Master content engine: research destinations, build a '
           'knowledge base, and queue story/audio jobs at scale.',
       table: 'generation_jobs'),
+  countyManager('County Manager', Icons.map_rounded, AdminGroup.content,
+      ready: true,
+      description: 'County welcome greetings, weather reports & recommendations '
+          'for the travel-radio county reports.',
+      table: 'counties'),
   locationContent('Location Content', Icons.pin_drop_rounded, AdminGroup.content,
       ready: true,
       description: 'Counties, cities, communities, rivers, lakes, scenic roads, '

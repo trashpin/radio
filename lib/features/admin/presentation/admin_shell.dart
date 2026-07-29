@@ -15,6 +15,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/admin_settings_pa
 import 'package:explorer_os_mobile/features/admin/presentation/database_tools_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/destination_dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_banter_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
@@ -66,6 +67,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const MediaImportsPage();
       case AdminModule.masterLocations:
         return const LocationsAdminPage();
+      case AdminModule.countyManager:
+        return const CountyManagerPage();
       case AdminModule.destinations:
         return const DestinationDashboardPage();
       case AdminModule.settings:
