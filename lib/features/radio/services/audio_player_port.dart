@@ -16,6 +16,13 @@ abstract class AudioPlayerPort {
   Future<void> stop();
   Future<void> setVolume(double volume);
 
+  /// The current playback position of the item (used to resume music at the
+  /// exact spot after a temporary interruption).
+  Duration get position;
+
+  /// Seeks within the current item (used by resume-at-position).
+  Future<void> seek(Duration position);
+
   /// Emits once each time the current item plays to completion.
   Stream<void> get completions;
 
@@ -64,6 +71,12 @@ class JustAudioPlayerPort implements AudioPlayerPort {
 
   @override
   Future<void> setVolume(double volume) => _player.setVolume(volume);
+
+  @override
+  Duration get position => _player.position;
+
+  @override
+  Future<void> seek(Duration position) => _player.seek(position);
 
   @override
   Future<void> dispose() async {

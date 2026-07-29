@@ -35,6 +35,12 @@ class AudioServicePlayerPort implements AudioPlayerPort {
   Future<void> setVolume(double volume) => _handler.setVolumeLevel(volume);
 
   @override
+  Duration get position => _handler.position;
+
+  @override
+  Future<void> seek(Duration position) => _handler.seekTo(position);
+
+  @override
   Future<void> dispose() => _handler.disposeHandler();
 }
 

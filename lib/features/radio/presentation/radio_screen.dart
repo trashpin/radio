@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/i_see_something_modal.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
@@ -114,6 +115,18 @@ class _Player extends ConsumerStatefulWidget {
   ConsumerState<_Player> createState() => _PlayerState();
 }
 
+/// Which temporary live "report" (if any) is currently interrupting the radio.
+enum _Interruption {
+  none('🎵', 'ExplorerOS Radio', _RadioPalette.green),
+  iSeeSomething('👁', 'I See Something', Color(0xFF2C6E8F)),
+  whatsNearMe('📍', "What's Near Me", Color(0xFFC58A2E));
+
+  const _Interruption(this.emoji, this.label, this.color);
+  final String emoji;
+  final String label;
+  final Color color;
+}
+
 class _PlayerState extends ConsumerState<_Player> {
   Destination? _destination() {
     final all = ref.read(destinationsProvider).value ?? const [];
@@ -128,18 +141,40 @@ class _PlayerState extends ConsumerState<_Player> {
     final playback = ref.watch(radioEngineControllerProvider);
     final controller = ref.read(radioEngineControllerProvider.notifier);
     final obs = ref.watch(observationControllerProvider);
+    final nearby = ref.watch(nearbyNarrationControllerProvider);
     final nowPlaying = playback.current?.segment;
     final isPlaying = playback.status == PlaybackStatus.playing;
     final dest = _destination();
 
+    // A temporary live "report" (I See Something / What's Near Me) is on air —
+    // it interrupts the station, then the radio resumes where it paused. The
+    // indicator tracks the *narrating* state so it flips back to the station
+    // automatically the moment the report ends.
+    final interruption = (obs.active && obs.narrating)
+        ? _Interruption.iSeeSomething
+        : (nearby.active && nearby.narrating
+            ? _Interruption.whatsNearMe
+            : _Interruption.none);
+
     // Dynamic "now playing" title — whatever is on air right now, never its
-    // internal category. In observation mode it's the species being explored.
-    final title = obs.active
-        ? obs.species!.commonName
-        : (nowPlaying?.title.isNotEmpty ?? false
-            ? nowPlaying!.title
-            : 'ExplorerOS Radio');
-    final playing = isPlaying || (obs.active && obs.narrating);
+    // internal category. During a report it's the report's subject.
+    final title = switch (interruption) {
+      _Interruption.iSeeSomething => obs.species!.commonName,
+      _Interruption.whatsNearMe => nearby.location?.name ?? 'Nearby',
+      _Interruption.none => nowPlaying?.title.isNotEmpty ?? false
+          ? nowPlaying!.title
+          : 'ExplorerOS Radio',
+    };
+    final playing = isPlaying ||
+        (obs.active && obs.narrating) ||
+        (nearby.active && nearby.narrating);
+
+    void backToRadio() {
+      if (obs.active) ref.read(observationControllerProvider.notifier).clear();
+      if (nearby.active) {
+        ref.read(nearbyNarrationControllerProvider.notifier).clear();
+      }
+    }
 
     final heroImage = obs.species?.heroImageUrl ?? widget.station.imageUrl;
 
@@ -169,20 +204,35 @@ class _PlayerState extends ConsumerState<_Player> {
               glowing: obs.active && obs.narrating,
             ),
             const SizedBox(height: 16),
+            _LiveIndicator(interruption: interruption),
+            const SizedBox(height: 10),
             _NowPlayingCard(
               title: title,
               host: _stationHost,
               playing: playing,
-              subtitle: obs.active ? obs.species!.scientificName : null,
-              onBackToRadio: obs.active
-                  ? ref.read(observationControllerProvider.notifier).clear
+              subtitle: interruption == _Interruption.iSeeSomething
+                  ? obs.species!.scientificName
                   : null,
+              onBackToRadio:
+                  interruption != _Interruption.none ? backToRadio : null,
             ),
             const SizedBox(height: 18),
             _Controls(
               isPlaying: isPlaying,
-              onPrevious: controller.previous,
+              // During a report, Back restarts it; otherwise replays the
+              // previous radio item.
+              onPrevious: switch (interruption) {
+                _Interruption.iSeeSomething => () => ref
+                    .read(observationControllerProvider.notifier)
+                    .observe(obs.species!),
+                _Interruption.whatsNearMe => () => ref
+                    .read(nearbyNarrationControllerProvider.notifier)
+                    .narrateNearest(),
+                _Interruption.none => controller.previous,
+              },
               onPlayPause: isPlaying ? controller.pause : controller.play,
+              // Next/Skip cancels an active report and resumes the song at the
+              // exact spot; otherwise skips to the next radio item.
               onNext: controller.skip,
             ),
             const SizedBox(height: 20),
@@ -190,9 +240,8 @@ class _PlayerState extends ConsumerState<_Player> {
               icon: Icons.near_me_rounded,
               title: "What's Near Me?",
               description:
-                  'Discover nearby attractions, wildlife, trails, history and '
-                  'hidden gems.',
-              onTap: () => context.go(AppRoute.aroundMe.path),
+                  'A quick live report on the closest place around you.',
+              onTap: _whatsNearMe,
             ),
             const SizedBox(height: 12),
             _PrimaryAction(
@@ -210,6 +259,17 @@ class _PlayerState extends ConsumerState<_Player> {
         ),
       ),
     );
+  }
+
+  /// "What's Near Me?" is a temporary live report: it interrupts the radio,
+  /// narrates the closest place, then the station resumes where it paused.
+  void _whatsNearMe() {
+    ref.read(nearbyNarrationControllerProvider.notifier).narrateNearest();
+    final msg = ref.read(nearbyNarrationControllerProvider).message;
+    if (msg != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
+    }
   }
 
   String? _landmark(PlaybackState playback) {
@@ -518,6 +578,62 @@ class _OverlayChip extends StatelessWidget {
 }
 
 // ── Now Playing card ────────────────────────────────────────────────────────
+
+/// The station/report indicator: 🎵 ExplorerOS Radio normally, or 👁 / 📍 while
+/// a temporary report is on air. Switches back automatically when it ends.
+class _LiveIndicator extends StatelessWidget {
+  const _LiveIndicator({required this.interruption});
+  final _Interruption interruption;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = interruption != _Interruption.none;
+    final color = interruption.color;
+    return Center(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: active ? 0.20 : 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(interruption.emoji, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            Text(
+              interruption.label,
+              style: TextStyle(
+                color: active ? color : _RadioPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+            if (active) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('LIVE',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({
