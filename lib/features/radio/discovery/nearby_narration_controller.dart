@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.da
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
@@ -96,19 +97,27 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
           message: 'Nothing nearby yet — keep exploring.');
       return;
     }
+    await narrateLocation(top.location);
+  }
+
+  /// Plays a chosen location as a temporary live report (interrupt → narrate →
+  /// resume the radio at the exact spot). Used by the "What's Near Me" picker.
+  Future<void> narrateLocation(MasterLocation location) async {
+    _wire();
+    _fallback?.cancel();
 
     final content = ref.read(locationContentItemsProvider);
-    final narration = resolveLocationNarration(top.location, content);
-    state = NearbyNarrationState(location: top.location, narrating: true);
+    final narration = resolveLocationNarration(location, content);
+    state = NearbyNarrationState(location: location, narrating: true);
 
     if (narration.hasAudio) {
-      _segId = 'near:${top.location.id}:${DateTime.now().millisecondsSinceEpoch}';
+      _segId = 'near:${location.id}:${DateTime.now().millisecondsSinceEpoch}';
       final radio = ref.read(radioEngineControllerProvider.notifier);
       radio.requestInterruption(
         AudioSegment(
           id: _segId!,
           title: narration.title,
-          artist: top.location.type.label,
+          artist: location.type.label,
           type: AudioSegmentType.narration,
           priority: PlaybackPriority.scheduledAnnouncement,
           audioUrl: narration.audioUrl!,
@@ -179,3 +188,30 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
 final nearbyNarrationControllerProvider =
     NotifierProvider<NearbyNarrationController, NearbyNarrationState>(
         NearbyNarrationController.new);
+
+/// Nearby locations (within ~20 miles) for the "What's Near Me" picker,
+/// best-first, using the best-available GPS source (map center → live device
+/// GPS → app-wide GPS status). Empty until a fix is available.
+final nearbyReportOptionsProvider = Provider<List<NearbyLocation>>((ref) {
+  double? lat, lng;
+  final c = ref.watch(mapCenterProvider);
+  if (c != null) {
+    lat = c.latitude;
+    lng = c.longitude;
+  } else {
+    final loc = ref.watch(gpsControllerProvider).location;
+    if (loc != null) {
+      lat = loc.latitude;
+      lng = loc.longitude;
+    } else {
+      final s = ref.watch(gpsStatusProvider);
+      if (s.hasFix) {
+        lat = s.latitude;
+        lng = s.longitude;
+      }
+    }
+  }
+  if (lat == null || lng == null) return const [];
+  final all = ref.watch(masterLocationsProvider).value ?? const [];
+  return ref.watch(locationEngineProvider).nearby(lat, lng, all, maxMiles: 20);
+});
