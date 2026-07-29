@@ -1,0 +1,13 @@
+# Copy to android/key.properties (gitignored) and fill in your values, then
+# `flutter build apk --release` / `flutter build appbundle` will sign with it.
+#
+# Generate a keystore first (valid ~27 years):
+#   keytool -genkey -v -keystore ~/exploreros-release.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias exploreros
+#
+# Then set:
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=exploreros
+# Absolute path to the .jks (or relative to android/app/):
+storeFile=/absolute/path/to/exploreros-release.jks

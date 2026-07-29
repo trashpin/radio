@@ -47,3 +47,8 @@ android/app/release/
 ios/Flutter/Flutter.framework/
 ios/Flutter/Flutter.podspec
 ios/Pods/
+
+# Android release signing (never commit real keystores/passwords)
+android/key.properties
+**/*.jks
+**/*.keystore
