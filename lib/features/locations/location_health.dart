@@ -46,6 +46,96 @@ class LocationHealth {
   );
 }
 
+/// Per-location content completeness — the admin checklist (Hero / Gallery /
+/// Narration / GPS / Map) and a completion percentage.
+class LocationCompletion {
+  const LocationCompletion({
+    required this.hero,
+    required this.gallery,
+    required this.narration,
+    required this.gps,
+    required this.map,
+  });
+
+  final bool hero; // has at least one image
+  final bool gallery; // has gallery images beyond the hero
+  final bool narration; // has narration/audio
+  final bool gps; // has coordinates
+  final bool map; // visible on the map (active + not hidden)
+
+  int get present =>
+      [hero, gallery, narration, gps, map].where((b) => b).length;
+  int get percent => (present / 5 * 100).round();
+  bool get complete => present == 5;
+}
+
+LocationCompletion completionFor(MasterLocation l) => LocationCompletion(
+      hero: l.images.isNotEmpty,
+      gallery: l.images.length >= 2,
+      narration: l.hasNarration,
+      gps: l.hasCoordinates,
+      map: l.active && !l.hidden,
+    );
+
+/// Image-library health across all locations.
+class ImageHealth {
+  const ImageHealth({
+    required this.totalImages,
+    required this.withHero,
+    required this.missingHero,
+    required this.missingGallery,
+    required this.brokenImageLinks,
+    required this.duplicateImages,
+    required this.locationsComplete,
+    required this.locations,
+  });
+
+  final int totalImages;
+  final int withHero; // visible locations that have a hero
+  final int missingHero; // visible locations with no image ("unassigned")
+  final int missingGallery;
+  final int brokenImageLinks;
+  final int duplicateImages;
+  final int locationsComplete; // 100% checklist
+  final int locations;
+
+  static const empty = ImageHealth(
+    totalImages: 0, withHero: 0, missingHero: 0, missingGallery: 0,
+    brokenImageLinks: 0, duplicateImages: 0, locationsComplete: 0, locations: 0,
+  );
+}
+
+ImageHealth computeImageHealth(List<MasterLocation> all) {
+  var total = 0, withHero = 0, missingHero = 0, missingGallery = 0;
+  var broken = 0, complete = 0;
+  final seen = <String>{};
+  final dupes = <String>{};
+  for (final l in all) {
+    total += l.images.length;
+    for (final u in l.images) {
+      final key = u.trim();
+      if (key.isEmpty) continue;
+      if (!seen.add(key)) dupes.add(key);
+      if (isBrokenAudioLink(u)) broken++;
+    }
+    final visible = l.active && !l.hidden;
+    if (visible && l.images.isEmpty) missingHero++;
+    if (visible && l.images.isNotEmpty) withHero++;
+    if (visible && l.images.length < 2) missingGallery++;
+    if (completionFor(l).complete) complete++;
+  }
+  return ImageHealth(
+    totalImages: total,
+    withHero: withHero,
+    missingHero: missingHero,
+    missingGallery: missingGallery,
+    brokenImageLinks: broken,
+    duplicateImages: dupes.length,
+    locationsComplete: complete,
+    locations: all.length,
+  );
+}
+
 LocationHealth computeLocationHealth(List<MasterLocation> all) {
   var ready = 0, pending = 0, disabled = 0;
   var missingAudio = 0, missingImages = 0, missingCoords = 0, broken = 0, hidden = 0;
