@@ -18,6 +18,16 @@ if (hasReleaseKeystore) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// Google Maps Android key — read from the project's .env (same GOOGLE_MAPS_API_KEY
+// the web app uses) and injected as a manifest placeholder, so the key is never
+// hardcoded or committed. Empty when .env is absent (map tiles just won't load).
+val dotenvProperties = Properties()
+val dotenvFile = rootProject.file("../.env")
+if (dotenvFile.exists()) {
+    dotenvFile.inputStream().use { dotenvProperties.load(it) }
+}
+val mapsApiKey = (dotenvProperties["GOOGLE_MAPS_API_KEY"] as String?)?.trim() ?: ""
+
 android {
     namespace = "com.exploreros.explorer_os_mobile"
     compileSdk = flutter.compileSdkVersion
@@ -37,6 +47,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Supplied to the Google Maps meta-data in AndroidManifest.xml.
+        manifestPlaceholders["mapsApiKey"] = mapsApiKey
     }
 
     signingConfigs {
