@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/i_see_something_modal.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
@@ -277,11 +278,11 @@ class _PlayerState extends ConsumerState<_Player> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (_) => _NearbyListSheet(
-        onPick: (loc) {
+        onPick: (loc, distanceMeters) {
           Navigator.of(context).pop();
-          ref
-              .read(nearbyNarrationControllerProvider.notifier)
-              .narrateLocation(loc);
+          // Tapping a place opens the universal Destination Detail card — it
+          // never auto-plays; the card's "Listen to Story" starts the report.
+          showDestinationDetail(context, loc, distanceMeters: distanceMeters);
         },
       ),
     );
@@ -601,7 +602,7 @@ class _OverlayChip extends StatelessWidget {
 /// plays it as a temporary report, then the radio resumes where it paused.
 class _NearbyListSheet extends ConsumerWidget {
   const _NearbyListSheet({required this.onPick});
-  final void Function(MasterLocation) onPick;
+  final void Function(MasterLocation location, double? distanceMeters) onPick;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -678,9 +679,9 @@ class _NearbyListSheet extends ConsumerWidget {
                         style: const TextStyle(
                             color: _RadioPalette.textSecondary, fontSize: 12),
                       ),
-                      trailing: const Icon(Icons.play_circle_fill_rounded,
+                      trailing: const Icon(Icons.chevron_right_rounded,
                           color: _RadioPalette.green),
-                      onTap: () => onPick(l),
+                      onTap: () => onPick(l, o.distanceMeters),
                     );
                   },
                 ),

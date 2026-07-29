@@ -47,6 +47,8 @@ dependencies:
   flutter_tts: ^4.2.5
   file_picker: ^8.0.0
   dart_tags: ^0.4.1
+  url_launcher: ^6.3.2
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
