@@ -17,7 +17,9 @@ import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 String nearbyTokenFor(LocationType t) {
   switch (t) {
     case LocationType.spring:
-      return 'springs';
+    case LocationType.lake:
+    case LocationType.river:
+      return 'springs'; // water features share the water-drop marker
     case LocationType.trail:
     case LocationType.trailhead:
       return 'trails';
