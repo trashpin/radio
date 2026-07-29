@@ -7,6 +7,8 @@ void main() {
   group('nearbyTokenFor', () {
     test('maps master types onto existing legend/style tokens', () {
       expect(nearbyTokenFor(LocationType.spring), 'springs');
+      expect(nearbyTokenFor(LocationType.lake), 'springs');
+      expect(nearbyTokenFor(LocationType.river), 'springs');
       expect(nearbyTokenFor(LocationType.trailhead), 'trails');
       expect(nearbyTokenFor(LocationType.historicDistrict), 'historic_sites');
       expect(nearbyTokenFor(LocationType.scenicOverlook), 'scenic_overlooks');
