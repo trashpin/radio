@@ -73,7 +73,7 @@ final searchRadiusProvider =
 
 class SearchRadiusNotifier extends Notifier<SearchRadius> {
   @override
-  SearchRadius build() => SearchRadius.mi1;
+  SearchRadius build() => SearchRadius.mi5; // travel-friendly default
   void set(SearchRadius r) => state = r;
 }
 

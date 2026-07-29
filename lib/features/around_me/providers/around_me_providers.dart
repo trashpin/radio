@@ -94,17 +94,12 @@ final aroundMeExperiencesProvider = Provider<List<Experience>>((ref) {
   final played = ref.watch(playedNarrationIdsProvider);
   final guide = ref.watch(guidePreferenceProvider);
 
-  final out = <Experience>[];
-  for (final item in items) {
-    if (item.latitude == 0 && item.longitude == 0) continue;
-    final dist = GeoMath.distanceMeters(
-        loc.latitude, loc.longitude, item.latitude, item.longitude);
-    if (dist > radius.meters) continue;
+  Experience build(NearbyItem item, double dist, double scoreRadius) {
     final bearing = GeoMath.bearingDegrees(
         loc.latitude, loc.longitude, item.latitude, item.longitude);
     final input = ExplorerScoreInput(
       distanceMeters: dist,
-      radiusMeters: radius.meters,
+      radiusMeters: scoreRadius,
       featured: item.featured,
       recommended: item.featured,
       seasonRelevance: _seasonRelevance(item.category, ctx.season),
@@ -113,7 +108,7 @@ final aroundMeExperiencesProvider = Provider<List<Experience>>((ref) {
       previouslyVisited: visited.contains(item.id),
       narrationAlreadyPlayed: played.contains(item.id),
     );
-    out.add(Experience(
+    return Experience(
       id: item.id,
       name: item.name,
       category: item.category,
@@ -129,9 +124,41 @@ final aroundMeExperiencesProvider = Provider<List<Experience>>((ref) {
       score: explorerScore(input),
       visited: visited.contains(item.id),
       narrationPlayed: played.contains(item.id),
+    );
+  }
+
+  // Distance to every valid item, once.
+  final withDist = <(NearbyItem, double)>[];
+  for (final item in items) {
+    if (item.latitude == 0 && item.longitude == 0) continue;
+    withDist.add((
+      item,
+      GeoMath.distanceMeters(
+          loc.latitude, loc.longitude, item.latitude, item.longitude),
     ));
   }
+
+  final out = <Experience>[
+    for (final (item, dist) in withDist)
+      if (dist <= radius.meters) build(item, dist, radius.meters),
+  ];
   out.sort((a, b) => b.score.compareTo(a.score));
+
+  // Fallback: in sparse/rural areas nothing may fall inside the chosen radius.
+  // Always surface the nearest notable places (up to ~25 mi) so "What's Near
+  // Me?" is never empty and shows things like nearby lakes, parks & springs.
+  if (out.length < 5) {
+    const fallbackCapM = 40233.0; // 25 miles
+    final have = out.map((e) => e.id).toSet();
+    final extra = [
+      for (final (item, dist) in withDist)
+        if (dist > radius.meters && dist <= fallbackCapM && !have.contains(item.id))
+          (item, dist),
+    ]..sort((a, b) => a.$2.compareTo(b.$2));
+    for (final (item, dist) in extra.take(10 - out.length)) {
+      out.add(build(item, dist, fallbackCapM));
+    }
+  }
   return out.length > 60 ? out.sublist(0, 60) : out;
 });
 
