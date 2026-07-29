@@ -35,6 +35,14 @@ class LocationRepository {
   Future<void> delete(String id) =>
       SupabaseService.client.from('locations').delete().eq('id', id);
 
+  /// Persists a resolved narration link onto a master location.
+  Future<void> attachNarration(
+    String id, {
+    required List<String> narrationIds,
+    required List<String> audioFiles,
+  }) =>
+      update(id, {'narration_ids': narrationIds, 'audio_files': audioFiles});
+
   /// Merges [loserId] into [winnerId]: moves the loser's media/narration onto
   /// the winner and deletes the loser (dedup without losing data).
   Future<void> merge(MasterLocation winner, MasterLocation loser) async {

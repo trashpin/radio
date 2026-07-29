@@ -90,6 +90,51 @@ Set<ContentCategory> relevantCategories(LocationType t) {
   }
 }
 
+/// The persistable narration link for a master location: the matching
+/// `location_content` ids (best-first) and their audio files.
+class LocationNarrationLinks {
+  const LocationNarrationLinks(this.narrationIds, this.audioFiles);
+  final List<String> narrationIds;
+  final List<String> audioFiles;
+  bool get isEmpty => narrationIds.isEmpty && audioFiles.isEmpty;
+}
+
+/// Resolves every `location_content` narration that belongs to [loc] within
+/// [radiusMeters] (best-first by name/category/audio/proximity), so the link
+/// can be persisted into `locations.narration_ids` / `audio_files`.
+LocationNarrationLinks resolveNarrationLinks(
+  MasterLocation loc,
+  List<ContentItem> content, {
+  double radiusMeters = 1609.344,
+}) {
+  if (!loc.hasCoordinates) return const LocationNarrationLinks([], []);
+  final relevant = relevantCategories(loc.type);
+  final scored = <(ContentItem, int)>[];
+  for (final c in content) {
+    if (!c.hasCoordinates) continue;
+    final m = GeoMath.distanceMeters(
+        loc.latitude!, loc.longitude!, c.latitude, c.longitude);
+    if (m > radiusMeters) continue;
+    final hasContent =
+        (c.audioUrl?.isNotEmpty ?? false) || (c.text?.isNotEmpty ?? false);
+    if (!hasContent) continue;
+    var score = -(m ~/ 50);
+    if (_nameOverlap(loc.name, c.title)) score += 500;
+    if (relevant.contains(c.category)) score += 200;
+    if (c.audioUrl?.isNotEmpty ?? false) score += 120;
+    score += c.basePriority;
+    scored.add((c, score));
+  }
+  scored.sort((a, b) => b.$2.compareTo(a.$2));
+  final ids = <String>[];
+  final audio = <String>[];
+  for (final (c, _) in scored) {
+    ids.add(c.id);
+    if (c.audioUrl?.isNotEmpty ?? false) audio.add(c.audioUrl!);
+  }
+  return LocationNarrationLinks(ids, audio);
+}
+
 bool _nameOverlap(String a, String b) {
   final x = a.toLowerCase().trim();
   final y = b.toLowerCase().trim();

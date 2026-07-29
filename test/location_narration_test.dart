@@ -97,6 +97,30 @@ void main() {
       expect(n.text, 'A sweeping view of the valley.');
     });
 
+    test('resolveNarrationLinks collects all matching content best-first', () {
+      final loc = _loc('Ocala', LocationType.county);
+      final content = [
+        _content('Ocala County History', ContentCategory.countyHistory,
+            miles: 0.3, audio: 'http://x/hist.mp3', text: 'History.'),
+        _content('Ocala Welcome', ContentCategory.countyWelcome,
+            miles: 0.1, audio: 'http://x/welcome.mp3'),
+        _content('Faraway', ContentCategory.countyFunFacts,
+            miles: 30, text: 'too far'),
+        _content('No media', ContentCategory.countyNature, miles: 0.2),
+      ];
+      final links = resolveNarrationLinks(loc, content);
+      // Two within radius with media; the far one and the media-less one drop.
+      expect(links.narrationIds.length, 2);
+      expect(links.audioFiles.length, 2);
+      expect(links.narrationIds, containsAll(['c_Ocala County History', 'c_Ocala Welcome']));
+    });
+
+    test('resolveNarrationLinks is empty without coordinates', () {
+      final loc = MasterLocation(
+          id: 'x', name: 'Nowhere', type: LocationType.city);
+      expect(resolveNarrationLinks(loc, const []).isEmpty, isTrue);
+    });
+
     test('composed script uses type + place when no description', () {
       final loc = MasterLocation(
         id: 'x',
