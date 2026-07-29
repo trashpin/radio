@@ -53,6 +53,8 @@ class ExplorerAudioHandler extends BaseAudioHandler {
   Future<void> pauseAudio() => _player.pause();
   Future<void> stopAudio() => _player.stop();
   Future<void> setVolumeLevel(double volume) => _player.setVolume(volume);
+  Duration get position => _player.position;
+  Future<void> seekTo(Duration position) => _player.seek(position);
 
   // --- OS-initiated controls (lock screen / Auto / CarPlay) → engine ---------
 

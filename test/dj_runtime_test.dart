@@ -39,6 +39,10 @@ class FakePort implements AudioPlayerPort {
   @override
   Future<void> setVolume(double v) async {}
   @override
+  Duration get position => Duration.zero;
+  @override
+  Future<void> seek(Duration p) async {}
+  @override
   Future<void> dispose() async => _c.close();
   void finish() => _c.add(null);
 }

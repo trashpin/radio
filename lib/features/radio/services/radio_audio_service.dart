@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import 'package:explorer_os_mobile/features/radio/events/radio_event.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_player_port.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 
@@ -82,6 +83,11 @@ class RadioAudioService {
   bool _speaking = false;
   Timer? _speakFallback;
 
+  /// Position of the music that a temporary interruption displaced, so it can
+  /// resume from the exact spot (never restarting the song).
+  Duration? _pausedMusicPosition;
+  bool _seekOnNextStart = false;
+
   /// Begins driving audio from the engine's events.
   void attach() {
     _eventSub = engine.events.listen(_onEvent);
@@ -102,7 +108,29 @@ class RadioAudioService {
         final url = segment.audioUrl;
         // Segments without a resolvable URL (not yet downloaded/authored) are
         // skipped here; a real deployment supplies URLs (or offline paths).
-        if (url != null && url.isNotEmpty) await port.play(url);
+        if (url != null && url.isNotEmpty) {
+          await port.play(url);
+          // Resuming music after an interruption: continue from the exact spot
+          // it paused at (never restart the song). Only the resumed MUSIC
+          // segment is seeked — queued narrations in between are left alone.
+          if (_seekOnNextStart &&
+              _pausedMusicPosition != null &&
+              segment.type == AudioSegmentType.music) {
+            await port.seek(_pausedMusicPosition!);
+            _seekOnNextStart = false;
+            _pausedMusicPosition = null;
+          }
+        }
+      case SegmentInterrupted(:final segment):
+        // Capture where the displaced music was, synchronously, before the
+        // interruption swaps the audio source.
+        if (segment.type == AudioSegmentType.music) {
+          _pausedMusicPosition = port.position;
+        }
+      case MusicResumed():
+        // Arm the seek so the upcoming resumed-music SegmentStarted continues
+        // from the saved position.
+        _seekOnNextStart = _pausedMusicPosition != null;
       case PlaybackPaused():
         if (_speaking) await _speaker.pause();
         await port.pause();
@@ -117,8 +145,6 @@ class RadioAudioService {
       case MuteChanged(:final muted):
         await port.setVolume(muted ? 0 : engine.audioFocus.volume);
       case SegmentCompleted():
-      case SegmentInterrupted():
-      case MusicResumed():
       case StationChanged():
       case QueueCleared():
         break;

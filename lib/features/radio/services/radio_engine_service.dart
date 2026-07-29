@@ -200,7 +200,22 @@ class RadioEngineService {
   }
 
   /// Skips the current item and advances to the next decision.
+  ///
+  /// While a temporary interruption (a segment with [resumeAfter]) is playing,
+  /// Skip cancels it and resumes the displaced music at the exact spot it
+  /// paused — no restart, no waiting.
   void skip() {
+    final current = playback.current;
+    if (current != null &&
+        current.segment.resumeAfter &&
+        queue.pausedMusic != null) {
+      _emit(SegmentCompleted(DateTime.now(), current.segment));
+      queue.resumeMusic();
+      _emit(MusicResumed(DateTime.now()));
+      playback.complete();
+      playNext();
+      return;
+    }
     playback.complete();
     playNext();
   }

@@ -22,7 +22,10 @@ import 'package:flutter_test/flutter_test.dart';
 class FakeAudioPlayerPort implements AudioPlayerPort {
   final List<String> played = [];
   final List<double> volumes = [];
+  final List<Duration> seeks = [];
   int pauses = 0, resumes = 0, stops = 0;
+  @override
+  Duration position = Duration.zero;
   final StreamController<void> _completions = StreamController<void>.broadcast();
 
   @override
@@ -37,6 +40,12 @@ class FakeAudioPlayerPort implements AudioPlayerPort {
   Future<void> stop() async => stops++;
   @override
   Future<void> setVolume(double volume) async => volumes.add(volume);
+  @override
+  Future<void> seek(Duration p) async {
+    seeks.add(p);
+    position = p;
+  }
+
   @override
   Future<void> dispose() async => _completions.close();
 
@@ -73,6 +82,15 @@ const _s2 = AudioSegment(
   type: AudioSegmentType.music,
   priority: PlaybackPriority.music,
   audioUrl: 'https://audio/s2.mp3',
+);
+const _narration = AudioSegment(
+  id: 'n1',
+  title: 'Nearby report',
+  type: AudioSegmentType.narration,
+  priority: PlaybackPriority.scheduledAnnouncement,
+  audioUrl: 'https://audio/n1.mp3',
+  interruptible: false,
+  resumeAfter: true,
 );
 
 void main() {
@@ -116,5 +134,55 @@ void main() {
     await settle();
     expect(port.pauses, 1);
     expect(port.stops, 1);
+  });
+
+  test('interruption resumes the song at the exact position (no restart)',
+      () async {
+    final engine = buildEngine();
+    final port = FakeAudioPlayerPort();
+    RadioAudioService(engine: engine, port: port).attach();
+
+    engine.enqueue(_s1);
+    engine.play();
+    await settle();
+    expect(port.played, ['https://audio/s1.mp3']);
+
+    // Song has been playing for 45s.
+    port.position = const Duration(seconds: 45);
+
+    engine.requestInterruption(_narration); // "I See Something" / "What's Near Me"
+    await settle();
+    expect(port.played.last, 'https://audio/n1.mp3'); // narration plays over music
+
+    port.finishCurrent(); // narration ends → music resumes
+    await settle();
+    // Song replays AND is seeked back to where it paused (not restarted at 0).
+    expect(port.played, [
+      'https://audio/s1.mp3',
+      'https://audio/n1.mp3',
+      'https://audio/s1.mp3',
+    ]);
+    expect(port.seeks, [const Duration(seconds: 45)]);
+  });
+
+  test('Skip during an interruption cancels it and resumes the song at position',
+      () async {
+    final engine = buildEngine();
+    final port = FakeAudioPlayerPort();
+    RadioAudioService(engine: engine, port: port).attach();
+
+    engine.enqueue(_s1);
+    engine.play();
+    await settle();
+    port.position = const Duration(seconds: 30);
+
+    engine.requestInterruption(_narration);
+    await settle();
+    expect(port.played.last, 'https://audio/n1.mp3');
+
+    engine.skip(); // Forward button while the report plays
+    await settle();
+    expect(port.played.last, 'https://audio/s1.mp3'); // back to the song
+    expect(port.seeks, [const Duration(seconds: 30)]); // at the exact spot
   });
 }
