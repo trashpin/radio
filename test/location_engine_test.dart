@@ -125,5 +125,36 @@ void main() {
     test('empty query returns nothing', () {
       expect(_engine.search('   ', all), isEmpty);
     });
+
+    test('search excludes DISABLED (hidden/inactive) locations', () {
+      final withHidden = [
+        ...all,
+        _loc('hidden', 'Lake Hidden', LocationType.lake, hidden: true),
+        MasterLocation(
+            id: 'inactive', name: 'Lake Inactive', type: LocationType.lake,
+            latitude: 29, longitude: -82, active: false),
+      ];
+      final r = _engine.search('lake', withHidden);
+      expect(r.map((l) => l.id), isNot(contains('hidden')));
+      expect(r.map((l) => l.id), isNot(contains('inactive')));
+    });
+  });
+
+  group('requireAudio', () {
+    MasterLocation withAudio(String id, double miles, {List<String> audio = const []}) =>
+        MasterLocation(
+            id: id, name: id, type: LocationType.spring,
+            latitude: _lat(miles), longitude: 0, audioFiles: audio);
+    final list = [
+      withAudio('silent', 0.3),
+      withAudio('narrated', 1.0, audio: ['http://x/a.mp3']),
+    ];
+    test('skips silent locations and picks the next nearest narrated', () {
+      final top = _engine.topNearby(0, 0, list, requireAudio: true);
+      expect(top!.location.id, 'narrated');
+    });
+    test('without requireAudio the nearest (silent) wins', () {
+      expect(_engine.topNearby(0, 0, list)!.location.id, 'silent');
+    });
   });
 }

@@ -59,12 +59,30 @@ NearbyItem masterToNearby(MasterLocation l) => NearbyItem(
       featured: l.featured,
     );
 
-/// Master locations as plottable [NearbyItem]s (active, visible, geo-coded).
-/// Empty until migration 0031 is applied — callers then fall back to legacy.
+/// Admin/global toggle to also show PENDING (needs-narration) locations on the
+/// map. OFF by default so users only ever see READY (narrated) locations.
+class ShowPendingLocations extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void set(bool v) => state = v;
+  void toggle() => state = !state;
+}
+
+final showPendingLocationsProvider =
+    NotifierProvider<ShowPendingLocations, bool>(ShowPendingLocations.new);
+
+/// Master locations as plottable [NearbyItem]s, gated by readiness so users
+/// never see silent locations: READY always, PENDING only when the admin
+/// toggles it on, DISABLED never. Empty until migration 0031 is applied —
+/// callers then fall back to legacy sources.
 final masterNearbyItemsProvider = Provider<List<NearbyItem>>((ref) {
   final all = ref.watch(masterLocationsProvider).value ?? const [];
+  final showPending = ref.watch(showPendingLocationsProvider);
   return [
     for (final l in all)
-      if (l.active && !l.hidden && l.hasCoordinates) masterToNearby(l),
+      if (l.hasCoordinates &&
+          (l.status == LocationStatus.ready ||
+              (showPending && l.status == LocationStatus.pending)))
+        masterToNearby(l),
   ];
 });

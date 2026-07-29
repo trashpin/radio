@@ -35,6 +35,29 @@ class LocationRepository {
   Future<void> delete(String id) =>
       SupabaseService.client.from('locations').delete().eq('id', id);
 
+  /// Enqueues an audio-generation job for every pending (needs-narration)
+  /// location, drained by the audio tooling. Returns how many were queued.
+  Future<int> enqueueMissingAudio(List<MasterLocation> pending) async {
+    if (!SupabaseService.isConfigured || pending.isEmpty) return 0;
+    final rows = [
+      for (final l in pending)
+        {
+          'destination': l.name,
+          'job_type': 'audio',
+          'status': 'pending',
+          'latitude': l.latitude,
+          'longitude': l.longitude,
+          'county': l.county,
+          'radius_m': 150,
+          'progress': 0,
+          'notes': 'master_location:voice;id=${l.id}'
+              ';code=${l.destinationCode ?? ''}',
+        },
+    ];
+    await SupabaseService.client.from('generation_jobs').insert(rows);
+    return rows.length;
+  }
+
   /// Persists a resolved narration link onto a master location.
   Future<void> attachNarration(
     String id, {

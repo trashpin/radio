@@ -70,9 +70,12 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
       return;
     }
     final all = ref.read(masterLocationsProvider).value ?? const [];
-    final top = ref
-        .read(locationEngineProvider)
-        .topNearby(center.latitude, center.longitude, all);
+    final engine = ref.read(locationEngineProvider);
+    // Prefer the nearest location that actually has narration audio (never
+    // present a silent location); fall back to the nearest place otherwise.
+    final top = engine.topNearby(center.latitude, center.longitude, all,
+            requireAudio: true) ??
+        engine.topNearby(center.latitude, center.longitude, all);
     if (top == null) {
       state = const NearbyNarrationState(
           message: 'Nothing nearby yet — keep exploring.');

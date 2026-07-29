@@ -6,9 +6,17 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/location_health.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+
+String _fmtDate(DateTime d) {
+  final l = d.toLocal();
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${l.year}-${two(l.month)}-${two(l.day)} ${two(l.hour)}:${two(l.minute)}';
+}
 
 /// Admin → Locations. The ONE place to manage every master location that the
 /// Map, Radio, GPS, "I See Something", Nearby, Narration, and Search all read.
@@ -46,14 +54,48 @@ class LocationsAdminPage extends StatelessWidget {
   }
 }
 
-class _OverviewTab extends ConsumerWidget {
+class _OverviewTab extends ConsumerStatefulWidget {
   const _OverviewTab();
+  @override
+  ConsumerState<_OverviewTab> createState() => _OverviewTabState();
+}
+
+class _OverviewTabState extends ConsumerState<_OverviewTab> {
+  bool _generating = false;
+
+  Future<void> _generateMissingAudio(List<MasterLocation> all) async {
+    final pending =
+        all.where((l) => l.status == LocationStatus.pending).toList();
+    if (pending.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No pending locations — all narrated.')));
+      return;
+    }
+    setState(() => _generating = true);
+    try {
+      final n = await ref
+          .read(locationRepositoryProvider)
+          .enqueueMissingAudio(pending);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Queued audio generation for $n location(s).')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not queue jobs: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _generating = false);
+    }
+  }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final all = ref.watch(masterLocationsProvider).value ?? const [];
-    final active = all.where((l) => l.active && !l.hidden).length;
+    final health = computeLocationHealth(all);
+    final showPending = ref.watch(showPendingLocationsProvider);
     final byType = <LocationType, int>{};
     for (final l in all) {
       byType[l.type] = (byType[l.type] ?? 0) + 1;
@@ -61,29 +103,98 @@ class _OverviewTab extends ConsumerWidget {
     final sorted = byType.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
+    Widget stat(String label, int value, IconData icon, {Color? tint}) =>
+        Expanded(child: AdminStatCard(
+            label: label, value: '$value', icon: icon, tint: tint));
+
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
-        const AdminPageHeader(
+        AdminPageHeader(
           title: 'Master Locations',
           subtitle:
-              'One canonical location database. Add a place once and it powers '
-              'the map, radio, GPS triggers, nearby, narration, and search.',
+              'One canonical location database. Users only see READY locations; '
+              'PENDING need narration; DISABLED are hidden everywhere.',
+          actions: [
+            FilledButton.icon(
+              onPressed: _generating ? null : () => _generateMissingAudio(all),
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _generating
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.graphic_eq_rounded, size: 18),
+              label: Text(_generating ? 'Queuing…' : 'Generate Missing Audio'),
+            ),
+          ],
         ),
         const Gap.v(AppSpacing.lg),
+        // Narration progress.
+        AdminSectionCard(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text('Narration progress', style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+              const Spacer(),
+              Text('${(health.readyProgress * 100).toStringAsFixed(0)}% ready',
+                  style: TextStyle(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700)),
+            ]),
+            const Gap.v(AppSpacing.sm),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                  value: health.readyProgress, minHeight: 10),
+            ),
+            const Gap.v(AppSpacing.xs),
+            Text([
+              '${health.ready} ready',
+              '${health.pending} need narration',
+              if (health.lastGenerated != null)
+                'last generated ${_fmtDate(health.lastGenerated!)}',
+            ].join(' · '), style: theme.textTheme.bodySmall),
+          ]),
+        ),
+        const Gap.v(AppSpacing.md),
         Row(children: [
-          Expanded(child: AdminStatCard(
-              label: 'Total locations', value: '${all.length}',
-              icon: Icons.public_rounded)),
+          stat('Total', health.total, Icons.public_rounded),
           const Gap.h(AppSpacing.md),
-          Expanded(child: AdminStatCard(
-              label: 'Active on map', value: '$active',
-              icon: Icons.map_rounded, tint: const Color(0xFF2E7D32))),
+          stat('Ready', health.ready, Icons.check_circle_rounded,
+              tint: const Color(0xFF2E7D32)),
           const Gap.h(AppSpacing.md),
-          Expanded(child: AdminStatCard(
-              label: 'Types in use', value: '${byType.length}',
-              icon: Icons.category_rounded)),
+          stat('Needs narration', health.pending, Icons.mic_off_rounded,
+              tint: const Color(0xFF8A6D00)),
         ]),
+        const Gap.v(AppSpacing.md),
+        Row(children: [
+          stat('Missing audio', health.missingAudio, Icons.volume_off_rounded,
+              tint: const Color(0xFFC0392B)),
+          const Gap.h(AppSpacing.md),
+          stat('Missing images', health.missingImages, Icons.image_not_supported_rounded),
+          const Gap.h(AppSpacing.md),
+          stat('Missing coords', health.missingCoordinates, Icons.wrong_location_rounded),
+        ]),
+        const Gap.v(AppSpacing.md),
+        Row(children: [
+          stat('Broken audio', health.brokenAudio, Icons.link_off_rounded,
+              tint: const Color(0xFFC0392B)),
+          const Gap.h(AppSpacing.md),
+          stat('Hidden / disabled', health.hidden, Icons.visibility_off_rounded),
+          const Gap.h(AppSpacing.md),
+          stat('Types in use', byType.length, Icons.category_rounded),
+        ]),
+        const Gap.v(AppSpacing.lg),
+        AdminSectionCard(
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: showPending,
+            onChanged: (v) =>
+                ref.read(showPendingLocationsProvider.notifier).set(v),
+            title: const Text('Show pending locations on the map'),
+            subtitle: const Text(
+                'Off by default — users only see narrated (Ready) locations.'),
+          ),
+        ),
         const Gap.v(AppSpacing.lg),
         AdminSectionCard(
           child: Column(
@@ -322,11 +433,14 @@ class _Row extends ConsumerWidget {
                     fontWeight: FontWeight.w600)),
               ),
               const Gap.h(AppSpacing.sm),
-              if (!item.active || item.hidden)
-                StatusBadge(BadgeStatus.draft,
-                    label: item.hidden ? 'Hidden' : 'Inactive')
-              else
-                const StatusBadge(BadgeStatus.published, label: 'Live'),
+              switch (item.status) {
+                LocationStatus.ready =>
+                  const StatusBadge(BadgeStatus.published, label: 'Ready'),
+                LocationStatus.pending =>
+                  const StatusBadge(BadgeStatus.review, label: 'Needs Narration'),
+                LocationStatus.disabled =>
+                  const StatusBadge(BadgeStatus.draft, label: 'Disabled'),
+              },
               if (item.featured) ...[
                 const Gap.h(AppSpacing.xs),
                 const Icon(Icons.star_rounded, size: 16, color: Color(0xFFE0A458)),
