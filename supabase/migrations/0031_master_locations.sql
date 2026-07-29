@@ -75,16 +75,18 @@ create or replace function public.map_location_type(raw text, nm text)
 returns text language plpgsql immutable as $$
 declare t text := lower(coalesce(raw, '') || ' ' || coalesce(nm, ''));
 begin
-  if t ~ 'county' then return 'county';
-  elsif t ~ 'community|unincorporated' then return 'community';
+  -- Administrative + park designations win over embedded water words
+  -- (e.g. "Alafia River State Park" is a state park, not a river).
+  if t ~ 'community|unincorporated' then return 'community';
+  elsif t ~ 'national park' then return 'national_park';
+  elsif t ~ 'state park' then return 'state_park';
+  elsif t ~ 'county park' then return 'county_park';
+  elsif t ~ 'county' then return 'county';
+  elsif t ~ 'national forest|state forest|forest' then return 'forest';
   elsif t ~ 'city|town' then return 'city';
   elsif t ~ 'spring' then return 'spring';
   elsif t ~ 'river|creek' then return 'river';
   elsif t ~ 'lake|pond|reservoir' then return 'lake';
-  elsif t ~ 'national forest|forest' then return 'forest';
-  elsif t ~ 'national park' then return 'national_park';
-  elsif t ~ 'state park' then return 'state_park';
-  elsif t ~ 'county park' then return 'county_park';
   elsif t ~ 'historic district' then return 'historic_district';
   elsif t ~ 'histor|fort|heritage|monument' then return 'historic_site';
   elsif t ~ 'scenic road|byway|scenic drive|highway' then return 'scenic_road';
@@ -106,39 +108,43 @@ begin
   end if;
 end $$;
 
+-- Each source is its own block so one failing (schema drift) can't roll back
+-- the other. Column lists match the live schemas: `destinations` has no
+-- category/county/city/image_url — it uses destination_type/hero_image/address.
 do $$
 begin
-  -- map_locations → master
   if to_regclass('public.map_locations') is not null then
     insert into public.locations
       (name, category, latitude, longitude, description, trigger_radius,
-       images, audio_files, destination_code, source, source_id, active)
+       images, audio_files, destination_code, featured, source, source_id, active)
     select
       coalesce(nullif(trim(m.name), ''), 'Unnamed'),
       public.map_location_type(m.category, m.name),
       m.latitude, m.longitude, m.description, m.trigger_radius_m,
       case when m.image_url is not null then array[m.image_url] else '{}' end,
       case when m.audio_url is not null then array[m.audio_url] else '{}' end,
-      m.park_code, 'map_locations', m.id::text, true
+      m.park_code, coalesce(m.featured, false),
+      'map_locations', m.id::text, true
     from public.map_locations m
     where m.latitude is not null and m.longitude is not null
       and not (m.latitude = 0 and m.longitude = 0)
     on conflict (source, source_id) where source is not null do nothing;
   end if;
+exception when others then
+  raise notice 'map_locations backfill skipped: %', sqlerrm;
+end $$;
 
-  -- destinations → master
+do $$
+begin
   if to_regclass('public.destinations') is not null then
     insert into public.locations
-      (name, category, latitude, longitude, county, city, description,
+      (name, category, latitude, longitude, address, description,
        images, destination_code, featured, source, source_id, active)
     select
       coalesce(nullif(trim(d.name), ''), 'Unnamed'),
-      public.map_location_type(
-        coalesce(d.destination_type, d.category, ''), d.name),
-      d.latitude, d.longitude,
-      d.county, d.city, d.description,
-      case when d.hero_image is not null then array[d.hero_image]
-           when d.image_url is not null then array[d.image_url] else '{}' end,
+      public.map_location_type(coalesce(d.destination_type, ''), d.name),
+      d.latitude, d.longitude, d.address, d.description,
+      case when d.hero_image is not null then array[d.hero_image] else '{}' end,
       coalesce(d.destination_code, d.destination_id::text),
       coalesce(d.featured, false),
       'destinations', d.destination_id::text, true
@@ -148,7 +154,7 @@ begin
     on conflict (source, source_id) where source is not null do nothing;
   end if;
 exception when others then
-  raise notice 'locations backfill skipped a source: %', sqlerrm;
+  raise notice 'destinations backfill skipped: %', sqlerrm;
 end $$;
 
 -- RLS: public read; admin (anon/authenticated) write (mirrors other tables).
