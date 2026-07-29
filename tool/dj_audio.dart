@@ -15,6 +15,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 
 const _bucket = 'voiceovers';
 const _defaultVoiceId = '21m00Tcm4TlvDq8ikWAM'; // Rachel
@@ -116,9 +117,13 @@ Future<void> _voiceSegments(HttpClient http, Map<String, String> sbh,
 /// --voice CLI value.
 Future<void> _voiceDjBanter(HttpClient http, Map<String, String> sbh,
     String url, String xi, String fallbackVoiceId, String fallbackVoiceName,
-    String? code, bool dryRun) async {
+    String? code, String park, int limit, bool dryRun) async {
+  // Recorded audio is static, so fill each clip's {placeholders} with a
+  // per-destination context first (generic fallbacks for the live-only fields).
+  final ctx = GpsBanterContext(park: park, station: '$park Radio');
   var filter = 'select=*&audio_url=is.null&text=not.is.null';
   if (code != null && code.isNotEmpty) filter += '&destination_code=eq.$code';
+  if (limit > 0) filter += '&limit=$limit';
   final getReq =
       await http.getUrl(Uri.parse('$url/rest/v1/dj_banter?$filter'));
   sbh.forEach(getReq.headers.set);
@@ -133,8 +138,9 @@ Future<void> _voiceDjBanter(HttpClient http, Map<String, String> sbh,
   var ok = 0, fail = 0;
   for (final r in rows) {
     final id = r['id'].toString();
-    final text = (r['text'] ?? '').toString();
-    if (text.trim().isEmpty) continue;
+    final raw = (r['text'] ?? '').toString();
+    if (raw.trim().isEmpty) continue;
+    final text = fillBanter(raw, ctx);
     final voiceId = (r['voice_id'] ?? fallbackVoiceId).toString();
     final voiceName = (r['voice_name'] ?? fallbackVoiceName).toString();
     if (dryRun) {
@@ -237,8 +243,10 @@ Future<void> main(List<String> args) async {
   // but no audio_url). Scope with --code <destination_code>.
   if (args.contains('--from-dj-banter')) {
     final code = _arg(args, 'code', '');
+    final park = _arg(args, 'park', code);
+    final limit = int.tryParse(_arg(args, 'limit', '0')) ?? 0;
     await _voiceDjBanter(http, sbh, url, xi, voiceId, voiceName,
-        code.isEmpty ? null : code, dryRun);
+        code.isEmpty ? null : code, park, limit, dryRun);
     http.close(force: true);
     return;
   }
