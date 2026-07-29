@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:explorer_os_mobile/app/app.dart';
 import 'package:explorer_os_mobile/core/config/env_config.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/auth/auth_controller.dart';
 
 /// Application entry point for ExplorerOS.
 ///
@@ -22,6 +23,10 @@ Future<void> main() async {
   await dotenv.load(fileName: EnvConfig.fileName, isOptional: true);
 
   await SupabaseService.initialize();
+
+  // Resolve the restored session (keeps users logged in across restarts) and
+  // start listening for auth changes so the router's auth gate reacts.
+  authController.start();
 
   runApp(const ProviderScope(child: ExplorerApp()));
 }
