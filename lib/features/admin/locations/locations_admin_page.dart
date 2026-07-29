@@ -64,6 +64,37 @@ class _OverviewTab extends ConsumerStatefulWidget {
 class _OverviewTabState extends ConsumerState<_OverviewTab> {
   bool _generating = false;
   bool _importing = false;
+  bool _wikimedia = false;
+
+  /// Queues a Wikimedia Commons hero import for every location missing a hero
+  /// (processed server-side by tool/wikimedia_import.py).
+  Future<void> _importFromWikimedia(List<MasterLocation> all) async {
+    final missing = all
+        .where((l) => l.active && !l.hidden && l.images.isEmpty)
+        .toList();
+    if (missing.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Every visible location already has a hero image.')));
+      return;
+    }
+    setState(() => _wikimedia = true);
+    try {
+      final n = await ref
+          .read(locationRepositoryProvider)
+          .enqueueWikimediaImport(missing);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Queued Wikimedia hero import for $n location(s).')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not queue: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _wikimedia = false);
+    }
+  }
 
   /// Bulk photo import with auto-match: pick many images, match each to a
   /// location by filename (hero vs gallery), upload to storage, and attach.
@@ -214,6 +245,16 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
               'One canonical location database. Users only see READY locations; '
               'PENDING need narration; DISABLED are hidden everywhere.',
           actions: [
+            OutlinedButton.icon(
+              onPressed: _wikimedia ? null : () => _importFromWikimedia(all),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _wikimedia
+                  ? const SizedBox(width: 16, height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.image_search_rounded, size: 18),
+              label: Text(_wikimedia ? 'Queuing…' : 'Import from Wikimedia'),
+            ),
+            const Gap.h(AppSpacing.sm),
             OutlinedButton.icon(
               onPressed: _importing ? null : () => _bulkPhotoImport(all),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),

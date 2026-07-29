@@ -58,6 +58,29 @@ class LocationRepository {
     return rows.length;
   }
 
+  /// Enqueues a Wikimedia Commons hero-image import job for every location
+  /// missing a hero (drained server-side by tool/wikimedia_import.py). Returns
+  /// how many were queued.
+  Future<int> enqueueWikimediaImport(List<MasterLocation> missing) async {
+    if (!SupabaseService.isConfigured || missing.isEmpty) return 0;
+    final rows = [
+      for (final l in missing)
+        {
+          'destination': l.name,
+          'job_type': 'wikimedia_import',
+          'status': 'pending',
+          'latitude': l.latitude,
+          'longitude': l.longitude,
+          'county': l.county,
+          'radius_m': 150,
+          'progress': 0,
+          'notes': 'wikimedia:hero;id=${l.id}',
+        },
+    ];
+    await SupabaseService.client.from('generation_jobs').insert(rows);
+    return rows.length;
+  }
+
   /// Persists a resolved narration link onto a master location.
   Future<void> attachNarration(
     String id, {
