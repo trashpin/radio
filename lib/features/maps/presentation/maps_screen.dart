@@ -27,6 +27,23 @@ import 'package:explorer_os_mobile/shared/models/destination.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 import 'package:explorer_os_mobile/shared/models/stop.dart';
 
+/// Active map category filter — the set of legend keys currently shown.
+/// Defaults to every category.
+class MapCategoryFilter extends Notifier<Set<String>> {
+  @override
+  Set<String> build() => {for (final s in markerLegend) s.key};
+  void toggle(String key) {
+    final next = {...state};
+    if (!next.remove(key)) next.add(key);
+    state = next;
+  }
+
+  void showAll() => state = {for (final s in markerLegend) s.key};
+}
+
+final mapCategoryFilterProvider =
+    NotifierProvider<MapCategoryFilter, Set<String>>(MapCategoryFilter.new);
+
 /// Palette for the immersive (dark) Map screen.
 class _MapPalette {
   static const Color bg = Color(0xFF0E1512);
@@ -508,7 +525,14 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     // (dynamic — recomputes as they drive; out-of-range places fall away).
     // Falls back to all places until the first GPS fix.
     final visible = ref.watch(visibleMapPlacesProvider);
-    final places = [for (final v in visible) v.item];
+    final catFilter = ref.watch(mapCategoryFilterProvider);
+    final places = [
+      for (final v in visible)
+        if (catFilter.contains(markerStyleForItem(
+                v.item.category, v.item.name, v.item.subcategory)
+            .key))
+          v.item,
+    ];
     final highlightedIds = {
       for (final v in visible)
         if (v.highlight) v.item.id,
@@ -937,6 +961,71 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     );
   }
 
+  void _openCategoryFilter() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: _MapPalette.header,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Consumer(builder: (context, ref, _) {
+        final active = ref.watch(mapCategoryFilterProvider);
+        final notifier = ref.read(mapCategoryFilterProvider.notifier);
+        final allShown = active.length == markerLegend.length;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(AppSpacing.lg),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Show on map',
+                          style: TextStyle(
+                              color: _MapPalette.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                    TextButton(
+                      onPressed: notifier.showAll,
+                      child: Text(allShown ? 'All shown' : 'Show all'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  runSpacing: AppSpacing.sm,
+                  children: [
+                    for (final s in markerLegend)
+                      FilterChip(
+                        avatar: Icon(s.icon,
+                            size: 16,
+                            color:
+                                active.contains(s.key) ? Colors.white : s.color),
+                        label: Text(s.label),
+                        selected: active.contains(s.key),
+                        selectedColor: s.color,
+                        backgroundColor: _MapPalette.control,
+                        labelStyle: TextStyle(
+                            color: active.contains(s.key)
+                                ? Colors.white
+                                : _MapPalette.textSecondary,
+                            fontSize: 12),
+                        onSelected: (_) => notifier.toggle(s.key),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
   Widget _header() {
     return Container(
       color: _MapPalette.header,
@@ -963,7 +1052,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
               ),
             ),
             IconButton(
-              onPressed: () {},
+              tooltip: 'Filter categories',
+              onPressed: _openCategoryFilter,
               icon: const Icon(Icons.tune_rounded,
                   color: _MapPalette.textPrimary),
             ),
