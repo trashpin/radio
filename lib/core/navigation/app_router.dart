@@ -3,6 +3,11 @@ import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/navigation/app_shell.dart';
+import 'package:explorer_os_mobile/features/auth/auth_controller.dart';
+import 'package:explorer_os_mobile/features/auth/presentation/create_account_screen.dart';
+import 'package:explorer_os_mobile/features/auth/presentation/forgot_password_screen.dart';
+import 'package:explorer_os_mobile/features/auth/presentation/sign_in_screen.dart';
+import 'package:explorer_os_mobile/features/auth/presentation/welcome_screen.dart';
 import 'package:explorer_os_mobile/features/companion/presentation/ai_ranger_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destinations_screen.dart';
@@ -33,6 +38,27 @@ class AppRouter {
 
   static final GoRouter router = GoRouter(
     initialLocation: AppRoute.aroundMe.path,
+    // Re-run [redirect] whenever auth state changes (sign in/out, guest).
+    refreshListenable: authController,
+    // Auth gate: require sign-in or guest before entering the app. When there's
+    // no backend configured, the app is open (demo/offline).
+    redirect: (context, state) {
+      if (!authController.ready) return null;
+      final loc = state.matchedLocation;
+      const authPaths = {
+        '/welcome',
+        '/sign-in',
+        '/create-account',
+        '/forgot-password',
+      };
+      final atAuth = authPaths.contains(loc);
+      if (!authController.canEnter) {
+        return atAuth ? null : AppRoute.welcome.path;
+      }
+      // Already signed in / guest — don't sit on an auth screen.
+      if (atAuth) return AppRoute.aroundMe.path;
+      return null;
+    },
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
@@ -48,6 +74,12 @@ class AppRouter {
           _branch(AppRoute.more.path, const MoreScreen()),
         ],
       ),
+      // Authentication (outside the tab shell).
+      _route(AppRoute.welcome.path, const WelcomeScreen()),
+      _route(AppRoute.signIn.path, const SignInScreen()),
+      _route(AppRoute.createAccount.path, const CreateAccountScreen()),
+      _route(AppRoute.forgotPassword.path, const ForgotPasswordScreen()),
+
       // Pushed / full-screen routes reachable from Around Me, More, and links.
       _route(AppRoute.home.path, const HomeScreen()),
       _route(AppRoute.discover.path, const DiscoveryCategoriesScreen()),

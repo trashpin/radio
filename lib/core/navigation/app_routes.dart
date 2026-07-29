@@ -15,6 +15,12 @@ enum AppRoute {
   map('/map'),
   more('/more'),
 
+  // Authentication (outside the tab shell).
+  welcome('/welcome'),
+  signIn('/sign-in'),
+  createAccount('/create-account'),
+  forgotPassword('/forgot-password'),
+
   // Pushed routes (reachable from Home / the More tab / detail links).
   discover('/discover'),
   explore('/explore'),
