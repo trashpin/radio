@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -58,24 +60,37 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
     });
   }
 
+  /// The current GPS position from any available source (map center on web,
+  /// live device GPS on mobile, or the app-wide GPS status).
+  ({double lat, double lng})? _currentLatLng() {
+    final c = ref.read(mapCenterProvider);
+    if (c != null) return (lat: c.latitude, lng: c.longitude);
+    final loc = ref.read(gpsControllerProvider).location;
+    if (loc != null) return (lat: loc.latitude, lng: loc.longitude);
+    final s = ref.read(gpsStatusProvider);
+    if (s.hasFix) return (lat: s.latitude!, lng: s.longitude!);
+    return null;
+  }
+
   /// Find and narrate the nearest master location to the current GPS position.
   Future<void> narrateNearest() async {
     _wire();
     _fallback?.cancel();
 
-    final center = ref.read(mapCenterProvider);
-    if (center == null) {
+    final pos = _currentLatLng();
+    if (pos == null) {
+      // No fix yet — start acquiring one so the next press works.
+      unawaited(ref.read(gpsStatusProvider.notifier).requestAndStart());
       state = const NearbyNarrationState(
-          message: 'Location unknown — enable GPS to hear what\'s around you.');
+          message: 'Getting your location… tap again in a moment.');
       return;
     }
     final all = ref.read(masterLocationsProvider).value ?? const [];
     final engine = ref.read(locationEngineProvider);
     // Prefer the nearest location that actually has narration audio (never
     // present a silent location); fall back to the nearest place otherwise.
-    final top = engine.topNearby(center.latitude, center.longitude, all,
-            requireAudio: true) ??
-        engine.topNearby(center.latitude, center.longitude, all);
+    final top = engine.topNearby(pos.lat, pos.lng, all, requireAudio: true) ??
+        engine.topNearby(pos.lat, pos.lng, all);
     if (top == null) {
       state = const NearbyNarrationState(
           message: 'Nothing nearby yet — keep exploring.');
@@ -88,18 +103,25 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
 
     if (narration.hasAudio) {
       _segId = 'near:${top.location.id}:${DateTime.now().millisecondsSinceEpoch}';
-      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
-            AudioSegment(
-              id: _segId!,
-              title: narration.title,
-              artist: top.location.type.label,
-              type: AudioSegmentType.narration,
-              priority: PlaybackPriority.scheduledAnnouncement,
-              audioUrl: narration.audioUrl!,
-              interruptible: true,
-              resumeAfter: true,
-            ),
-          );
+      final radio = ref.read(radioEngineControllerProvider.notifier);
+      radio.requestInterruption(
+        AudioSegment(
+          id: _segId!,
+          title: narration.title,
+          artist: top.location.type.label,
+          type: AudioSegmentType.narration,
+          priority: PlaybackPriority.scheduledAnnouncement,
+          audioUrl: narration.audioUrl!,
+          interruptible: true,
+          resumeAfter: true,
+        ),
+      );
+      // If the radio was idle (nothing playing yet), start it so the report
+      // plays immediately instead of merely queuing.
+      if (ref.read(radioEngineControllerProvider).status !=
+          PlaybackStatus.playing) {
+        radio.play();
+      }
     } else {
       await _speak(narration.text);
     }
