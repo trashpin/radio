@@ -1,0 +1,129 @@
+import 'package:explorer_os_mobile/features/locations/location_engine.dart';
+import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+double _lat(double miles) => miles * 1609.344 / 111320.0;
+
+MasterLocation _loc(
+  String id,
+  String name,
+  LocationType type, {
+  double miles = 0.5,
+  int priority = 0,
+  bool active = true,
+  bool hidden = false,
+  String? county,
+  String? city,
+  double? triggerRadius,
+}) =>
+    MasterLocation(
+      id: id,
+      name: name,
+      type: type,
+      latitude: _lat(miles),
+      longitude: 0,
+      priority: priority,
+      active: active,
+      hidden: hidden,
+      county: county,
+      city: city,
+      triggerRadius: triggerRadius,
+    );
+
+const _engine = LocationEngine();
+
+void main() {
+  group('LocationType', () {
+    test('covers all 28 types and maps free-form categories', () {
+      expect(LocationType.values.length, 28);
+      expect(LocationType.fromId('state_park'), LocationType.statePark);
+      expect(LocationType.fromId('Silver Springs'), LocationType.spring);
+      expect(LocationType.fromId('Ocklawaha River'), LocationType.river);
+      expect(LocationType.fromId('Ocala National Forest'), LocationType.forest);
+      expect(LocationType.fromId('Historic Fort'), LocationType.historicSite);
+      expect(LocationType.fromId('mystery'), LocationType.pointOfInterest);
+    });
+  });
+
+  group('distanceBand', () {
+    test('matches the priority bands', () {
+      expect(distanceBand(0.5 * 1609.344), 100);
+      expect(distanceBand(4 * 1609.344), 80);
+      expect(distanceBand(25 * 1609.344), 0);
+    });
+  });
+
+  group('nearby', () {
+    final all = [
+      _loc('near', 'Near Spring', LocationType.spring, miles: 0.5),
+      _loc('mid', 'Mid Museum', LocationType.museum, miles: 4),
+      _loc('far', 'Far Attraction', LocationType.attraction, miles: 25),
+      _loc('hidden', 'Hidden', LocationType.hiddenGem, miles: 0.4, hidden: true),
+      _loc('inactive', 'Inactive', LocationType.trail, miles: 0.4, active: false),
+    ];
+
+    test('excludes >20mi, hidden, inactive; ranks nearest-first', () {
+      final r = _engine.nearby(0, 0, all);
+      expect(r.map((e) => e.location.id), ['near', 'mid']);
+    });
+
+    test('priority boosts a farther location above a nearer one', () {
+      final list = [
+        _loc('a', 'A', LocationType.museum, miles: 1),
+        _loc('b', 'B', LocationType.attraction, miles: 3, priority: 50),
+      ];
+      expect(_engine.topNearby(0, 0, list)!.location.id, 'b');
+    });
+
+    test('type filter + exclude set are honored', () {
+      final r = _engine.nearby(0, 0, all,
+          types: {LocationType.museum}, exclude: {});
+      expect(r.map((e) => e.location.id), ['mid']);
+      final r2 = _engine.nearby(0, 0, all, exclude: {'near'});
+      expect(r2.map((e) => e.location.id), ['mid']);
+    });
+
+    test('a location within its trigger radius stays eligible', () {
+      final list = [
+        _loc('t', 'Trigger', LocationType.safetyAlert,
+            miles: 30, triggerRadius: 60000), // ~37mi radius
+      ];
+      expect(_engine.nearby(0, 0, list).map((e) => e.location.id), ['t']);
+    });
+  });
+
+  group('mapLocations', () {
+    test('filters by radius + type, drops hidden/inactive', () {
+      final all = [
+        _loc('a', 'A', LocationType.spring, miles: 2),
+        _loc('b', 'B', LocationType.restaurant, miles: 50),
+        _loc('c', 'C', LocationType.spring, miles: 1, hidden: true),
+      ];
+      final shown = _engine.mapLocations(all,
+          centerLat: 0, centerLng: 0, maxMiles: 20);
+      expect(shown.map((l) => l.id), ['a']);
+      final springs = _engine.mapLocations(all, types: {LocationType.spring});
+      expect(springs.map((l) => l.id), ['a']); // c hidden, b filtered by type
+    });
+  });
+
+  group('search', () {
+    final all = [
+      _loc('lb', 'Lake Bryant', LocationType.lake, county: 'Marion'),
+      _loc('ss', 'Silver Springs', LocationType.spring, county: 'Marion'),
+      _loc('lbrd', 'Lake Bryant Road', LocationType.scenicRoad),
+    ];
+    test('prefix matches rank first; searches name + meta', () {
+      final r = _engine.search('lake bryant', all);
+      expect(r.first.id, 'lb');
+      expect(r.map((l) => l.id), containsAll(['lb', 'lbrd']));
+    });
+    test('finds by county metadata', () {
+      final r = _engine.search('marion', all);
+      expect(r.map((l) => l.id), containsAll(['lb', 'ss']));
+    });
+    test('empty query returns nothing', () {
+      expect(_engine.search('   ', all), isEmpty);
+    });
+  });
+}
