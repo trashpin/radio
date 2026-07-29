@@ -10,6 +10,8 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/marker_style.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
@@ -961,6 +963,34 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     );
   }
 
+  void _goToLocation(MasterLocation l) {
+    if (l.latitude == null || l.longitude == null) return;
+    final pos = LatLng(l.latitude!, l.longitude!);
+    ref.read(mapCenterProvider.notifier).set(pos);
+    // Zoom in past the clustering threshold so the marker is individually
+    // visible (not merged into a cluster).
+    _controller?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
+  }
+
+  void _openSearch() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _MapPalette.header,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: _LocationSearchSheet(onPick: (l) {
+          Navigator.of(context).pop();
+          _goToLocation(l);
+        }),
+      ),
+    );
+  }
+
   void _openCategoryFilter() {
     showModalBottomSheet<void>(
       context: context,
@@ -1036,8 +1066,9 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           children: [
             const SizedBox(width: AppSpacing.sm),
             IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.menu_rounded,
+              tooltip: 'Search locations',
+              onPressed: _openSearch,
+              icon: const Icon(Icons.search_rounded,
                   color: _MapPalette.textPrimary),
             ),
             const Expanded(
@@ -1477,6 +1508,99 @@ class _AroundMeGroup extends StatelessWidget {
               onTap: () => onSelect(h),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Global location search over the master `locations` database. Typing filters
+/// live via [LocationEngine.search]; picking a result recenters + zooms the map.
+class _LocationSearchSheet extends ConsumerStatefulWidget {
+  const _LocationSearchSheet({required this.onPick});
+  final void Function(MasterLocation) onPick;
+  @override
+  ConsumerState<_LocationSearchSheet> createState() =>
+      _LocationSearchSheetState();
+}
+
+class _LocationSearchSheetState extends ConsumerState<_LocationSearchSheet> {
+  final _ctrl = TextEditingController();
+  String _q = '';
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = ref.watch(masterLocationsProvider).value ?? const [];
+    final results = _q.trim().isEmpty
+        ? const <MasterLocation>[]
+        : ref.read(locationEngineProvider).search(_q, all, limit: 30);
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: _ctrl,
+              autofocus: true,
+              style: const TextStyle(color: _MapPalette.textPrimary),
+              onChanged: (v) => setState(() => _q = v),
+              decoration: InputDecoration(
+                hintText: 'Search locations (e.g. Lake Bryant)…',
+                hintStyle: const TextStyle(color: _MapPalette.textSecondary),
+                prefixIcon:
+                    const Icon(Icons.search_rounded, color: _MapPalette.textSecondary),
+                filled: true,
+                fillColor: _MapPalette.control,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            if (_q.trim().isNotEmpty && results.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(AppSpacing.md),
+                child: Text('No matching locations.',
+                    style: TextStyle(color: _MapPalette.textSecondary)),
+              ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.45),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: results.length,
+                itemBuilder: (_, i) {
+                  final l = results[i];
+                  final ready = l.isReady;
+                  return ListTile(
+                    leading: Icon(
+                      ready ? Icons.check_circle_rounded : Icons.mic_off_rounded,
+                      color: ready
+                          ? _MapPalette.green
+                          : _MapPalette.textSecondary,
+                    ),
+                    title: Text(l.name,
+                        style: const TextStyle(color: _MapPalette.textPrimary)),
+                    subtitle: Text(
+                      [l.type.label, l.placeLine].whereType<String>().join(' · '),
+                      style: const TextStyle(color: _MapPalette.textSecondary),
+                    ),
+                    trailing: const Icon(Icons.my_location_rounded,
+                        color: _MapPalette.gold),
+                    onTap: () => widget.onPick(l),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
