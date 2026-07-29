@@ -52,3 +52,8 @@ ios/Pods/
 android/key.properties
 **/*.jks
 **/*.keystore
+
+# Python bytecode
+tool/__pycache__/
+**/__pycache__/
+*.pyc
