@@ -221,6 +221,8 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
   // ── Quick actions ────────────────────────────────────────────────────────
   Widget _quickActions() {
     final actions = <(IconData, String, VoidCallback)>[
+      (Icons.explore_rounded, 'Explorer Mode',
+          () => context.push(AppRoute.explorerMode.path)),
       (Icons.podcasts_rounded, 'Radio', () => context.go(AppRoute.radio.path)),
       (Icons.near_me_rounded, 'Nearby', () => context.push(AppRoute.aroundMe.path)),
       (Icons.map_rounded, 'Map', () => context.go(AppRoute.map.path)),

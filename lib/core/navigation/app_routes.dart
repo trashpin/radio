@@ -22,6 +22,7 @@ enum AppRoute {
   forgotPassword('/forgot-password'),
 
   // Pushed routes (reachable from Home / the More tab / detail links).
+  explorerMode('/explorer-mode'),
   discover('/discover'),
   explore('/explore'),
   profile('/profile'),
