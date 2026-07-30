@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
+import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
@@ -658,11 +659,24 @@ class _Row extends ConsumerWidget {
             }),
           ]),
         ),
+        IconButton(
+          tooltip: 'Find & save a photo',
+          icon: Icon(
+            item.images.isEmpty
+                ? Icons.add_a_photo_rounded
+                : Icons.image_search_rounded,
+            color: item.images.isEmpty
+                ? theme.colorScheme.error
+                : theme.colorScheme.primary,
+          ),
+          onPressed: () => showLocationImagePicker(context, item),
+        ),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert_rounded),
           onSelected: (v) async {
             switch (v) {
               case 'edit': onEdit();
+              case 'photo': await showLocationImagePicker(context, item);
               case 'attach': await _attach(context, ref);
               case 'merge': await _merge(context, ref);
               case 'active':
@@ -677,6 +691,8 @@ class _Row extends ConsumerWidget {
           },
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Edit / upload media')),
+            const PopupMenuItem(
+                value: 'photo', child: Text('Find & save a photo')),
             const PopupMenuItem(
                 value: 'attach', child: Text('Attach narration')),
             const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
