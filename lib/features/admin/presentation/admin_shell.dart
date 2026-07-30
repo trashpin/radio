@@ -24,6 +24,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.d
 import 'package:explorer_os_mobile/features/admin/audio_recall/audio_recall_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/presentation/audio_production_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/media_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/media_search/presentation/media_search_center_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
@@ -119,6 +120,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const SongUploaderPage();
       case AdminModule.mediaManager:
         return const MediaManagerPage();
+      case AdminModule.mediaSearch:
+        return const MediaSearchCenterPage();
       case AdminModule.audioProduction:
         return const AudioProductionPage();
       case AdminModule.audioRecall:
