@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
 import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_repository.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/banter_moment.dart';
 import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
@@ -356,6 +357,9 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     nearbyTrails: named(['trail']),
     nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
     station: stationName ?? 'Explorer Radio',
+    // Time-of-day + season aware banter (weather dimension stays universal
+    // until a forecast is threaded in here).
+    moment: BanterMoment.now(),
   );
 }
 
