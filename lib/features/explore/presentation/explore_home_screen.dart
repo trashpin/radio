@@ -150,6 +150,11 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
         .whereType<String>()
         .where((s) => s.trim().isNotEmpty)
         .join(', ');
+    // Distinguish "GPS working, county still resolving" from "no GPS yet".
+    final hasFix = ref.watch(gpsStatusProvider).hasFix;
+    final placeLabel = place.isNotEmpty
+        ? place
+        : (hasFix ? 'Exploring your area' : 'Finding your location…');
     final wx = _weather;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -163,7 +168,7 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
           Row(children: [
             const Icon(Icons.place_rounded, size: 16, color: _P.green),
             const SizedBox(width: 6),
-            Text(place.isEmpty ? 'Finding your location…' : place,
+            Text(placeLabel,
                 style: const TextStyle(color: _P.dim, fontSize: 14)),
             if (wx?.temperatureF != null || wx?.highF != null) ...[
               const SizedBox(width: 14),
