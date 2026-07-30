@@ -32,7 +32,7 @@ class GeolocatorLocationProvider implements LocationProvider {
       // immediate initial fix in [start] covers the stationary case.
       distanceFilter: 5,
     ),
-    this.initialFixTimeout = const Duration(seconds: 12),
+    this.initialFixTimeout = const Duration(seconds: 30),
     this.logger,
   });
 
@@ -90,7 +90,18 @@ class GeolocatorLocationProvider implements LocationProvider {
     }
     _controller ??= StreamController<GPSLocation>.broadcast();
 
-    // 1) Immediate fix so a stationary visitor is located right away.
+    // 1a) Seed from the device's last-known location INSTANTLY so the user is
+    // placed on the map right away while a fresh fix is acquired (cold GPS
+    // starts can take 15-30s outdoors — the user should never sit on a blank
+    // "searching" screen when a cached location exists).
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) _emit(toGpsLocation(last));
+    } catch (_) {
+      // Unsupported on web / no cached fix — fall through.
+    }
+
+    // 1b) A fresh precise fix (longer timeout for a cold start).
     try {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: settings,
