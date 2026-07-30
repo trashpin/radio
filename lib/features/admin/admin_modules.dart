@@ -119,6 +119,13 @@ enum AdminModule {
       description: 'Dashboard, library, audit, upload center, and settings for '
           'all record media (hero, gallery, video, audio, narration, PDFs).',
       table: 'media_assets'),
+  mediaSearch('Media Search Center', Icons.image_search_rounded,
+      AdminGroup.assets,
+      ready: true,
+      description: 'Discover, preview, import, organize & manage open-license '
+          'destination images from Openverse & Wikimedia Commons — the central '
+          'image manager for the whole app.',
+      table: 'media_assets'),
   imageMatching('Image Matching', Icons.image_search_rounded, AdminGroup.assets,
       ready: true,
       description: 'Auto-match uploaded images to species by filename.',

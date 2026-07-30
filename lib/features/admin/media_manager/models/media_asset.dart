@@ -138,6 +138,9 @@ class MediaAsset implements Model {
     this.height,
     this.fileSize,
     this.isHero = false,
+    this.source,
+    this.originalUrl,
+    this.mediumUrl,
     this.createdAt,
     this.updatedAt,
   });
@@ -162,6 +165,15 @@ class MediaAsset implements Model {
   final int? height;
   final int? fileSize;
   final bool isHero;
+
+  /// Open-license provider this image came from ('openverse'|'wikimedia'|'upload').
+  final String? source;
+
+  /// The provider's original image URL (attribution / re-fetch).
+  final String? originalUrl;
+
+  /// A medium (≈1200px) working copy URL, when generated on import.
+  final String? mediumUrl;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -193,6 +205,9 @@ class MediaAsset implements Model {
         height: (j['height'] as num?)?.toInt(),
         fileSize: (j['file_size'] as num?)?.toInt(),
         isHero: (j['is_hero'] ?? false) as bool,
+        source: j['source'] as String?,
+        originalUrl: j['original_url'] as String?,
+        mediumUrl: j['medium_url'] as String?,
         createdAt: DateTime.tryParse(j['created_at']?.toString() ?? ''),
         updatedAt: DateTime.tryParse(j['updated_at']?.toString() ?? ''),
       );
