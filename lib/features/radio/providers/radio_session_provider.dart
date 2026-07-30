@@ -20,6 +20,7 @@ import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/weather/county_radio.dart';
+import 'package:explorer_os_mobile/features/weather/current_weather.dart';
 import 'package:explorer_os_mobile/features/weather/weather_service.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
@@ -55,6 +56,9 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Wire the GPS-aware DJ Banter library so the DJ references the surroundings
   // between songs (defensive no-op when there's no library / GPS yet).
   _attachGpsBanter(ref, engine);
+
+  // Keep a live forecast cached so banter + the county welcome are weather-aware.
+  _attachWeather(ref);
 
   // Welcome the traveler into each new county with a weather + recommendation
   // report (once per county, like a live travel radio station).
@@ -265,6 +269,23 @@ void _attachGpsBanter(Ref ref, RadioEngineService engine) {
   load();
 }
 
+/// Refreshes the shared current-forecast cache whenever the visitor's location
+/// context changes (throttled inside [CurrentWeather]).
+void _attachWeather(Ref ref) {
+  void refresh() {
+    final c = ref.read(mapCenterProvider);
+    final g = ref.read(gpsControllerProvider).location;
+    final lat = c?.latitude ?? g?.latitude;
+    final lng = c?.longitude ?? g?.longitude;
+    if (lat != null && lng != null) {
+      ref.read(currentWeatherProvider.notifier).refresh(lat, lng);
+    }
+  }
+
+  refresh();
+  ref.listen<LocationContext>(locationContextProvider, (_, _) => refresh());
+}
+
 /// Welcomes the traveler into each new county: on a county change, fetches the
 /// current weather and plays a spoken Station ID → Welcome → Weather →
 /// Recommendation report through the radio's interrupt→resume path (music
@@ -284,9 +305,11 @@ void _attachCountyWelcome(Ref ref) {
       final loc = ref.read(gpsControllerProvider).location;
       final lat = center?.latitude ?? loc?.latitude;
       final lng = center?.longitude ?? loc?.longitude;
-      final w = (lat != null && lng != null)
-          ? await weather.fetch(lat, lng)
-          : null;
+      // Prefer the shared cached forecast; fetch directly only if it's empty.
+      var w = ref.read(currentWeatherProvider);
+      if (w == null && lat != null && lng != null) {
+        w = await weather.fetch(lat, lng);
+      }
       final greetings = ref.read(countyGreetingsProvider);
       final script = director.scriptFor(county, ctx.state, w,
           greetings: greetings);
@@ -325,6 +348,7 @@ bool _hasWord(String c, List<String> words) => words.any(c.contains);
 /// visitor's actual surroundings.
 GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
   final t = ref.read(gpsControllerProvider);
+  final w = ref.read(currentWeatherProvider);
   List<Experience> exps;
   try {
     exps = ref.read(aroundMeExperiencesProvider);
@@ -357,9 +381,11 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     nearbyTrails: named(['trail']),
     nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
     station: stationName ?? 'Explorer Radio',
-    // Time-of-day + season aware banter (weather dimension stays universal
-    // until a forecast is threaded in here).
-    moment: BanterMoment.now(),
+    // Time-of-day + season + live-weather aware banter.
+    moment: BanterMoment.now(
+      weatherCondition: w?.condition,
+      tempF: w?.temperatureF ?? w?.highF,
+    ),
   );
 }
 
