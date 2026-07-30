@@ -7,6 +7,8 @@ import 'package:explorer_os_mobile/core/data/read_repository.dart';
 import 'package:explorer_os_mobile/core/data/supabase_tables.dart';
 import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 
@@ -57,13 +59,59 @@ final mapLocationsProvider = FutureProvider<List<NearbyItem>>((ref) async {
 
 /// The user's current location (device GPS on hardware; a simulated center on
 /// web). Null until known.
+///
+/// CRITICAL WIRING: this auto-follows the live GPS fix from
+/// [gpsControllerProvider] so the whole app (home feed, county detection,
+/// weather, nearby search, "What's Near Me") has a location BEFORE the user
+/// ever opens the Map tab. Previously it started null and was only ever set by
+/// the Map screen, so the home screen sat on "Finding your location…" and fell
+/// back to a wrong nearby list until the Map was visited.
+///
+/// Following stops once the user manually pans the map ([set]); a deliberate
+/// recenter ([follow]) resumes GPS tracking.
 final mapCenterProvider =
     NotifierProvider<MapCenter, LatLng?>(MapCenter.new);
 
 class MapCenter extends Notifier<LatLng?> {
+  /// When the user last panned the map. GPS auto-follow pauses briefly after a
+  /// manual pan, then resumes — so opening the Map once never permanently stops
+  /// the home feed / radio from tracking the device.
+  DateTime? _lastManual;
+  static const _manualHold = Duration(seconds: 8);
+
+  bool get _following =>
+      _lastManual == null ||
+      DateTime.now().difference(_lastManual!) > _manualHold;
+
   @override
-  LatLng? build() => null;
-  void set(LatLng value) => state = value;
+  LatLng? build() {
+    ref.listen<TravelContext>(gpsControllerProvider, (_, ctx) {
+      final loc = ctx.location;
+      if (loc == null || !_following) return;
+      state = LatLng(loc.latitude, loc.longitude);
+    });
+    // Catch a fix that already arrived before this provider was first read.
+    final loc = ref.read(gpsControllerProvider).location;
+    return loc == null ? null : LatLng(loc.latitude, loc.longitude);
+  }
+
+  /// Manual pan by the user (or the Map camera) — pauses GPS follow briefly.
+  void set(LatLng value) {
+    _lastManual = DateTime.now();
+    state = value;
+  }
+
+  /// A non-authoritative default (e.g. the Map's fallback seed) used only until
+  /// a real GPS fix arrives; never blocks GPS follow.
+  void seed(LatLng value) {
+    if (state == null) state = value;
+  }
+
+  /// Deliberate recenter (e.g. a "my location" button) — resumes GPS follow.
+  void follow(LatLng value) {
+    _lastManual = null;
+    state = value;
+  }
 }
 
 /// The selected search radius (default 1 mile).

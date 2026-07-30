@@ -550,7 +550,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           : MapsScreen._fallbackCenter;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && ref.read(mapCenterProvider) == null) {
-          ref.read(mapCenterProvider.notifier).set(seed);
+          ref.read(mapCenterProvider.notifier).seed(seed);
         }
       });
       _centerInitialized = true;
