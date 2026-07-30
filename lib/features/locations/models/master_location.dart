@@ -152,6 +152,42 @@ class MasterLocation {
   final String? destinationCode;
   final DateTime? updatedAt;
 
+  MasterLocation copyWith({
+    List<String>? images,
+    List<String>? audioFiles,
+    List<String>? narrationIds,
+    bool? featured,
+    bool? active,
+    bool? hidden,
+  }) =>
+      MasterLocation(
+        id: id,
+        name: name,
+        type: type,
+        latitude: latitude,
+        longitude: longitude,
+        county: county,
+        city: city,
+        community: community,
+        address: address,
+        description: description,
+        triggerRadius: triggerRadius,
+        mapVisibilityRadius: mapVisibilityRadius,
+        priority: priority,
+        narrationIds: narrationIds ?? this.narrationIds,
+        audioFiles: audioFiles ?? this.audioFiles,
+        images: images ?? this.images,
+        videos: videos,
+        relatedLocations: relatedLocations,
+        active: active ?? this.active,
+        featured: featured ?? this.featured,
+        hidden: hidden ?? this.hidden,
+        source: source,
+        sourceId: sourceId,
+        destinationCode: destinationCode,
+        updatedAt: updatedAt,
+      );
+
   bool get hasCoordinates =>
       latitude != null && longitude != null &&
       !(latitude == 0 && longitude == 0);
