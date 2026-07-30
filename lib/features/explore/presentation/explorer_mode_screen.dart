@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/gps_connection.dart';
+import 'package:explorer_os_mobile/features/gps/presentation/gps_status_card.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -31,6 +33,7 @@ class _P {
 
 class _ExplorerModeScreenState extends ConsumerState<ExplorerModeScreen> {
   WeatherData? _weather;
+  bool _skipGpsGate = false;
 
   @override
   void initState() {
@@ -56,6 +59,45 @@ class _ExplorerModeScreenState extends ConsumerState<ExplorerModeScreen> {
   Widget build(BuildContext context) {
     final travel = ref.watch(gpsControllerProvider);
     final ctx = ref.watch(locationContextProvider);
+    final gps = ref.watch(gpsStatusProvider);
+    // Explorer Mode never begins until a reliable GPS location is established.
+    final conn = deriveGpsConnection(gps, county: ctx.county);
+    if (!conn.reliable && !_skipGpsGate) {
+      return Scaffold(
+        backgroundColor: _P.bg,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  const Icon(Icons.explore_rounded, color: _P.green),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('EXPLORER MODE',
+                        style: TextStyle(
+                            color: _P.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.2)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: _P.dim),
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  ),
+                ]),
+                const Spacer(),
+                GpsStatusCard(
+                  onContinueWithout: () => setState(() => _skipGpsGate = true),
+                ),
+                const Spacer(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final playback = ref.watch(radioEngineControllerProvider);
     final radio = ref.read(radioEngineControllerProvider.notifier);
     final nearby = ref.watch(nearbyLocationsProvider);
