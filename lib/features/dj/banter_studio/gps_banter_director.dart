@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:explorer_os_mobile/features/dj/banter_studio/banter_category.dart';
+import 'package:explorer_os_mobile/features/dj/banter_studio/banter_moment.dart';
 import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_clip.dart';
 
 /// The live travel context the DJ references — GPS plus everything around the
@@ -27,6 +28,7 @@ class GpsBanterContext {
     this.station = 'Explorer Radio',
     this.dj,
     this.destinationCode,
+    this.moment,
   });
 
   final double? latitude;
@@ -48,6 +50,10 @@ class GpsBanterContext {
   final String station;
   final String? dj;
   final String? destinationCode;
+
+  /// The live time-of-day / season / weather. When set, clips tagged for a
+  /// dimension only play when the moment matches (untagged = universal).
+  final BanterMoment? moment;
 
   static String _first(List<String> xs, String fallback) =>
       xs.isEmpty ? fallback : xs.first;
@@ -180,6 +186,9 @@ class GpsBanterDirector {
       if ((c.text).trim().isEmpty && !c.hasAudio) return false;
       if (!_matchesLocation(c, ctx)) return false;
       if (!_matchesGuide(c, ctx)) return false;
+      if (ctx.moment != null && !clipMatchesMoment(c.tags, ctx.moment!)) {
+        return false;
+      }
       if (trip.playedThisTrip(c.id)) return false;
       if (!ignoreCooldown && trip.recentlyPlayed(c.id)) return false;
       return true;
