@@ -200,7 +200,24 @@ class GPSService {
 
   // --- The pipeline --------------------------------------------------------
 
+  /// Processes a fix. Resilient: if any enrichment service throws on real
+  /// device data, the raw location is STILL published so the app is located
+  /// (previously an enrichment error dropped the whole fix → "finding your
+  /// location" forever).
   TravelContext processLocation(GPSLocation loc) {
+    try {
+      return _enrichLocation(loc);
+    } catch (e) {
+      final fallback = TravelContext(timestamp: loc.timestamp, location: loc);
+      _current = fallback;
+      _previous = loc;
+      _contextController.add(fallback);
+      _emit(LocationUpdated(loc.timestamp, loc));
+      return fallback;
+    }
+  }
+
+  TravelContext _enrichLocation(GPSLocation loc) {
     if (_gpsLost) {
       _gpsLost = false;
       _emit(GpsRecovered(loc.timestamp));

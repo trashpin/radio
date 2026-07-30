@@ -28,9 +28,9 @@ class GeolocatorLocationProvider implements LocationProvider {
   GeolocatorLocationProvider({
     this.settings = const LocationSettings(
       accuracy: LocationAccuracy.high,
-      // Small filter so we keep receiving fixes without excessive churn; the
-      // immediate initial fix in [start] covers the stationary case.
-      distanceFilter: 5,
+      // No distance filter: emit fixes continuously even while stationary, so
+      // the app is located immediately without waiting for the user to move.
+      distanceFilter: 0,
     ),
     this.initialFixTimeout = const Duration(seconds: 30),
     this.logger,
