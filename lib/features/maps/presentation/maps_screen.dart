@@ -94,6 +94,17 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
   ({String text, IconData icon, Color color})? _banner;
   Timer? _bannerTimer;
 
+  // Zoom-aware marker density: only major features (parks, forests, springs,
+  // historic sites, museums) show when zoomed out; smaller destinations appear
+  // as the user zooms in — so the map is never a wall of pins.
+  double _zoom = 9;
+  double _lastZoom = 9;
+  static const double _detailZoom = 11.5;
+  static const Set<String> _majorCategories = {
+    'state_park', 'national_park', 'county_park', 'forest', 'springs',
+    'historic_sites', 'museum', 'scenic_overlooks',
+  };
+
   static const double _notifyMeters = 180;
   static const double _triggerMeters = 120;
   static const _triggerCategories = {'springs', 'historic_sites', 'waterfalls'};
@@ -553,13 +564,26 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     // Falls back to all places until the first GPS fix.
     final visible = ref.watch(visibleMapPlacesProvider);
     final catFilter = ref.watch(mapCategoryFilterProvider);
+    final showDetail = _zoom >= _detailZoom;
     final places = [
       for (final v in visible)
         if (catFilter.contains(markerStyleForItem(
                 v.item.category, v.item.name, v.item.subcategory)
             .key))
-          v.item,
+          // Density: major features always; smaller ones only when zoomed in.
+          if (showDetail || _majorCategories.contains(v.item.category))
+            v.item,
     ];
+    // How many places the current zoom is hiding (surfaced as a hint chip).
+    final hiddenByZoom = showDetail
+        ? 0
+        : visible
+            .where((v) =>
+                catFilter.contains(markerStyleForItem(
+                        v.item.category, v.item.name, v.item.subcategory)
+                    .key) &&
+                !_majorCategories.contains(v.item.category))
+            .length;
     final highlightedIds = {
       for (final v in visible)
         if (v.highlight) v.item.id,
@@ -714,6 +738,14 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                       setState(() => _selection = null);
                     }
                   },
+                  onCameraMove: (pos) => _lastZoom = pos.zoom,
+                  onCameraIdle: () {
+                    // Re-filter markers by density only on a meaningful zoom
+                    // change (avoids rebuilding on every pan).
+                    if ((_lastZoom - _zoom).abs() >= 0.4) {
+                      setState(() => _zoom = _lastZoom);
+                    }
+                  },
                   onMapCreated: (c) {
                     _controller = c;
                     // Trigger a rebuild so the auto-fit block runs now that the
@@ -723,6 +755,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                 ),
                 _controls(initialTarget, userLocation),
                 _layerChips(layers),
+                if (hiddenByZoom > 0 && _selection == null)
+                  _zoomHint(hiddenByZoom),
                 _radiusSelector(radius),
                 _explorerModeToggle(),
                 if (_selection == null) _aroundMeButton(hits.length),
@@ -967,6 +1001,39 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     );
   }
 
+  /// "Zoom in for more" hint shown when smaller destinations are hidden at the
+  /// current zoom (keeps the default view to major features only).
+  Widget _zoomHint(int hidden) {
+    return Positioned(
+      bottom: 150,
+      left: 0,
+      right: 0,
+      child: Center(
+        child: Material(
+          color: _MapPalette.header.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(20),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _controller?.animateCamera(CameraUpdate.zoomTo(_detailZoom)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.zoom_in_rounded,
+                    size: 16, color: _MapPalette.gold),
+                const SizedBox(width: 8),
+                Text('Zoom in for $hidden more nearby',
+                    style: const TextStyle(
+                        color: _MapPalette.textPrimary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Quick horizontal layer toggles overlaid at the top of the map.
   Widget _layerChips(Set<MapLayer> active) {
     return Positioned(
@@ -1043,7 +1110,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                 Row(
                   children: [
                     const Expanded(
-                      child: Text('Show on map',
+                      child: Text('Layers',
                           style: TextStyle(
                               color: _MapPalette.textPrimary,
                               fontSize: 16,
@@ -1054,6 +1121,14 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                       child: Text(allShown ? 'All shown' : 'Show all'),
                     ),
                   ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                      'Major parks, forests & springs show by default — zoom in '
+                      'for trails, camps, ramps and more.',
+                      style:
+                          TextStyle(color: _MapPalette.textSecondary, fontSize: 12)),
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Wrap(
