@@ -22,11 +22,16 @@ class LocationTrackingService {
   bool get isTracking => _subscription != null && !_subscription!.isPaused;
 
   Future<void> start(void Function(GPSLocation fix) onFix) async {
-    await _provider.start();
+    // Subscribe BEFORE start(): the provider emits the initial fix (last-known +
+    // getCurrentPosition) during start(), and its stream is a broadcast stream
+    // that drops events when there's no listener yet. Subscribing first means a
+    // stationary user's very first fix is delivered (previously it was lost, so
+    // the app sat on "finding your location" until the user moved ≥5 m).
     _subscription = _provider.stream.listen((fix) {
       _last = fix;
       onFix(fix);
     });
+    await _provider.start();
   }
 
   void pause() => _subscription?.pause();
