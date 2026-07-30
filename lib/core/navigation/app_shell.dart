@@ -14,8 +14,8 @@ import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 /// `extendBody` lets screen content flow underneath the floating bar for the
 /// premium edge-to-edge look.
 ///
-/// Tab order (fixed): Home, Radio, AI Ranger, Stories, Map, More. To change
-/// tabs, keep this bar and the branch list in `AppRouter` index-aligned.
+/// Tab order (fixed): Radio, Explore, Map, Stories, More. To change tabs, keep
+/// this bar and the branch list in `AppRouter` index-aligned.
 ///
 /// The bar is styled as a dark, floating pill with a gold active state (a
 /// premium National-Geographic feel) regardless of the app's light/dark mode,
@@ -84,29 +84,24 @@ class AppShell extends StatelessWidget {
                   onDestinationSelected: _goToBranch,
                   destinations: const [
                     NavigationDestination(
-                      icon: Icon(Icons.near_me_outlined),
-                      selectedIcon: Icon(Icons.near_me_rounded),
-                      label: 'Around Me',
-                    ),
-                    NavigationDestination(
                       icon: Icon(Icons.podcasts_outlined),
                       selectedIcon: Icon(Icons.podcasts_rounded),
                       label: 'Radio',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.smart_toy_outlined),
-                      selectedIcon: Icon(Icons.smart_toy_rounded),
-                      label: 'AI Ranger',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.menu_book_outlined),
-                      selectedIcon: Icon(Icons.menu_book_rounded),
-                      label: 'Stories',
+                      icon: Icon(Icons.explore_outlined),
+                      selectedIcon: Icon(Icons.explore_rounded),
+                      label: 'Explore',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.map_outlined),
                       selectedIcon: Icon(Icons.map_rounded),
                       label: 'Map',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.menu_book_outlined),
+                      selectedIcon: Icon(Icons.menu_book_rounded),
+                      label: 'Stories',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.more_horiz_rounded),
