@@ -114,7 +114,21 @@ Run from repo root (see Flutter docs for details):
   Debug** module (Platform group) exercises the engine end-to-end in a browser.
 - **Narration "Generate" buttons only enqueue `generation_jobs`** — they do not
   create scripts/audio directly (the AI keys are server-side only). A worker must
-  drain the queue: either the `supabase/functions/narration-worker` Edge Function
-  (deploy + schedule every minute; see its README) or the `tool/*.dart` CLIs run
-  manually. If admins report "Generate did nothing / no scripts appear," the
-  worker isn't running.
+  drain the queue: the **`.github/workflows/narration-worker.yml`** GitHub Action
+  (runs every 15 min + on demand via `run.ts`), or the `tool/*.dart` /
+  `tool/*.py` CLIs run manually. If admins report "the queue isn't running
+  automatically," check **Actions → Narration Worker** run logs.
+- **The queue worker depends on THREE GitHub Actions repo secrets.** The workflow
+  aborts in seconds (and nothing drains) unless these exist under GitHub →
+  Settings → Secrets and variables → **Actions**: `SUPABASE_SERVICE_KEY`,
+  `OPENAI_API_KEY`, `ELEVENLABS_API_KEY` (optional `SUPABASE_URL`, else defaults
+  to the project URL). These are **separate** from the app `.env` and from Cursor
+  secrets — setting Cursor secrets does NOT populate GitHub Actions secrets. The
+  worker (`supabase/functions/narration-worker/worker.ts`) drains: `research`,
+  `narration`, `narration_audio`, `full`, plus `wikimedia_import` (Commons hero
+  images → `media` bucket + `locations.images` + `media_assets`) and `audio` jobs
+  whose `notes` start with `master_location` (OpenAI+ElevenLabs narration →
+  `voiceovers` bucket + `locations.audio_files`). Other `audio:*` variants
+  (species records, `dj_banter`, batch) are intentionally left for their own
+  tooling. It self-heals `running` rows back to `pending` at the start of each
+  run (safe because the workflow's concurrency group serializes runs).

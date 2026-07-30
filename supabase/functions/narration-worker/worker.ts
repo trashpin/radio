@@ -1,10 +1,15 @@
 // ExplorerOS narration worker (Supabase Edge Function).
 //
 // Drains the `generation_jobs` queue so the admin's "Generate" clicks actually
-// run — without any key ever touching the browser. Handles three job types:
+// run — without any key ever touching the browser. Handles these job types:
 //   - research         -> populate knowledge_base for a destination (OpenAI)
 //   - narration        -> generate DRAFT scripts (grounded in knowledge; OpenAI)
 //   - narration_audio  -> voice APPROVED scripts -> audio_generated (ElevenLabs)
+//   - full             -> research + narration scripts (dashboard button)
+//   - audio            -> master-location narration (OpenAI + ElevenLabs) ->
+//                         voiceovers bucket + locations.audio_files (PENDING→READY)
+//   - wikimedia_import -> find a Commons hero image -> media bucket +
+//                         locations.images + media_assets attribution
 //
 // It NEVER publishes (publishing stays a manual admin action) and never invents
 // facts (writes a needs_review placeholder when a destination has no knowledge).
@@ -50,7 +55,13 @@ const ELEVEN_KEY = Deno.env.get("ELEVENLABS_API_KEY") ?? "";
 
 const MODEL = "gpt-4o-mini";
 const BUCKET = "narration";
-const MAX_JOBS = 4; // jobs per invocation
+const VOICEOVERS_BUCKET = "voiceovers"; // master-location narration audio
+const MEDIA_BUCKET = "media"; // hero images
+const LOCATION_VOICE_FALLBACK = "kPzsL2i3teMYv0FxEYQ6"; // DJ Brittney
+// Wikimedia importer UA (Commons blocks requests without a descriptive UA).
+const WIKI_UA =
+  "ExplorerOS-ImageImporter/1.0 (https://exploreros.app; admin@exploreros.app)";
+const MAX_JOBS = 10; // jobs per invocation
 const TYPE_CAP = 6; // script types generated per narration job per run
 const AUDIO_CAP = 4; // clips voiced per audio job per run
 
@@ -179,6 +190,22 @@ async function openaiJson(system: string, user: string): Promise<any> {
   if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const data = await r.json();
   return JSON.parse(data.choices[0].message.content);
+}
+
+async function openaiText(system: string, user: string): Promise<string> {
+  if (!OPENAI_KEY) throw new Error("OPENAI_API_KEY not set");
+  const r = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.8,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    }),
+  });
+  if (!r.ok) throw new Error(`OpenAI ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const data = await r.json();
+  return String(data.choices?.[0]?.message?.content ?? "").trim();
 }
 
 // ── job note parsing: "narration|scope=destination|mode=all" ──
@@ -367,7 +394,7 @@ async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
         {
           method: "POST",
           headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" },
-          body: bytes,
+          body: bytes as BodyInit,
         },
       );
       if (!up.ok) throw new Error(`upload ${up.status}`);
@@ -391,6 +418,212 @@ async function doAudio(job: any): Promise<{ done: boolean; msg: string }> {
     : { done: true, msg: `voiced ${ok}` };
 }
 
+// Master-location jobs (audio / wikimedia_import) carry the location id in
+// their notes as `...;id=<uuid>;...`. Extract it (falls back to null).
+function noteLocationId(notes: string | null): string | null {
+  const m = /id=([0-9a-fA-F-]{36})/.exec(notes ?? "");
+  return m ? m[1] : null;
+}
+
+// ── audio: master-location narration -> voiceovers bucket -> audio_files ──
+// Mirrors tool/generate_location_audio.py: write a short OpenAI narration, voice
+// it (ElevenLabs), upload the MP3, and set the location's audio_files (which
+// promotes it PENDING -> READY). Never overwrites existing audio.
+export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: string }> {
+  if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no location id in notes" };
+  const rows = await sbGet(
+    `locations?id=eq.${id}&select=id,name,category,county,city,description,audio_files,latitude,longitude&limit=1`,
+  );
+  const loc = rows[0];
+  if (!loc) return { done: true, msg: `location not found: ${id}` };
+  const hasAudio = (loc.audio_files ?? []).some((u: string) => (u ?? "").trim());
+  if (hasAudio) return { done: true, msg: "already has audio" };
+
+  const typ = String(loc.category ?? "point of interest").replace(/_/g, " ");
+  const where = loc.county ? ` in ${loc.county} County` : "";
+  const desc = String(loc.description ?? "").trim();
+  const text = await openaiText(
+    "You are a professional Florida travel radio narrator.",
+    `Write a warm, factual 45-70 word spoken radio narration introducing ` +
+      `${loc.name}, a ${typ}${where}, Florida. ${desc ? "Context: " + desc : ""} ` +
+      `Keep it evocative and accurate; do NOT invent specific numbers, dates, or ` +
+      `claims. Output only the narration text, no title or quotes.`,
+  );
+  if (!text) return { done: false, msg: "empty narration text" };
+
+  const voiceId = (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+  const tts = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+    },
+  );
+  if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+  const bytes = new Uint8Array(await tts.arrayBuffer());
+  const path = `locations/${id}.mp3`;
+  const up = await fetch(
+    buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
+    { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+  );
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  const url = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
+  await sbPatch(`locations?id=eq.${id}`, { audio_files: [url] });
+  return { done: true, msg: `voiced ${loc.name} (${Math.round(bytes.length / 1024)} KB)` };
+}
+
+// ── wikimedia_import: find a hero image on Commons and attach it ──
+// Mirrors tool/wikimedia_import.py: search, filter (name match, >=1200px, real
+// photos only), download the best, upload to media/destination-images/, set the
+// location hero, and record attribution in media_assets. Never overwrites.
+const WIKI_BAD =
+  /logo|icon|\bmap\b|flag|coat of arms|\bseal\b|drawing|diagram|chart|\bplan\b|locator|\.svg|\.pdf|signature|blazon|emblem|schematic/i;
+const WIKI_ACCEPT_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+const WIKI_MIN_WIDTH = 1200;
+const WIKI_MAX_BYTES = 10 * 1024 * 1024;
+
+function stripHtml(s: string | undefined | null): string {
+  return (s ?? "").replace(/<[^>]+>/g, "").trim();
+}
+function wikiSlug(name: string): string {
+  const s = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return s || "destination";
+}
+function thumbAt(thumbUrl: string, width: number): string {
+  return (thumbUrl ?? "").replace(/\/\d+px-/, `/${width}px-`);
+}
+
+async function wikiSearch(query: string): Promise<any[]> {
+  const params = new URLSearchParams({
+    action: "query", format: "json", generator: "search",
+    gsrsearch: `${query} filetype:bitmap`, gsrnamespace: "6", gsrlimit: "20",
+    prop: "imageinfo", iiprop: "url|size|mime|extmetadata|dimensions",
+    iiurlwidth: "1600",
+    iiextmetadatafilter: "Artist|LicenseShortName|LicenseUrl|Credit|Attribution",
+  });
+  const r = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+    headers: { "User-Agent": WIKI_UA, Accept: "application/json" },
+  });
+  if (!r.ok) throw new Error(`Commons ${r.status}`);
+  const data = await r.json();
+  const pages = data?.query?.pages ?? {};
+  return Object.values(pages);
+}
+
+function wikiPick(pages: any[], name: string, county: string | null) {
+  const tokens = (name.toLowerCase().match(/[a-z0-9]+/g) ?? []).filter((t) => t.length > 2);
+  const ntokens = tokens.length;
+  let best: any = null;
+  let bestScore = -1;
+  for (const p of pages) {
+    const title = String(p.title ?? "");
+    const info = (p.imageinfo ?? [null])[0];
+    if (!info) continue;
+    if (WIKI_BAD.test(title)) continue;
+    if (!WIKI_ACCEPT_MIME.has(info.mime ?? "")) continue;
+    const w = info.width ?? 0, h = info.height ?? 0;
+    if (w < WIKI_MIN_WIDTH) continue;
+    const lt = title.toLowerCase();
+    const matches = tokens.filter((t) => lt.includes(t)).length;
+    const geoOk = lt.includes("florida") || (!!county && lt.includes(county.toLowerCase()));
+    const strong = matches >= 3 || matches >= Math.max(2, ntokens);
+    const accept = strong || (geoOk && matches >= Math.min(2, ntokens));
+    if (!accept) continue;
+    let score = matches * 100 + (geoOk ? 300 : 0);
+    if (w >= h) score += 500;
+    score += Math.min(w, 6000) / 100;
+    if (score > bestScore) {
+      bestScore = score;
+      best = { page: p, info };
+    }
+  }
+  return best;
+}
+
+async function wikiDownload(url: string, tries = 3): Promise<Uint8Array | null> {
+  for (let i = 0; i < tries; i++) {
+    try {
+      const r = await fetch(url, { headers: { "User-Agent": WIKI_UA } });
+      if (r.ok) return new Uint8Array(await r.arrayBuffer());
+    } catch (_) { /* retry */ }
+    await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
+  }
+  return null;
+}
+
+export async function doWikimediaImport(job: any): Promise<{ done: boolean; msg: string }> {
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no location id in notes" };
+  const rows = await sbGet(
+    `locations?id=eq.${id}&select=id,name,category,city,county,images&limit=1`,
+  );
+  const loc = rows[0];
+  if (!loc) return { done: true, msg: `location not found: ${id}` };
+  const hasHero = (loc.images ?? []).some((u: string) => (u ?? "").trim());
+  if (hasHero) return { done: true, msg: "already has hero" };
+
+  const name = String(loc.name ?? "").trim();
+  const query = [name, loc.county ? `${loc.county} County` : null, loc.city, "Florida"]
+    .filter((p) => p && String(p).trim()).join(" ");
+  const pages = await wikiSearch(query);
+  const picked = wikiPick(pages, name, loc.county ?? null);
+  if (!picked) return { done: true, msg: `no image found for ${name}` };
+
+  const info = picked.info;
+  const meta = info.extmetadata ?? {};
+  const author = stripHtml(meta.Artist?.value) || "Unknown";
+  const license = stripHtml(meta.LicenseShortName?.value) || "See Wikimedia Commons";
+  const licenseUrl = stripHtml(meta.LicenseUrl?.value) || null;
+  const origUrl = String(info.url ?? "");
+  const thumbUrl = String(info.thumburl ?? origUrl);
+  const size = info.size ?? 0;
+  const mime = info.mime ?? "image/jpeg";
+  const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" } as Record<string, string>)[mime] ?? "jpg";
+
+  const src = (size && size <= WIKI_MAX_BYTES) ? origUrl : thumbUrl;
+  let bytes = await wikiDownload(src);
+  if (bytes && bytes.length > WIKI_MAX_BYTES) bytes = await wikiDownload(thumbUrl);
+  if (!bytes) bytes = await wikiDownload(thumbUrl);
+  if (!bytes) throw new Error("download failed");
+
+  const path = `destination-images/${wikiSlug(name)}.${ext}`;
+  const up = await fetch(
+    buildSupabaseUrl(`storage/v1/object/${MEDIA_BUCKET}/${path}`),
+    { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": mime }, body: bytes as BodyInit },
+  );
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  const heroUrl = buildSupabaseUrl(`storage/v1/object/public/${MEDIA_BUCKET}/${path}`);
+
+  const imgs = [heroUrl, ...(loc.images ?? []).filter((u: string) => (u ?? "").trim() && u !== heroUrl)];
+  await sbPatch(`locations?id=eq.${id}`, { images: imgs });
+  await sbInsert("media_assets", {
+    record_type: "location",
+    record_id: id,
+    destination_id: id,
+    media_type: "image",
+    is_hero: true,
+    title: name,
+    public_url: heroUrl,
+    thumbnail: thumbAt(thumbUrl, 400),
+    photographer: author,
+    creator: author,
+    license,
+    license_url: licenseUrl,
+    copyright: "Wikimedia Commons",
+    source: "wikimedia",
+    original_url: origUrl,
+    width: info.width ?? null,
+    height: info.height ?? null,
+    file_size: bytes.length,
+    imported_at: new Date().toISOString(),
+    tags: ["wikimedia", "hero"],
+  }).catch((e) => console.error(`media_assets insert failed: ${e}`));
+  return { done: true, msg: `imported hero for ${name} (${license})` };
+}
+
 async function processJob(job: any): Promise<void> {
   const id = job.id;
   try {
@@ -405,6 +638,12 @@ async function processJob(job: any): Promise<void> {
         break;
       case "narration_audio":
         res = await doAudio(job);
+        break;
+      case "audio":
+        res = await doLocationAudio(job);
+        break;
+      case "wikimedia_import":
+        res = await doWikimediaImport(job);
         break;
       case "full": {
         // Full pipeline (dashboard button): research, then generate scripts.
@@ -443,10 +682,30 @@ export async function drainQueue(
   }
   // Validate the base URL up front so config errors are obvious.
   buildSupabaseUrl("rest/v1/");
-  const jobs = await sbGet(
-    `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full)` +
+  // Self-heal: reset any jobs stuck in "running" back to pending. The workflow's
+  // concurrency group guarantees only one worker runs at a time, so nothing is
+  // actively holding a "running" row — a leftover means a prior run timed out.
+  await sbPatch(
+    `generation_jobs?status=eq.running&job_type=in.(research,narration,narration_audio,full,audio,wikimedia_import)`,
+    { status: "pending" },
+  ).catch(() => {});
+  // Two fetches so we ONLY claim job variants this worker can actually run:
+  //   • the narration/knowledge types + wikimedia_import (whole type)
+  //   • `audio` jobs that target a master LOCATION (notes start with
+  //     "master_location"). Other `audio:*` variants (species records,
+  //     dj_banter, batch) belong to their own tooling — we neither run nor
+  //     drop them, so they stay pending for that tooling.
+  const primary = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full,wikimedia_import)` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
+  const locAudio = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.master_location*` +
+      `&order=created_at.asc&limit=${limit}&select=*`,
+  );
+  const jobs = [...primary, ...locAudio]
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+    .slice(0, limit);
   const results: unknown[] = [];
   for (const job of jobs) {
     await processJob(job);
