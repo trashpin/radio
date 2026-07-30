@@ -23,6 +23,9 @@ enum AppRoute {
 
   // Pushed routes (reachable from Home / the More tab / detail links).
   explorerMode('/explorer-mode'),
+  iSeeSomething('/i-see-something'),
+  localGems('/local-gems'),
+  stationSelect('/station-select'),
   discover('/discover'),
   explore('/explore'),
   profile('/profile'),
