@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/gps/gps_connection.dart';
+import 'package:explorer_os_mobile/features/gps/presentation/gps_status_card.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -114,6 +116,18 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
             top: MediaQuery.of(context).padding.top + 16, bottom: 120),
         children: [
           _header(name, ctx.county, ctx.state),
+          // Surface a recovery card only when GPS needs the user to act
+          // (permission denied / blocked / GPS off) — otherwise the header's
+          // "Finding your location…" is enough.
+          Builder(builder: (_) {
+            final conn = deriveGpsConnection(
+                ref.watch(gpsStatusProvider), county: ctx.county);
+            if (!conn.needsAction) return const SizedBox(height: 16);
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 0),
+              child: GpsStatusCard(compact: true),
+            );
+          }),
           const SizedBox(height: 16),
           _nowPlaying(nowPlaying),
           const SizedBox(height: 22),

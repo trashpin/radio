@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/around_me/providers/around_me_provid
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_status.dart';
+import 'package:explorer_os_mobile/features/gps/presentation/gps_status_card.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_providers.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
@@ -169,6 +170,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       body: ListView(
         padding: const EdgeInsets.all(AppSpacing.lg),
         children: [
+          const GpsStatusCard(),
+          const Gap.v(AppSpacing.lg),
           _debugPanel(theme, snap, gps, experiences.length),
           const Gap.v(AppSpacing.lg),
           _deviceGps(theme, gps),
