@@ -77,6 +77,12 @@ enum AdminModule {
       description: 'County welcome greetings, weather reports & recommendations '
           'for the travel-radio county reports.',
       table: 'counties'),
+  nearbyGems('Nearby Gems Manager', Icons.diamond_rounded, AdminGroup.content,
+      ready: true,
+      description: 'The ONLY source of Nearby Gems shown to users — admin-'
+          'curated (name, badge, images, GPS, narration, active). No Google '
+          'Places / third-party import.',
+      table: 'nearby_gems'),
   locationContent('Location Content', Icons.pin_drop_rounded, AdminGroup.content,
       ready: true,
       description: 'Counties, cities, communities, rivers, lakes, scenic roads, '
