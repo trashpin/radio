@@ -170,12 +170,20 @@ class RadioEngineService {
   /// playing; otherwise the item is queued by priority and plays when reached.
   void requestInterruption(AudioSegment segment) {
     final current = playback.current;
-    final canInterruptNow = current != null &&
+    // Interrupt immediately when the new item outranks the current interruptible
+    // one, OR when a newer temporary report replaces the current temporary
+    // report. The latter is critical: tapping a second destination must switch
+    // to it right away — same-priority reports would otherwise queue behind the
+    // first, so you'd keep hearing the previous (wrong) narration.
+    final supersedesReport =
+        current != null && current.segment.resumeAfter && segment.resumeAfter;
+    if (current != null &&
         current.segment.interruptible &&
-        segment.priority.isHigherThan(current.segment.priority);
-
-    if (canInterruptNow) {
-      // Stash displaced music so it resumes after the interruption ends.
+        (segment.priority.isHigherThan(current.segment.priority) ||
+            supersedesReport)) {
+      // Stash displaced MUSIC so it resumes after the report ends. When we're
+      // replacing one report with another, the music displaced by the FIRST
+      // report is already stashed — don't overwrite it with the outgoing report.
       if (current.segment.type == AudioSegmentType.music) {
         queue.pauseMusic(current);
       }

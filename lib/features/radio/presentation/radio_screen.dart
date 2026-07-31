@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
@@ -17,10 +20,71 @@ import 'package:explorer_os_mobile/features/radio/discovery/observation_controll
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
+import 'package:explorer_os_mobile/features/radio/widgets/now_playing.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_brand_header.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 import 'package:explorer_os_mobile/features/weather/current_weather.dart';
 import 'package:explorer_os_mobile/shared/models/radio_station.dart';
+
+/// The content currently on air during a live report — drives the Now Playing
+/// hero (images/title/category/distance + favorite/navigate/photos wiring).
+class _NowPlayingContent {
+  const _NowPlayingContent({
+    required this.title,
+    required this.category,
+    required this.images,
+    this.distanceLabel,
+    this.locationId,
+    this.latitude,
+    this.longitude,
+  });
+  final String title;
+  final String category;
+  final List<String> images;
+  final String? distanceLabel;
+  final String? locationId; // favorites (locations only)
+  final double? latitude;
+  final double? longitude;
+
+  bool get canNavigate => latitude != null && longitude != null;
+  bool get canFavorite => locationId != null;
+  bool get hasGallery => images.length > 1;
+}
+
+/// Friendly category label for a species `category` token.
+String _speciesCategoryLabel(String token) {
+  switch (token.toLowerCase()) {
+    case 'animals':
+      return 'Wildlife';
+    case 'birds':
+      return 'Birds';
+    case 'plants':
+      return 'Plants';
+    case 'trees':
+      return 'Trees';
+    case 'wildflowers':
+      return 'Flowers';
+    case 'fish':
+      return 'Fish';
+    case 'reptiles':
+      return 'Reptiles';
+    case 'amphibians':
+      return 'Amphibians';
+    default:
+      return 'Nature';
+  }
+}
+
+/// Resolves a species hero image (full URL, or a relative `media` storage path).
+String? _resolveSpeciesImage(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  if (raw.startsWith('http')) return raw;
+  try {
+    return SupabaseService.client.storage.from('media').getPublicUrl(raw);
+  } catch (_) {
+    return null;
+  }
+}
 
 /// A UI label for the on-air host (the interface never exposes internal content
 /// types — only what's playing and who hosts it).
@@ -168,6 +232,12 @@ class _PlayerState extends ConsumerState<_Player> {
       }
     }
 
+    // The item currently on air (if any) → drives the expanded Now Playing hero.
+    final np = _nowPlayingContent(interruption, obs, nearby, nearbyStories);
+    final expanded = np != null;
+    final favorites = ref.watch(locationFavoritesProvider);
+    final isFav = np?.locationId != null && favorites.contains(np!.locationId);
+
     return SafeArea(
       bottom: false,
       child: SingleChildScrollView(
@@ -181,48 +251,84 @@ class _PlayerState extends ConsumerState<_Player> {
               onNotifications: () => _snack('No new notifications'),
             ),
             const SizedBox(height: RD.lg),
-            _Hero(
-              imageUrl: heroImage,
-              place: nearbyPlace,
-              distanceLabel: nearbyDistance,
-              onAir: onAir,
-            ),
-            const SizedBox(height: RD.lg),
-            _NowPlayingLine(
-              title: title,
-              interrupting: interruption != _Interruption.none,
-              onBackToRadio:
-                  interruption != _Interruption.none ? backToRadio : null,
-            ),
-            const SizedBox(height: RD.md),
-            _TransportRow(
-              isPlaying: isPlaying,
-              onPlayPause: isPlaying ? controller.pause : controller.play,
-              onPrevious: switch (interruption) {
-                _Interruption.iSeeSomething => () => ref
-                    .read(observationControllerProvider.notifier)
-                    .observe(obs.species!),
-                _Interruption.whatsNearMe => () => ref
-                    .read(nearbyNarrationControllerProvider.notifier)
-                    .narrateNearest(),
-                _Interruption.none => controller.previous,
-              },
-              onNext: controller.skip,
-              active: onAir,
-            ),
-            const SizedBox(height: RD.xl),
-            PrimaryActionCard(
-              icon: Icons.visibility_rounded,
-              title: 'I SEE SOMETHING',
-              subtitle: 'Discover wildlife, landmarks and hidden gems',
-              onTap: () => context.push(AppRoute.iSeeSomething.path),
-            ),
-            const SizedBox(height: RD.md),
-            PrimaryActionCard(
-              icon: Icons.diamond_rounded,
-              title: 'LOCAL GEMS',
-              subtitle: 'Find great places to eat, drink & explore nearby',
-              onTap: () => context.push(AppRoute.localGems.path),
+            // The player transforms into a "Now Playing" experience whenever a
+            // story/song/report is on air, then collapses back automatically.
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 420),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: SlideTransition(
+                  position: Tween(
+                          begin: const Offset(0, 0.05), end: Offset.zero)
+                      .animate(anim),
+                  child: child,
+                ),
+              ),
+              child: expanded
+                  ? _NowPlayingView(
+                      key: const ValueKey('now-playing'),
+                      content: np,
+                      isPlaying: isPlaying,
+                      isFavorite: isFav,
+                      onPlayPause:
+                          isPlaying ? controller.pause : controller.play,
+                      onSkip: controller.skip,
+                      onFavorite: np.canFavorite
+                          ? () => ref
+                              .read(locationFavoritesProvider.notifier)
+                              .toggle(np.locationId!)
+                          : null,
+                      onNavigate: np.canNavigate
+                          ? () => _navigate(np.latitude!, np.longitude!)
+                          : null,
+                      onMorePhotos: np.hasGallery
+                          ? () => showRadioPhotoGallery(
+                              context, np.images, np.title)
+                          : null,
+                      onBackToRadio: backToRadio,
+                    )
+                  : Column(
+                      key: const ValueKey('radio'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _Hero(
+                          imageUrl: heroImage,
+                          place: nearbyPlace,
+                          distanceLabel: nearbyDistance,
+                          onAir: onAir,
+                        ),
+                        const SizedBox(height: RD.lg),
+                        _NowPlayingLine(title: title),
+                        const SizedBox(height: RD.md),
+                        _TransportRow(
+                          isPlaying: isPlaying,
+                          onPlayPause:
+                              isPlaying ? controller.pause : controller.play,
+                          onPrevious: controller.previous,
+                          onNext: controller.skip,
+                          active: onAir,
+                        ),
+                        const SizedBox(height: RD.xl),
+                        PrimaryActionCard(
+                          icon: Icons.visibility_rounded,
+                          title: 'I SEE SOMETHING',
+                          subtitle:
+                              'Discover wildlife, landmarks and hidden gems',
+                          onTap: () =>
+                              context.push(AppRoute.iSeeSomething.path),
+                        ),
+                        const SizedBox(height: RD.md),
+                        PrimaryActionCard(
+                          icon: Icons.diamond_rounded,
+                          title: 'LOCAL GEMS',
+                          subtitle:
+                              'Find great places to eat, drink & explore nearby',
+                          onTap: () => context.push(AppRoute.localGems.path),
+                        ),
+                      ],
+                    ),
             ),
             const SizedBox(height: RD.xl),
             _NearbyStories(
@@ -235,6 +341,51 @@ class _PlayerState extends ConsumerState<_Player> {
         ),
       ),
     );
+  }
+
+  /// Builds the on-air content for the Now Playing hero from the active report.
+  _NowPlayingContent? _nowPlayingContent(
+    _Interruption interruption,
+    ObservationState obs,
+    NearbyNarrationState nearby,
+    List<NearbyLocation> nearbyStories,
+  ) {
+    if (interruption == _Interruption.iSeeSomething && obs.species != null) {
+      final s = obs.species!;
+      final img = _resolveSpeciesImage(s.heroImageUrl);
+      return _NowPlayingContent(
+        title: s.commonName,
+        category: _speciesCategoryLabel(s.category),
+        images: [?img],
+      );
+    }
+    if (interruption == _Interruption.whatsNearMe && nearby.location != null) {
+      final l = nearby.location!;
+      double? dist;
+      for (final n in nearbyStories) {
+        if (n.location.id == l.id) {
+          dist = n.distanceMeters;
+          break;
+        }
+      }
+      return _NowPlayingContent(
+        title: l.name,
+        category: l.type.label,
+        images: l.images,
+        distanceLabel: dist == null ? null : _miles(dist),
+        locationId: l.id,
+        latitude: l.latitude,
+        longitude: l.longitude,
+      );
+    }
+    return null;
+  }
+
+  Future<void> _navigate(double lat, double lng) async {
+    final uri = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) _snack('Could not open navigation');
   }
 
   static String _miles(double meters) {
@@ -369,14 +520,8 @@ class _Hero extends StatelessWidget {
 // ── Now playing (compact, single line) ───────────────────────────────────────
 
 class _NowPlayingLine extends StatelessWidget {
-  const _NowPlayingLine({
-    required this.title,
-    required this.interrupting,
-    this.onBackToRadio,
-  });
+  const _NowPlayingLine({required this.title});
   final String title;
-  final bool interrupting;
-  final VoidCallback? onBackToRadio;
 
   @override
   Widget build(BuildContext context) {
@@ -390,13 +535,70 @@ class _NowPlayingLine extends StatelessWidget {
         const SizedBox(height: 2),
         Text('Hosted by $_stationHost',
             style: RD.caption.copyWith(color: RD.green, fontSize: 12)),
-        if (onBackToRadio != null)
-          TextButton.icon(
+      ],
+    );
+  }
+}
+
+/// The expanded "Now Playing" experience shown while a story/song/report is on
+/// air: a Ken Burns / slideshow hero with the item's title, category, distance
+/// and favorite, plus Play/Pause, Skip, Save, Navigate and More Photos controls.
+class _NowPlayingView extends StatelessWidget {
+  const _NowPlayingView({
+    super.key,
+    required this.content,
+    required this.isPlaying,
+    required this.isFavorite,
+    required this.onPlayPause,
+    required this.onSkip,
+    required this.onBackToRadio,
+    this.onFavorite,
+    this.onNavigate,
+    this.onMorePhotos,
+  });
+
+  final _NowPlayingContent content;
+  final bool isPlaying;
+  final bool isFavorite;
+  final VoidCallback onPlayPause;
+  final VoidCallback onSkip;
+  final VoidCallback onBackToRadio;
+  final VoidCallback? onFavorite;
+  final VoidCallback? onNavigate;
+  final VoidCallback? onMorePhotos;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        NowPlayingHero(
+          images: content.images,
+          title: content.title,
+          category: content.category,
+          distanceLabel: content.distanceLabel,
+          favorite: content.canFavorite ? isFavorite : null,
+          onFavorite: onFavorite,
+        ),
+        const SizedBox(height: RD.lg),
+        NowPlayingControls(
+          isPlaying: isPlaying,
+          onPlayPause: onPlayPause,
+          onSkip: onSkip,
+          saved: content.canFavorite ? isFavorite : null,
+          onSave: onFavorite,
+          onNavigate: onNavigate,
+          onMorePhotos: onMorePhotos,
+        ),
+        const SizedBox(height: RD.sm),
+        Center(
+          child: TextButton.icon(
             onPressed: onBackToRadio,
-            icon: const Icon(Icons.radio_rounded, color: RD.green, size: 16),
+            icon: const Icon(Icons.radio_rounded, color: RD.green, size: 18),
             label: const Text('Back to radio',
                 style: TextStyle(color: RD.green)),
           ),
+        ),
       ],
     );
   }
