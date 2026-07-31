@@ -1,0 +1,370 @@
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:explorer_os_mobile/features/admin/species_images/wildlife_placeholder.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/models/nearby_gem.dart';
+
+/// Admin → Nearby Gems Manager. The ONLY source of Nearby Gems shown to users:
+/// an admin adds/approves every gem here. No Google Places / third-party import.
+class NearbyGemsManagerPage extends ConsumerWidget {
+  const NearbyGemsManagerPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final async = ref.watch(allNearbyGemsProvider);
+    return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _openEditor(context, ref),
+        icon: const Icon(Icons.add_location_alt_rounded),
+        label: const Text('New Gem'),
+      ),
+      body: async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('$e')),
+        data: (gems) {
+          final active = gems.where((g) => g.active).length;
+          return ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('Nearby Gems Manager', style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 4),
+              Text(
+                  'The only source of Nearby Gems. Users see ACTIVE gems within '
+                  'range — nothing is imported from Google Places or elsewhere.',
+                  style: theme.textTheme.bodySmall),
+              const SizedBox(height: 12),
+              Wrap(spacing: 12, children: [
+                Chip(label: Text('$active active')),
+                Chip(label: Text('${gems.length - active} inactive')),
+                Chip(label: Text('${gems.length} total')),
+              ]),
+              const SizedBox(height: 16),
+              if (gems.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: theme.dividerColor),
+                  ),
+                  child: Column(children: [
+                    const Icon(Icons.diamond_outlined, size: 44),
+                    const SizedBox(height: 8),
+                    const Text('No gems yet.'),
+                    const SizedBox(height: 4),
+                    Text(
+                        'Tap "New Gem" to add one. (Run migration 0034 first if '
+                        'you see a load error.)',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodySmall),
+                  ]),
+                )
+              else
+                for (final g in gems) _row(context, ref, g),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _row(BuildContext context, WidgetRef ref, NearbyGem g) {
+    final theme = Theme.of(context);
+    return Card(
+      child: ListTile(
+        leading: SizedBox(
+          width: 56,
+          height: 56,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: SpeciesImageOrPlaceholder(
+                url: g.featuredImage, category: g.category, compact: true),
+          ),
+        ),
+        title: Row(children: [
+          Flexible(child: Text(g.name, overflow: TextOverflow.ellipsis)),
+          if (!g.active) ...[
+            const SizedBox(width: 8),
+            Chip(
+                label: const Text('Inactive'),
+                visualDensity: VisualDensity.compact,
+                backgroundColor: theme.colorScheme.errorContainer),
+          ],
+        ]),
+        subtitle: Text([
+          if ((g.category ?? '').isNotEmpty) g.category,
+          if ((g.badge ?? '').isNotEmpty) g.badge,
+          if (g.hasStory) 'has story',
+        ].whereType<String>().join(' · ')),
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) async {
+            final repo = ref.read(nearbyGemsRepositoryProvider);
+            switch (v) {
+              case 'edit':
+                _openEditor(context, ref, gem: g);
+              case 'toggle':
+                await repo.update(g.id, {'active': !g.active});
+                ref.read(nearbyGemsRefreshProvider.notifier).bump();
+              case 'delete':
+                await repo.delete(g.id);
+                ref.read(nearbyGemsRefreshProvider.notifier).bump();
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'edit', child: Text('Edit')),
+            PopupMenuItem(
+                value: 'toggle',
+                child: Text(g.active ? 'Set inactive' : 'Set active')),
+            const PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+        onTap: () => _openEditor(context, ref, gem: g),
+      ),
+    );
+  }
+
+  Future<void> _openEditor(BuildContext context, WidgetRef ref,
+      {NearbyGem? gem}) async {
+    final saved = await showDialog<bool>(
+        context: context, builder: (_) => _GemEditor(gem: gem));
+    if (saved == true) ref.read(nearbyGemsRefreshProvider.notifier).bump();
+  }
+}
+
+class _GemEditor extends ConsumerStatefulWidget {
+  const _GemEditor({this.gem});
+  final NearbyGem? gem;
+  @override
+  ConsumerState<_GemEditor> createState() => _GemEditorState();
+}
+
+class _GemEditorState extends ConsumerState<_GemEditor> {
+  late final _name = TextEditingController(text: widget.gem?.name ?? '');
+  late final _address = TextEditingController(text: widget.gem?.address ?? '');
+  late final _website = TextEditingController(text: widget.gem?.website ?? '');
+  late final _phone = TextEditingController(text: widget.gem?.phone ?? '');
+  late final _lat =
+      TextEditingController(text: widget.gem?.latitude?.toString() ?? '');
+  late final _lng =
+      TextEditingController(text: widget.gem?.longitude?.toString() ?? '');
+  late final _short =
+      TextEditingController(text: widget.gem?.shortDescription ?? '');
+  late final _long = TextEditingController(text: widget.gem?.longStory ?? '');
+  late final _narration =
+      TextEditingController(text: widget.gem?.narrationUrl ?? '');
+  late String? _category = widget.gem?.category;
+  late String? _badge = widget.gem?.badge;
+  late String? _featured = widget.gem?.featuredImage;
+  late final List<String> _gallery = [...?widget.gem?.galleryImages];
+  late bool _active = widget.gem?.active ?? true;
+  bool _busy = false;
+
+  @override
+  void dispose() {
+    for (final c in [_name, _address, _website, _phone, _lat, _lng, _short,
+        _long, _narration]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _pickImage({required bool featured}) async {
+    final res = await FilePicker.platform
+        .pickFiles(type: FileType.image, withData: true);
+    if (res == null || res.files.isEmpty || res.files.first.bytes == null) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final url = await ref.read(nearbyGemsRepositoryProvider).uploadImage(
+          res.files.first.bytes!, res.files.first.name);
+      setState(() => featured ? _featured = url : _gallery.add(url));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _pickAudio() async {
+    final res = await FilePicker.platform
+        .pickFiles(type: FileType.audio, withData: true);
+    if (res == null || res.files.isEmpty || res.files.first.bytes == null) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final url = await ref.read(nearbyGemsRepositoryProvider).uploadImage(
+          res.files.first.bytes!, res.files.first.name,
+          contentType: 'audio/mpeg');
+      setState(() => _narration.text = url);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (_name.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Name is required.')));
+      return;
+    }
+    setState(() => _busy = true);
+    final row = <String, dynamic>{
+      'name': _name.text.trim(),
+      'category': _category,
+      'badge': _badge,
+      'featured_image': _featured,
+      'gallery_images': _gallery,
+      'latitude': double.tryParse(_lat.text.trim()),
+      'longitude': double.tryParse(_lng.text.trim()),
+      'address': _address.text.trim().isEmpty ? null : _address.text.trim(),
+      'website': _website.text.trim().isEmpty ? null : _website.text.trim(),
+      'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+      'narration_url':
+          _narration.text.trim().isEmpty ? null : _narration.text.trim(),
+      'short_description':
+          _short.text.trim().isEmpty ? null : _short.text.trim(),
+      'long_story': _long.text.trim().isEmpty ? null : _long.text.trim(),
+      'active': _active,
+    };
+    try {
+      final repo = ref.read(nearbyGemsRepositoryProvider);
+      if (widget.gem == null) {
+        await repo.create(row);
+      } else {
+        await repo.update(widget.gem!.id, row);
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.gem == null ? 'New Gem' : 'Edit Gem'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Featured image
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SpeciesImageOrPlaceholder(
+                    url: _featured, category: _category, label: _name.text),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _pickImage(featured: true),
+                icon: const Icon(Icons.image_rounded, size: 18),
+                label: const Text('Featured image'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _pickImage(featured: false),
+                icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                label: Text('Gallery (${_gallery.length})'),
+              ),
+            ]),
+            const Divider(height: 24),
+            _f(_name, 'Name *'),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _dropdown('Category', NearbyGem.categoryOptions,
+                  _category, (v) => setState(() => _category = v))),
+              const SizedBox(width: 8),
+              Expanded(child: _dropdown('ExplorerOS Badge',
+                  NearbyGem.badgeOptions, _badge, (v) => setState(() => _badge = v))),
+            ]),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _f(_lat, 'Latitude')),
+              const SizedBox(width: 8),
+              Expanded(child: _f(_lng, 'Longitude')),
+            ]),
+            const SizedBox(height: 8),
+            _f(_address, 'Address'),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _f(_website, 'Website')),
+              const SizedBox(width: 8),
+              Expanded(child: _f(_phone, 'Phone')),
+            ]),
+            const SizedBox(height: 8),
+            _f(_short, 'Short description', maxLines: 2),
+            const SizedBox(height: 8),
+            _f(_long, 'Long story', maxLines: 4),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _f(_narration, 'AI narration audio URL')),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _pickAudio,
+                icon: const Icon(Icons.audiotrack_rounded, size: 18),
+                label: const Text('Upload'),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _active,
+              onChanged: (v) => setState(() => _active = v),
+              title: const Text('Active (visible to users)'),
+            ),
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(),
+              ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context, false),
+            child: const Text('Cancel')),
+        FilledButton(
+            onPressed: _busy ? null : _save,
+            child: Text(widget.gem == null ? 'Create' : 'Save')),
+      ],
+    );
+  }
+
+  Widget _f(TextEditingController c, String label, {int maxLines = 1}) =>
+      TextField(
+        controller: c,
+        maxLines: maxLines,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+            labelText: label,
+            isDense: true,
+            border: const OutlineInputBorder()),
+      );
+
+  Widget _dropdown(String label, List<String> options, String? value,
+          ValueChanged<String?> onChanged) =>
+      DropdownButtonFormField<String?>(
+        initialValue: value,
+        isExpanded: true,
+        decoration: InputDecoration(
+            labelText: label,
+            isDense: true,
+            border: const OutlineInputBorder()),
+        items: [
+          const DropdownMenuItem(value: null, child: Text('—')),
+          for (final o in options) DropdownMenuItem(value: o, child: Text(o)),
+        ],
+        onChanged: onChanged,
+      );
+}

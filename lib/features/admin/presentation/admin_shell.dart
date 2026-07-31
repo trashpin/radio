@@ -16,6 +16,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/database_tools_pa
 import 'package:explorer_os_mobile/features/admin/presentation/destination_dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_banter_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
@@ -71,6 +72,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const LocationsAdminPage();
       case AdminModule.countyManager:
         return const CountyManagerPage();
+      case AdminModule.nearbyGems:
+        return const NearbyGemsManagerPage();
       case AdminModule.destinations:
         return const DestinationDashboardPage();
       case AdminModule.settings:
