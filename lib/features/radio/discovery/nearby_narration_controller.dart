@@ -105,6 +105,11 @@ class NearbyNarrationController extends Notifier<NearbyNarrationState> {
   Future<void> narrateLocation(MasterLocation location) async {
     _wire();
     _fallback?.cancel();
+    // End any in-progress spoken (TTS) narration so tapping a new destination
+    // switches immediately instead of talking over it.
+    try {
+      await _tts.stop();
+    } catch (_) {}
 
     final content = ref.read(locationContentItemsProvider);
     final narration = resolveLocationNarration(location, content);

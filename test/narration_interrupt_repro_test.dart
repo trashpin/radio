@@ -93,4 +93,41 @@ void main() {
     expect(port.played.last, 'https://audio/narration.mp3',
         reason: 'narration should interrupt & play, but got: ${port.played}');
   });
+
+  test('a second destination report supersedes the first immediately', () async {
+    final engine = buildEngine();
+    final port = FakePort();
+    RadioAudioService(engine: engine, port: port).attach();
+
+    engine.enqueue(_song);
+    engine.play();
+    await settle();
+
+    // Tap destination A → its report plays.
+    engine.requestInterruption(_narration);
+    await settle();
+    expect(port.played.last, 'https://audio/narration.mp3');
+
+    // Tap a DIFFERENT destination B (same priority report) → must switch to B
+    // right away, not keep playing A (the reported bug).
+    const reportB = AudioSegment(
+      id: 'near:fort-king',
+      title: 'Fort King',
+      type: AudioSegmentType.narration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      audioUrl: 'https://audio/fort_king.mp3',
+      interruptible: true,
+      resumeAfter: true,
+    );
+    engine.requestInterruption(reportB);
+    await settle();
+    expect(port.played.last, 'https://audio/fort_king.mp3',
+        reason: 'report B should supersede report A, got: ${port.played}');
+
+    // When B finishes, the original song resumes (not A again).
+    port.finish();
+    await settle();
+    expect(port.played.last, 'https://audio/song.mp3',
+        reason: 'music should resume after the report ends');
+  });
 }

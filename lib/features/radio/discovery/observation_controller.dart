@@ -65,6 +65,11 @@ class ObservationController extends Notifier<ObservationState> {
   Future<void> observe(Species s) async {
     _wire();
     _fallback?.cancel();
+    // End any in-progress spoken (TTS) narration so a new subject switches
+    // immediately instead of talking over it.
+    try {
+      await _tts.stop();
+    } catch (_) {}
     final url = await _narrationUrl(s);
     state = ObservationState(species: s, narrating: true);
 

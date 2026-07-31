@@ -183,9 +183,15 @@ LocationNarration resolveLocationNarration(
       final hasContent =
           (c.audioUrl?.isNotEmpty ?? false) || (c.text?.isNotEmpty ?? false);
       if (!hasContent) continue;
+      // Only borrow a nearby narration when it's actually about THIS place:
+      // a name match, or a category relevant to this location type. A purely
+      // proximity-based match would play a neighbor's (wrong) narration.
+      final nameMatch = _nameOverlap(loc.name, c.title);
+      final categoryMatch = relevant.contains(c.category);
+      if (!nameMatch && !categoryMatch) continue;
       var score = -(m ~/ 50); // nearer is better
-      if (_nameOverlap(loc.name, c.title)) score += 500;
-      if (relevant.contains(c.category)) score += 200;
+      if (nameMatch) score += 500;
+      if (categoryMatch) score += 200;
       if (c.audioUrl?.isNotEmpty ?? false) score += 120;
       score += c.basePriority;
       if (score > bestScore) {
