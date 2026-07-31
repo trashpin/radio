@@ -17,6 +17,7 @@ import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_contr
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
@@ -215,12 +216,22 @@ class _PlayerState extends ConsumerState<_Player> {
         (obs.active && obs.narrating) ||
         (nearby.active && nearby.narrating);
 
+    // A song's cover art takes over the display while music is playing.
+    final songCover = nowPlaying?.type == AudioSegmentType.music
+        ? nowPlaying?.imageUrl
+        : null;
+    final songArtist = nowPlaying?.type == AudioSegmentType.music
+        ? (nowPlaying?.artist ?? '').trim()
+        : '';
+
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
     final heroImage = obs.species?.heroImageUrl ??
-        (nearest?.location.images.isNotEmpty ?? false
-            ? nearest!.location.images.first
-            : widget.station.imageUrl);
+        ((songCover ?? '').isNotEmpty
+            ? songCover
+            : (nearest?.location.images.isNotEmpty ?? false
+                ? nearest!.location.images.first
+                : widget.station.imageUrl));
     final nearbyPlace = nearest?.location.name ?? widget.station.name;
     final nearbyDistance =
         nearest == null ? null : _miles(nearest.distanceMeters);
@@ -300,7 +311,12 @@ class _PlayerState extends ConsumerState<_Player> {
                           onAir: onAir,
                         ),
                         const SizedBox(height: RD.lg),
-                        _NowPlayingLine(title: title),
+                        _NowPlayingLine(
+                          title: title,
+                          subtitle: songArtist.isNotEmpty
+                              ? songArtist
+                              : 'Hosted by $_stationHost',
+                        ),
                         const SizedBox(height: RD.md),
                         _TransportRow(
                           isPlaying: isPlaying,
@@ -520,8 +536,9 @@ class _Hero extends StatelessWidget {
 // ── Now playing (compact, single line) ───────────────────────────────────────
 
 class _NowPlayingLine extends StatelessWidget {
-  const _NowPlayingLine({required this.title});
+  const _NowPlayingLine({required this.title, this.subtitle});
   final String title;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -533,7 +550,9 @@ class _NowPlayingLine extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: RD.title.copyWith(fontSize: 20)),
         const SizedBox(height: 2),
-        Text('Hosted by $_stationHost',
+        Text(subtitle ?? 'Hosted by $_stationHost',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: RD.caption.copyWith(color: RD.green, fontSize: 12)),
       ],
     );

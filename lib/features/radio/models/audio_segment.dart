@@ -70,6 +70,7 @@ class AudioSegment {
     required this.priority,
     this.artist,
     this.album,
+    this.imageUrl,
     this.duration = Duration.zero,
     this.audioUrl,
     this.stationId,
@@ -90,6 +91,9 @@ class AudioSegment {
 
   /// Optional album/collection shown in the player.
   final String? album;
+
+  /// Optional artwork/cover image shown in the player (e.g. a song's cover).
+  final String? imageUrl;
   final AudioSegmentType type;
 
   /// Where this item sits on the priority ladder (drives ordering + interrupts).
@@ -128,6 +132,7 @@ class AudioSegment {
         title: title,
         artist: artist,
         album: album,
+        imageUrl: imageUrl,
         type: type,
         priority: priority ?? this.priority,
         duration: duration,
@@ -151,6 +156,7 @@ class AudioSegment {
       title: song.title,
       artist: song.artist,
       album: song.album,
+      imageUrl: song.coverImage,
       type: AudioSegmentType.music,
       priority: PlaybackPriority.music,
       duration: Duration(seconds: song.durationSeconds ?? 0),
