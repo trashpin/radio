@@ -184,6 +184,15 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
       final url = await ref.read(nearbyGemsRepositoryProvider).uploadImage(
           res.files.first.bytes!, res.files.first.name);
       setState(() => featured ? _featured = url : _gallery.add(url));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Image uploaded — press Save to keep it.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -192,7 +201,18 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
   /// Pull a picture + GPS (and, when blank, name/category/description) from an
   /// existing ExplorerOS master location — so gems reuse curated content.
   Future<void> _matchLocation() async {
-    final all = ref.read(masterLocationsProvider).value ?? const [];
+    // Await the data — masterLocationsProvider is async and is often not loaded
+    // yet on first open, which previously showed an empty "No matches" picker.
+    setState(() => _busy = true);
+    List<MasterLocation> all;
+    try {
+      all = await ref.read(masterLocationsProvider.future);
+    } catch (_) {
+      all = ref.read(masterLocationsProvider).value ?? const [];
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
     final loc = await showDialog<MasterLocation>(
       context: context,
       builder: (_) => _LocationPicker(all: all),
