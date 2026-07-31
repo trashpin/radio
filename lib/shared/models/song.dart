@@ -12,6 +12,7 @@ class Song implements Model {
     this.artist,
     this.album,
     this.audioUrl,
+    this.coverImage,
     this.durationSeconds,
   });
 
@@ -22,6 +23,9 @@ class Song implements Model {
   final String? artist;
   final String? album;
   final String? audioUrl;
+
+  /// Album/track artwork URL (the `songs.cover_image` column).
+  final String? coverImage;
   final int? durationSeconds;
 
   factory Song.fromJson(Json json) => Song(
@@ -33,6 +37,9 @@ class Song implements Model {
         artist: json['artist'] as String?,
         album: json['album'] as String?,
         audioUrl: json['audio_url'] as String?,
+        coverImage: (json['cover_image'] ??
+            json['cover_url'] ??
+            json['artwork_url']) as String?,
         // `songs` table column is `duration`; older rows use `duration_seconds`.
         durationSeconds:
             ((json['duration_seconds'] ?? json['duration']) as num?)?.toInt(),
