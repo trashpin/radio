@@ -98,6 +98,13 @@ enum AdminModule {
       ready: true,
       description: 'Create/edit species and upload photos (all categories).',
       table: 'species'),
+  speciesImages('Species Image Manager', Icons.photo_camera_back_rounded,
+      AdminGroup.nature,
+      ready: true,
+      description: 'Audit which species need photos, then upload / replace / '
+          'delete / approve / reorder galleries and pick the featured image — '
+          'the master species image library.',
+      table: 'media'),
   wildlifeAlerts('Wildlife Alerts', Icons.pets_rounded, AdminGroup.nature,
       ready: true,
       description: 'Wildlife sightings/updates for the radio.',
