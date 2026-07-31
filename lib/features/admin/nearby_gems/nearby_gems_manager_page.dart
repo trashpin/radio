@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/admin/species_images/wildlife_placeholder.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/models/nearby_gem.dart';
 
@@ -187,6 +189,59 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
     }
   }
 
+  /// Pull a picture + GPS (and, when blank, name/category/description) from an
+  /// existing ExplorerOS master location — so gems reuse curated content.
+  Future<void> _matchLocation() async {
+    final all = ref.read(masterLocationsProvider).value ?? const [];
+    final loc = await showDialog<MasterLocation>(
+      context: context,
+      builder: (_) => _LocationPicker(all: all),
+    );
+    if (loc == null) return;
+    setState(() {
+      if ((_featured ?? '').isEmpty && loc.images.isNotEmpty) {
+        _featured = loc.images.first;
+      }
+      for (final u in loc.images) {
+        if (u != _featured && !_gallery.contains(u)) _gallery.add(u);
+      }
+      if (loc.latitude != null) _lat.text = loc.latitude.toString();
+      if (loc.longitude != null) _lng.text = loc.longitude.toString();
+      if (_name.text.trim().isEmpty) _name.text = loc.name;
+      if ((_short.text.trim().isEmpty) && (loc.description ?? '').isNotEmpty) {
+        _short.text = loc.description!;
+      }
+      _category ??= _gemCategoryFor(loc.type);
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Matched to ${loc.name}')));
+    }
+  }
+
+  static String? _gemCategoryFor(LocationType t) {
+    switch (t) {
+      case LocationType.restaurant:
+        return 'Restaurant';
+      case LocationType.museum:
+      case LocationType.historicSite:
+      case LocationType.historicDistrict:
+        return 'Museum';
+      case LocationType.statePark:
+      case LocationType.nationalPark:
+      case LocationType.countyPark:
+      case LocationType.forest:
+      case LocationType.trail:
+      case LocationType.trailhead:
+      case LocationType.spring:
+      case LocationType.lake:
+      case LocationType.river:
+        return 'Outdoors';
+      default:
+        return 'Attraction';
+    }
+  }
+
   Future<void> _pickAudio() async {
     final res = await FilePicker.platform
         .pickFiles(type: FileType.audio, withData: true);
@@ -277,6 +332,17 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
                 label: Text('Gallery (${_gallery.length})'),
               ),
             ]),
+            const SizedBox(height: 8),
+            // Reuse an existing ExplorerOS location's photo + coordinates
+            // instead of uploading from scratch.
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _busy ? null : _matchLocation,
+                icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                label: const Text('Match to an ExplorerOS location'),
+              ),
+            ),
             const Divider(height: 24),
             _f(_name, 'Name *'),
             const SizedBox(height: 8),
@@ -367,4 +433,81 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
         ],
         onChanged: onChanged,
       );
+}
+
+/// A searchable picker over the master `locations` list — used to match a gem
+/// to an existing ExplorerOS location (and reuse its photo + coordinates).
+class _LocationPicker extends StatefulWidget {
+  const _LocationPicker({required this.all});
+  final List<MasterLocation> all;
+  @override
+  State<_LocationPicker> createState() => _LocationPickerState();
+}
+
+class _LocationPickerState extends State<_LocationPicker> {
+  String _q = '';
+  @override
+  Widget build(BuildContext context) {
+    final q = _q.toLowerCase();
+    final items = widget.all
+        .where((l) =>
+            q.isEmpty ||
+            l.name.toLowerCase().contains(q) ||
+            (l.county ?? '').toLowerCase().contains(q))
+        .take(200)
+        .toList();
+    return AlertDialog(
+      title: const Text('Match to a location'),
+      content: SizedBox(
+        width: 460,
+        height: 480,
+        child: Column(children: [
+          TextField(
+            autofocus: true,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search_rounded),
+              hintText: 'Search locations by name or county…',
+            ),
+            onChanged: (v) => setState(() => _q = v),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: items.isEmpty
+                ? const Center(child: Text('No matches'))
+                : ListView.builder(
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final l = items[i];
+                      final hero = l.images.isNotEmpty ? l.images.first : null;
+                      return ListTile(
+                        leading: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: SpeciesImageOrPlaceholder(
+                                url: hero, category: l.type.label, compact: true),
+                          ),
+                        ),
+                        title: Text(l.name,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text([
+                          l.type.label,
+                          if (l.county != null) '${l.county} County',
+                          '${l.images.length} photo(s)',
+                        ].join(' · ')),
+                        onTap: () => Navigator.pop(context, l),
+                      );
+                    },
+                  ),
+          ),
+        ]),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close')),
+      ],
+    );
+  }
 }
