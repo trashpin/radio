@@ -33,6 +33,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/radio_director_se
 import 'package:explorer_os_mobile/features/admin/presentation/song_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/species_admin_page.dart';
+import 'package:explorer_os_mobile/features/admin/species_images/species_image_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/voice_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
@@ -116,6 +117,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const MapEditorPage();
       case AdminModule.species:
         return const SpeciesAdminPage();
+      case AdminModule.speciesImages:
+        return const SpeciesImageManagerPage();
       case AdminModule.musicLibrary:
         return const SongUploaderPage();
       case AdminModule.mediaManager:
