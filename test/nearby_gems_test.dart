@@ -12,8 +12,13 @@ class _FakeCenter extends MapCenter {
 }
 
 NearbyGem _gem(String id, String name, double? lat, double? lng) => NearbyGem(
-      id: id, name: name, latitude: lat, longitude: lng, active: true,
-      narrationUrl: 'https://audio/$id.mp3');
+  id: id,
+  name: name,
+  latitude: lat,
+  longitude: lng,
+  active: true,
+  narrationUrl: 'https://audio/$id.mp3',
+);
 
 void main() {
   test('model parses snake_case + arrays', () {
@@ -36,23 +41,75 @@ void main() {
     expect(g.hasStory, isTrue);
   });
 
-  test('nearbyGemsForUser keeps only in-range gems, sorted nearest-first', () async {
-    final near = _gem('near', 'Close Cafe', 29.21, -82.06); // ~1.5 km
-    final mid = _gem('mid', 'Mid Diner', 29.30, -82.05); // ~11 km
-    final far = _gem('far', 'Far Away', 30.20, -82.05); // ~110 km (> 25 mi)
-    final noGeo = _gem('nogeo', 'No Coords', null, null);
-
-    final c = ProviderContainer(overrides: [
-      mapCenterProvider.overrideWith(_FakeCenter.new),
-      activeNearbyGemsProvider
-          .overrideWith((ref) async => [far, mid, near, noGeo]),
-    ]);
-    addTearDown(c.dispose);
-    await c.read(activeNearbyGemsProvider.future);
-
-    final hits = c.read(nearbyGemsForUserProvider);
-    expect(hits.map((h) => h.gem.id), ['near', 'mid'],
-        reason: 'far (>25mi) and no-coords are excluded; sorted nearest-first');
-    expect(hits.first.distanceMeters, lessThan(hits.last.distanceMeters));
+  test('narration_script round-trips through fromJson/toWrite', () {
+    final g = NearbyGem.fromJson({
+      'id': '1',
+      'name': 'Ivy House',
+      'narration_script': 'Welcome to the Ivy House, a downtown landmark…',
+      'long_story': 'A longer story.',
+      'short_description': 'Cozy cafe.',
+    });
+    expect(g.narrationScript, startsWith('Welcome to the Ivy House'));
+    expect(g.toWrite()['narration_script'], g.narrationScript);
   });
+
+  test('narrationText prefers script, then long description, then short', () {
+    NearbyGem g({String? script, String? long, String? short}) => NearbyGem(
+      id: 'x',
+      name: 'X',
+      narrationScript: script,
+      longStory: long,
+      shortDescription: short,
+    );
+
+    expect(g(script: 'S', long: 'L', short: 'H').narrationText, 'S');
+    expect(g(long: 'L', short: 'H').narrationText, 'L');
+    expect(g(short: 'H').narrationText, 'H');
+    expect(
+      g(script: '   ', long: 'L').narrationText,
+      'L',
+      reason: 'blank script is skipped',
+    );
+    expect(g().narrationText, isNull);
+  });
+
+  test('canNarrate: audio OR any speakable text (else false)', () {
+    NearbyGem g({String? url, String? long}) =>
+        NearbyGem(id: 'x', name: 'X', narrationUrl: url, longStory: long);
+    expect(g(url: 'https://a.mp3').canNarrate, isTrue); // audio only
+    expect(g(long: 'A story to speak').canNarrate, isTrue); // text only
+    expect(g(url: '', long: '').canNarrate, isFalse); // nothing
+    // hasStory (card enablement) tracks canNarrate now.
+    expect(g(long: 'story').hasStory, isTrue);
+    expect(g().hasStory, isFalse);
+  });
+
+  test(
+    'nearbyGemsForUser keeps only in-range gems, sorted nearest-first',
+    () async {
+      final near = _gem('near', 'Close Cafe', 29.21, -82.06); // ~1.5 km
+      final mid = _gem('mid', 'Mid Diner', 29.30, -82.05); // ~11 km
+      final far = _gem('far', 'Far Away', 30.20, -82.05); // ~110 km (> 25 mi)
+      final noGeo = _gem('nogeo', 'No Coords', null, null);
+
+      final c = ProviderContainer(
+        overrides: [
+          mapCenterProvider.overrideWith(_FakeCenter.new),
+          activeNearbyGemsProvider.overrideWith(
+            (ref) async => [far, mid, near, noGeo],
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      await c.read(activeNearbyGemsProvider.future);
+
+      final hits = c.read(nearbyGemsForUserProvider);
+      expect(
+        hits.map((h) => h.gem.id),
+        ['near', 'mid'],
+        reason: 'far (>25mi) and no-coords are excluded; sorted nearest-first',
+      );
+      expect(hits.first.distanceMeters, lessThan(hits.last.distanceMeters));
+    },
+  );
 }

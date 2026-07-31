@@ -14,6 +14,7 @@ class NearbyGem {
     this.website,
     this.phone,
     this.narrationUrl,
+    this.narrationScript,
     this.shortDescription,
     this.longStory,
     this.active = true,
@@ -34,9 +35,17 @@ class NearbyGem {
   final String? website;
   final String? phone;
 
-  /// AI narration audio URL ("Hear Story").
+  /// AI narration audio URL ("Hear Story") — played first when present.
   final String? narrationUrl;
+
+  /// The exact spoken script fed to ElevenLabs (admin "Generate Narration") or
+  /// spoken on-device when no [narrationUrl] exists yet.
+  final String? narrationScript;
+
+  /// One-line description shown on cards.
   final String? shortDescription;
+
+  /// The Long Description — rich detail, and the last-resort narration text.
   final String? longStory;
   final bool active;
   final DateTime? updatedAt;
@@ -45,7 +54,27 @@ class NearbyGem {
       latitude != null &&
       longitude != null &&
       !(latitude == 0 && longitude == 0);
-  bool get hasStory => (narrationUrl ?? '').trim().isNotEmpty;
+
+  /// Whether a prerecorded/generated narration audio file exists.
+  bool get hasAudio => (narrationUrl ?? '').trim().isNotEmpty;
+
+  /// Back-compat alias — a gem "has a story" once it can be narrated (audio,
+  /// script, or a Long Description to speak).
+  bool get hasStory => canNarrate;
+
+  /// The narration text used when no audio exists: the dedicated script first,
+  /// then the Long Description, then the short description (never empty-string).
+  String? get narrationText {
+    for (final s in [narrationScript, longStory, shortDescription]) {
+      final t = (s ?? '').trim();
+      if (t.isNotEmpty) return t;
+    }
+    return null;
+  }
+
+  /// Whether this gem can be narrated at all (prerecorded audio OR any text we
+  /// can speak on-device).
+  bool get canNarrate => hasAudio || narrationText != null;
 
   /// Badge options offered in the admin editor.
   static const List<String> badgeOptions = [
@@ -80,39 +109,41 @@ class NearbyGem {
       : const [];
 
   factory NearbyGem.fromJson(Map<String, dynamic> j) => NearbyGem(
-        id: (j['id'] ?? '').toString(),
-        name: (j['name'] ?? '') as String,
-        category: j['category'] as String?,
-        badge: j['badge'] as String?,
-        featuredImage: j['featured_image'] as String?,
-        galleryImages: _strs(j['gallery_images']),
-        latitude: _d(j['latitude']),
-        longitude: _d(j['longitude']),
-        address: j['address'] as String?,
-        website: j['website'] as String?,
-        phone: j['phone'] as String?,
-        narrationUrl: j['narration_url'] as String?,
-        shortDescription: j['short_description'] as String?,
-        longStory: j['long_story'] as String?,
-        active: (j['active'] ?? true) as bool,
-        updatedAt: DateTime.tryParse('${j['updated_at']}'),
-      );
+    id: (j['id'] ?? '').toString(),
+    name: (j['name'] ?? '') as String,
+    category: j['category'] as String?,
+    badge: j['badge'] as String?,
+    featuredImage: j['featured_image'] as String?,
+    galleryImages: _strs(j['gallery_images']),
+    latitude: _d(j['latitude']),
+    longitude: _d(j['longitude']),
+    address: j['address'] as String?,
+    website: j['website'] as String?,
+    phone: j['phone'] as String?,
+    narrationUrl: j['narration_url'] as String?,
+    narrationScript: j['narration_script'] as String?,
+    shortDescription: j['short_description'] as String?,
+    longStory: j['long_story'] as String?,
+    active: (j['active'] ?? true) as bool,
+    updatedAt: DateTime.tryParse('${j['updated_at']}'),
+  );
 
   /// Column map for insert/update (id/timestamps managed by the DB).
   Map<String, dynamic> toWrite() => {
-        'name': name,
-        'category': category,
-        'badge': badge,
-        'featured_image': featuredImage,
-        'gallery_images': galleryImages,
-        'latitude': latitude,
-        'longitude': longitude,
-        'address': address,
-        'website': website,
-        'phone': phone,
-        'narration_url': narrationUrl,
-        'short_description': shortDescription,
-        'long_story': longStory,
-        'active': active,
-      };
+    'name': name,
+    'category': category,
+    'badge': badge,
+    'featured_image': featuredImage,
+    'gallery_images': galleryImages,
+    'latitude': latitude,
+    'longitude': longitude,
+    'address': address,
+    'website': website,
+    'phone': phone,
+    'narration_url': narrationUrl,
+    'narration_script': narrationScript,
+    'short_description': shortDescription,
+    'long_story': longStory,
+    'active': active,
+  };
 }

@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
 
 import 'package:explorer_os_mobile/features/admin/species_images/wildlife_placeholder.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/narration/voices.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/models/nearby_gem.dart';
 
@@ -35,15 +39,19 @@ class NearbyGemsManagerPage extends ConsumerWidget {
               Text('Nearby Gems Manager', style: theme.textTheme.headlineSmall),
               const SizedBox(height: 4),
               Text(
-                  'The only source of Nearby Gems. Users see ACTIVE gems within '
-                  'range — nothing is imported from Google Places or elsewhere.',
-                  style: theme.textTheme.bodySmall),
+                'The only source of Nearby Gems. Users see ACTIVE gems within '
+                'range — nothing is imported from Google Places or elsewhere.',
+                style: theme.textTheme.bodySmall,
+              ),
               const SizedBox(height: 12),
-              Wrap(spacing: 12, children: [
-                Chip(label: Text('$active active')),
-                Chip(label: Text('${gems.length - active} inactive')),
-                Chip(label: Text('${gems.length} total')),
-              ]),
+              Wrap(
+                spacing: 12,
+                children: [
+                  Chip(label: Text('$active active')),
+                  Chip(label: Text('${gems.length - active} inactive')),
+                  Chip(label: Text('${gems.length} total')),
+                ],
+              ),
               const SizedBox(height: 16),
               if (gems.isEmpty)
                 Container(
@@ -52,17 +60,20 @@ class NearbyGemsManagerPage extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: theme.dividerColor),
                   ),
-                  child: Column(children: [
-                    const Icon(Icons.diamond_outlined, size: 44),
-                    const SizedBox(height: 8),
-                    const Text('No gems yet.'),
-                    const SizedBox(height: 4),
-                    Text(
+                  child: Column(
+                    children: [
+                      const Icon(Icons.diamond_outlined, size: 44),
+                      const SizedBox(height: 8),
+                      const Text('No gems yet.'),
+                      const SizedBox(height: 4),
+                      Text(
                         'Tap "New Gem" to add one. (Run migration 0034 first if '
                         'you see a load error.)',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.bodySmall),
-                  ]),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 )
               else
                 for (final g in gems) _row(context, ref, g),
@@ -83,24 +94,32 @@ class NearbyGemsManagerPage extends ConsumerWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: SpeciesImageOrPlaceholder(
-                url: g.featuredImage, category: g.category, compact: true),
+              url: g.featuredImage,
+              category: g.category,
+              compact: true,
+            ),
           ),
         ),
-        title: Row(children: [
-          Flexible(child: Text(g.name, overflow: TextOverflow.ellipsis)),
-          if (!g.active) ...[
-            const SizedBox(width: 8),
-            Chip(
+        title: Row(
+          children: [
+            Flexible(child: Text(g.name, overflow: TextOverflow.ellipsis)),
+            if (!g.active) ...[
+              const SizedBox(width: 8),
+              Chip(
                 label: const Text('Inactive'),
                 visualDensity: VisualDensity.compact,
-                backgroundColor: theme.colorScheme.errorContainer),
+                backgroundColor: theme.colorScheme.errorContainer,
+              ),
+            ],
           ],
-        ]),
-        subtitle: Text([
-          if ((g.category ?? '').isNotEmpty) g.category,
-          if ((g.badge ?? '').isNotEmpty) g.badge,
-          if (g.hasStory) 'has story',
-        ].whereType<String>().join(' · ')),
+        ),
+        subtitle: Text(
+          [
+            if ((g.category ?? '').isNotEmpty) g.category,
+            if ((g.badge ?? '').isNotEmpty) g.badge,
+            if (g.hasStory) 'has story',
+          ].whereType<String>().join(' · '),
+        ),
         trailing: PopupMenuButton<String>(
           onSelected: (v) async {
             final repo = ref.read(nearbyGemsRepositoryProvider);
@@ -118,8 +137,9 @@ class NearbyGemsManagerPage extends ConsumerWidget {
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(
-                value: 'toggle',
-                child: Text(g.active ? 'Set inactive' : 'Set active')),
+              value: 'toggle',
+              child: Text(g.active ? 'Set inactive' : 'Set active'),
+            ),
             const PopupMenuItem(value: 'delete', child: Text('Delete')),
           ],
         ),
@@ -128,10 +148,15 @@ class NearbyGemsManagerPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _openEditor(BuildContext context, WidgetRef ref,
-      {NearbyGem? gem}) async {
+  Future<void> _openEditor(
+    BuildContext context,
+    WidgetRef ref, {
+    NearbyGem? gem,
+  }) async {
     final saved = await showDialog<bool>(
-        context: context, builder: (_) => _GemEditor(gem: gem));
+      context: context,
+      builder: (_) => _GemEditor(gem: gem),
+    );
     if (saved == true) ref.read(nearbyGemsRefreshProvider.notifier).bump();
   }
 }
@@ -148,50 +173,79 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
   late final _address = TextEditingController(text: widget.gem?.address ?? '');
   late final _website = TextEditingController(text: widget.gem?.website ?? '');
   late final _phone = TextEditingController(text: widget.gem?.phone ?? '');
-  late final _lat =
-      TextEditingController(text: widget.gem?.latitude?.toString() ?? '');
-  late final _lng =
-      TextEditingController(text: widget.gem?.longitude?.toString() ?? '');
-  late final _short =
-      TextEditingController(text: widget.gem?.shortDescription ?? '');
+  late final _lat = TextEditingController(
+    text: widget.gem?.latitude?.toString() ?? '',
+  );
+  late final _lng = TextEditingController(
+    text: widget.gem?.longitude?.toString() ?? '',
+  );
+  late final _short = TextEditingController(
+    text: widget.gem?.shortDescription ?? '',
+  );
   late final _long = TextEditingController(text: widget.gem?.longStory ?? '');
-  late final _narration =
-      TextEditingController(text: widget.gem?.narrationUrl ?? '');
+  late final _script = TextEditingController(
+    text: widget.gem?.narrationScript ?? '',
+  );
+  late final _narration = TextEditingController(
+    text: widget.gem?.narrationUrl ?? '',
+  );
   late String? _category = widget.gem?.category;
   late String? _badge = widget.gem?.badge;
   late String? _featured = widget.gem?.featuredImage;
+  String? _voiceId; // transient — used only when generating narration
   late final List<String> _gallery = [...?widget.gem?.galleryImages];
   late bool _active = widget.gem?.active ?? true;
   bool _busy = false;
 
+  final AudioPlayer _preview = AudioPlayer();
+  bool _previewing = false;
+
   @override
   void dispose() {
-    for (final c in [_name, _address, _website, _phone, _lat, _lng, _short,
-        _long, _narration]) {
+    for (final c in [
+      _name,
+      _address,
+      _website,
+      _phone,
+      _lat,
+      _lng,
+      _short,
+      _long,
+      _script,
+      _narration,
+    ]) {
       c.dispose();
     }
+    _preview.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage({required bool featured}) async {
-    final res = await FilePicker.platform
-        .pickFiles(type: FileType.image, withData: true);
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
     if (res == null || res.files.isEmpty || res.files.first.bytes == null) {
       return;
     }
     setState(() => _busy = true);
     try {
-      final url = await ref.read(nearbyGemsRepositoryProvider).uploadImage(
-          res.files.first.bytes!, res.files.first.name);
+      final url = await ref
+          .read(nearbyGemsRepositoryProvider)
+          .uploadImage(res.files.first.bytes!, res.files.first.name);
       setState(() => featured ? _featured = url : _gallery.add(url));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Image uploaded — press Save to keep it.')));
+          const SnackBar(
+            content: Text('Image uploaded — press Save to keep it.'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -234,8 +288,9 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
       _category ??= _gemCategoryFor(loc.type);
     });
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Matched to ${loc.name}')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Matched to ${loc.name}')));
     }
   }
 
@@ -263,62 +318,154 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
   }
 
   Future<void> _pickAudio() async {
-    final res = await FilePicker.platform
-        .pickFiles(type: FileType.audio, withData: true);
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      withData: true,
+    );
     if (res == null || res.files.isEmpty || res.files.first.bytes == null) {
       return;
     }
     setState(() => _busy = true);
     try {
-      final url = await ref.read(nearbyGemsRepositoryProvider).uploadImage(
-          res.files.first.bytes!, res.files.first.name,
-          contentType: 'audio/mpeg');
+      final url = await ref
+          .read(nearbyGemsRepositoryProvider)
+          .uploadImage(
+            res.files.first.bytes!,
+            res.files.first.name,
+            contentType: 'audio/mpeg',
+          );
       setState(() => _narration.text = url);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
+  String? _nn(String s) => s.trim().isEmpty ? null : s.trim();
+
+  Map<String, dynamic> _rowMap() => {
+    'name': _name.text.trim(),
+    'category': _category,
+    'badge': _badge,
+    'featured_image': _featured,
+    'gallery_images': _gallery,
+    'latitude': double.tryParse(_lat.text.trim()),
+    'longitude': double.tryParse(_lng.text.trim()),
+    'address': _nn(_address.text),
+    'website': _nn(_website.text),
+    'phone': _nn(_phone.text),
+    'narration_url': _nn(_narration.text),
+    'narration_script': _nn(_script.text),
+    'short_description': _nn(_short.text),
+    'long_story': _nn(_long.text),
+    'active': _active,
+  };
+
   Future<void> _save() async {
     if (_name.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Name is required.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Name is required.')));
       return;
     }
     setState(() => _busy = true);
-    final row = <String, dynamic>{
-      'name': _name.text.trim(),
-      'category': _category,
-      'badge': _badge,
-      'featured_image': _featured,
-      'gallery_images': _gallery,
-      'latitude': double.tryParse(_lat.text.trim()),
-      'longitude': double.tryParse(_lng.text.trim()),
-      'address': _address.text.trim().isEmpty ? null : _address.text.trim(),
-      'website': _website.text.trim().isEmpty ? null : _website.text.trim(),
-      'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
-      'narration_url':
-          _narration.text.trim().isEmpty ? null : _narration.text.trim(),
-      'short_description':
-          _short.text.trim().isEmpty ? null : _short.text.trim(),
-      'long_story': _long.text.trim().isEmpty ? null : _long.text.trim(),
-      'active': _active,
-    };
     try {
       final repo = ref.read(nearbyGemsRepositoryProvider);
       if (widget.gem == null) {
-        await repo.create(row);
+        await repo.create(_rowMap());
       } else {
-        await repo.update(widget.gem!.id, row);
+        await repo.update(widget.gem!.id, _rowMap());
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
+  }
+
+  /// Enqueues an ElevenLabs narration job for this gem (same worker pipeline as
+  /// park stories). Persists the latest edits first so the worker voices the
+  /// current script, then queues the job. Only for saved gems.
+  Future<void> _generateNarration() async {
+    if (_name.text.trim().isEmpty) {
+      _snack('Name is required.');
+      return;
+    }
+    if ((_script.text.trim().isEmpty) &&
+        (_long.text.trim().isEmpty) &&
+        (_short.text.trim().isEmpty)) {
+      _snack('Add a narration script (or a description) to generate audio.');
+      return;
+    }
+    final existing = widget.gem;
+    if (existing == null) {
+      _snack('Create the gem first, then reopen it to generate narration.');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final repo = ref.read(nearbyGemsRepositoryProvider);
+      // Save the latest script/descriptions so the worker voices what's shown.
+      await repo.update(existing.id, _rowMap());
+      final gem = NearbyGem(
+        id: existing.id,
+        name: _name.text.trim(),
+        latitude: double.tryParse(_lat.text.trim()),
+        longitude: double.tryParse(_lng.text.trim()),
+        narrationScript: _nn(_script.text),
+        longStory: _nn(_long.text),
+        shortDescription: _nn(_short.text),
+      );
+      final queued = await repo.enqueueGemAudio(gem, voiceId: _voiceId);
+      ref.read(nearbyGemsRefreshProvider.notifier).bump();
+      _snack(
+        queued
+            ? 'Narration queued — the voice worker runs every few minutes. '
+                  'Reopen this gem to preview the audio once it appears.'
+            : 'Could not queue narration (Supabase not configured).',
+      );
+    } catch (e) {
+      _snack('Generate failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Plays / stops the gem's narration audio so an admin can hear the voice.
+  Future<void> _togglePreview() async {
+    final url = _narration.text.trim();
+    if (url.isEmpty) {
+      _snack(
+        'No narration audio yet — upload one or Generate Narration first.',
+      );
+      return;
+    }
+    if (_previewing) {
+      await _preview.stop();
+      if (mounted) setState(() => _previewing = false);
+      return;
+    }
+    try {
+      setState(() => _previewing = true);
+      await _preview.setUrl(url);
+      unawaited(_preview.play());
+      _preview.playerStateStream.listen((s) {
+        if (s.processingState == ProcessingState.completed && mounted) {
+          setState(() => _previewing = false);
+        }
+      });
+    } catch (e) {
+      if (mounted) setState(() => _previewing = false);
+      _snack('Preview failed: $e');
+    }
+  }
+
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
   @override
@@ -328,128 +475,209 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
       content: SizedBox(
         width: 560,
         child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Featured image — tap the image itself to upload (unmissable).
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: _busy ? null : () => _pickImage(featured: true),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      SpeciesImageOrPlaceholder(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Featured image — tap the image itself to upload (unmissable).
+              AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: _busy ? null : () => _pickImage(featured: true),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        SpeciesImageOrPlaceholder(
                           url: _featured,
                           category: _category,
-                          label: _name.text),
-                      if ((_featured ?? '').isEmpty)
-                        const Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add_a_photo_rounded,
-                                  color: Colors.white, size: 30),
-                              SizedBox(height: 6),
-                              Text('Tap to add a photo',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600)),
-                            ],
-                          ),
+                          label: _name.text,
                         ),
-                    ],
+                        if ((_featured ?? '').isEmpty)
+                          const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.add_a_photo_rounded,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                                SizedBox(height: 6),
+                                Text(
+                                  'Tap to add a photo',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Row(children: [
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => _pickImage(featured: true),
-                icon: const Icon(Icons.image_rounded, size: 18),
-                label: const Text('Featured image'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _pickImage(featured: true),
+                    icon: const Icon(Icons.image_rounded, size: 18),
+                    label: const Text('Featured image'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _pickImage(featured: false),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_rounded,
+                      size: 18,
+                    ),
+                    label: Text('Gallery (${_gallery.length})'),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => _pickImage(featured: false),
-                icon: const Icon(Icons.add_photo_alternate_rounded, size: 18),
-                label: Text('Gallery (${_gallery.length})'),
+              const SizedBox(height: 8),
+              // Reuse an existing ExplorerOS location's photo + coordinates
+              // instead of uploading from scratch.
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy ? null : _matchLocation,
+                  icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                  label: const Text('Match to an ExplorerOS location'),
+                ),
               ),
-            ]),
-            const SizedBox(height: 8),
-            // Reuse an existing ExplorerOS location's photo + coordinates
-            // instead of uploading from scratch.
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                onPressed: _busy ? null : _matchLocation,
-                icon: const Icon(Icons.travel_explore_rounded, size: 18),
-                label: const Text('Match to an ExplorerOS location'),
+              const Divider(height: 24),
+              _f(_name, 'Name *'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _dropdown(
+                      'Category',
+                      NearbyGem.categoryOptions,
+                      _category,
+                      (v) => setState(() => _category = v),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _dropdown(
+                      'ExplorerOS Badge',
+                      NearbyGem.badgeOptions,
+                      _badge,
+                      (v) => setState(() => _badge = v),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const Divider(height: 24),
-            _f(_name, 'Name *'),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _dropdown('Category', NearbyGem.categoryOptions,
-                  _category, (v) => setState(() => _category = v))),
-              const SizedBox(width: 8),
-              Expanded(child: _dropdown('ExplorerOS Badge',
-                  NearbyGem.badgeOptions, _badge, (v) => setState(() => _badge = v))),
-            ]),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _f(_lat, 'Latitude')),
-              const SizedBox(width: 8),
-              Expanded(child: _f(_lng, 'Longitude')),
-            ]),
-            const SizedBox(height: 8),
-            _f(_address, 'Address'),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _f(_website, 'Website')),
-              const SizedBox(width: 8),
-              Expanded(child: _f(_phone, 'Phone')),
-            ]),
-            const SizedBox(height: 8),
-            _f(_short, 'Short description', maxLines: 2),
-            const SizedBox(height: 8),
-            _f(_long, 'Long story', maxLines: 4),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _f(_narration, 'AI narration audio URL')),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _pickAudio,
-                icon: const Icon(Icons.audiotrack_rounded, size: 18),
-                label: const Text('Upload'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: _f(_lat, 'Latitude')),
+                  const SizedBox(width: 8),
+                  Expanded(child: _f(_lng, 'Longitude')),
+                ],
               ),
-            ]),
-            const SizedBox(height: 8),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: _active,
-              onChanged: (v) => setState(() => _active = v),
-              title: const Text('Active (visible to users)'),
-            ),
-            if (_busy)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              _f(_address, 'Address'),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: _f(_website, 'Website')),
+                  const SizedBox(width: 8),
+                  Expanded(child: _f(_phone, 'Phone')),
+                ],
               ),
-          ]),
+              const SizedBox(height: 8),
+              _f(_short, 'Short description', maxLines: 2),
+              const SizedBox(height: 8),
+              _f(_long, 'Long description', maxLines: 4),
+              const SizedBox(height: 8),
+              _f(_script, 'Narration script (spoken aloud)', maxLines: 5),
+              const SizedBox(height: 4),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Played first if audio exists, else this script is spoken; '
+                  'falls back to the Long Description.',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _dropdown(
+                'Narration voice (ElevenLabs)',
+                [for (final v in narrationVoices) v.id],
+                _voiceId,
+                (v) => setState(() => _voiceId = v),
+                labelFor: (id) => voiceNameForId(id) ?? id,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: _f(_narration, 'Narration audio URL')),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _pickAudio,
+                    icon: const Icon(Icons.upload_file_rounded, size: 18),
+                    label: const Text('Upload'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: _busy ? null : _generateNarration,
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                      label: const Text('Generate Narration'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _togglePreview,
+                      icon: Icon(
+                        _previewing
+                            ? Icons.stop_rounded
+                            : Icons.volume_up_rounded,
+                        size: 18,
+                      ),
+                      label: Text(_previewing ? 'Stop' : 'Voice Preview'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _active,
+                onChanged: (v) => setState(() => _active = v),
+                title: const Text('Active (visible to users)'),
+              ),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: LinearProgressIndicator(),
+                ),
+            ],
+          ),
         ),
       ),
       actions: [
         TextButton(
-            onPressed: _busy ? null : () => Navigator.pop(context, false),
-            child: const Text('Cancel')),
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
-            onPressed: _busy ? null : _save,
-            child: Text(widget.gem == null ? 'Create' : 'Save')),
+          onPressed: _busy ? null : _save,
+          child: Text(widget.gem == null ? 'Create' : 'Save'),
+        ),
       ],
     );
   }
@@ -460,26 +688,36 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
         maxLines: maxLines,
         onChanged: (_) => setState(() {}),
         decoration: InputDecoration(
-            labelText: label,
-            isDense: true,
-            border: const OutlineInputBorder()),
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
       );
 
-  Widget _dropdown(String label, List<String> options, String? value,
-          ValueChanged<String?> onChanged) =>
-      DropdownButtonFormField<String?>(
-        initialValue: value,
-        isExpanded: true,
-        decoration: InputDecoration(
-            labelText: label,
-            isDense: true,
-            border: const OutlineInputBorder()),
-        items: [
-          const DropdownMenuItem(value: null, child: Text('—')),
-          for (final o in options) DropdownMenuItem(value: o, child: Text(o)),
-        ],
-        onChanged: onChanged,
-      );
+  Widget _dropdown(
+    String label,
+    List<String> options,
+    String? value,
+    ValueChanged<String?> onChanged, {
+    String Function(String)? labelFor,
+  }) => DropdownButtonFormField<String?>(
+    initialValue: value,
+    isExpanded: true,
+    decoration: InputDecoration(
+      labelText: label,
+      isDense: true,
+      border: const OutlineInputBorder(),
+    ),
+    items: [
+      const DropdownMenuItem(value: null, child: Text('—')),
+      for (final o in options)
+        DropdownMenuItem(
+          value: o,
+          child: Text(labelFor == null ? o : labelFor(o)),
+        ),
+    ],
+    onChanged: onChanged,
+  );
 }
 
 /// A searchable picker over the master `locations` list — used to match a gem
@@ -497,10 +735,12 @@ class _LocationPickerState extends State<_LocationPicker> {
   Widget build(BuildContext context) {
     final q = _q.toLowerCase();
     final items = widget.all
-        .where((l) =>
-            q.isEmpty ||
-            l.name.toLowerCase().contains(q) ||
-            (l.county ?? '').toLowerCase().contains(q))
+        .where(
+          (l) =>
+              q.isEmpty ||
+              l.name.toLowerCase().contains(q) ||
+              (l.county ?? '').toLowerCase().contains(q),
+        )
         .take(200)
         .toList();
     return AlertDialog(
@@ -508,52 +748,65 @@ class _LocationPickerState extends State<_LocationPicker> {
       content: SizedBox(
         width: 460,
         height: 480,
-        child: Column(children: [
-          TextField(
-            autofocus: true,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search_rounded),
-              hintText: 'Search locations by name or county…',
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search_rounded),
+                hintText: 'Search locations by name or county…',
+              ),
+              onChanged: (v) => setState(() => _q = v),
             ),
-            onChanged: (v) => setState(() => _q = v),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: items.isEmpty
-                ? const Center(child: Text('No matches'))
-                : ListView.builder(
-                    itemCount: items.length,
-                    itemBuilder: (_, i) {
-                      final l = items[i];
-                      final hero = l.images.isNotEmpty ? l.images.first : null;
-                      return ListTile(
-                        leading: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: SpeciesImageOrPlaceholder(
-                                url: hero, category: l.type.label, compact: true),
+            const SizedBox(height: 8),
+            Expanded(
+              child: items.isEmpty
+                  ? const Center(child: Text('No matches'))
+                  : ListView.builder(
+                      itemCount: items.length,
+                      itemBuilder: (_, i) {
+                        final l = items[i];
+                        final hero = l.images.isNotEmpty
+                            ? l.images.first
+                            : null;
+                        return ListTile(
+                          leading: SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: SpeciesImageOrPlaceholder(
+                                url: hero,
+                                category: l.type.label,
+                                compact: true,
+                              ),
+                            ),
                           ),
-                        ),
-                        title: Text(l.name,
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text([
-                          l.type.label,
-                          if (l.county != null) '${l.county} County',
-                          '${l.images.length} photo(s)',
-                        ].join(' · ')),
-                        onTap: () => Navigator.pop(context, l),
-                      );
-                    },
-                  ),
-          ),
-        ]),
+                          title: Text(
+                            l.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            [
+                              l.type.label,
+                              if (l.county != null) '${l.county} County',
+                              '${l.images.length} photo(s)',
+                            ].join(' · '),
+                          ),
+                          onTap: () => Navigator.pop(context, l),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
       ],
     );
   }

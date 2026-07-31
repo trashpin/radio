@@ -8,6 +8,8 @@
 //   - full             -> research + narration scripts (dashboard button)
 //   - audio            -> master-location narration (OpenAI + ElevenLabs) ->
 //                         voiceovers bucket + locations.audio_files (PENDING→READY)
+//                         OR (notes "nearby_gem:*") voice a Nearby Gem's script
+//                         (ElevenLabs) -> voiceovers + nearby_gems.narration_url
 //   - wikimedia_import -> find a Commons hero image -> media bucket +
 //                         locations.images + media_assets attribution
 //
@@ -475,6 +477,55 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
   return { done: true, msg: `voiced ${loc.name} (${Math.round(bytes.length / 1024)} KB)` };
 }
 
+// Extract an ElevenLabs voice id from a job note like "...;voice=<id>".
+function noteVoiceId(notes: string | null): string | null {
+  const m = /voice=([A-Za-z0-9]+)/.exec(notes ?? "");
+  return m ? m[1] : null;
+}
+
+// ── audio (nearby_gem): voice a Nearby Gem's script -> voiceovers -> narration_url ──
+// Triggered by the admin "Generate Narration" button. Voices the gem's
+// narration_script (falling back to long_story, then short_description) with
+// ElevenLabs and stores the public URL on nearby_gems.narration_url so the
+// traveler's "Local Gems" tap plays a real recording on the radio.
+export async function doGemAudio(job: any): Promise<{ done: boolean; msg: string }> {
+  if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no gem id in notes" };
+  const rows = await sbGet(
+    `nearby_gems?id=eq.${id}&select=id,name,category,narration_script,long_story,short_description&limit=1`,
+  );
+  const gem = rows[0];
+  if (!gem) return { done: true, msg: `gem not found: ${id}` };
+
+  const text = String(
+    gem.narration_script || gem.long_story || gem.short_description || "",
+  ).trim();
+  if (!text) return { done: true, msg: "no narration text for gem" };
+
+  const voiceId = noteVoiceId(job.notes) ||
+    (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+  const tts = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+    },
+  );
+  if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+  const bytes = new Uint8Array(await tts.arrayBuffer());
+  const path = `gems/${id}.mp3`;
+  const up = await fetch(
+    buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
+    { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+  );
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  const url = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
+  await sbPatch(`nearby_gems?id=eq.${id}`, { narration_url: url });
+  return { done: true, msg: `voiced gem ${gem.name} (${Math.round(bytes.length / 1024)} KB)` };
+}
+
 // ── wikimedia_import: find a hero image on Commons and attach it ──
 // Mirrors tool/wikimedia_import.py: search, filter (name match, >=1200px, real
 // photos only), download the best, upload to media/destination-images/, set the
@@ -640,7 +691,11 @@ async function processJob(job: any): Promise<void> {
         res = await doAudio(job);
         break;
       case "audio":
-        res = await doLocationAudio(job);
+        // `audio` jobs are shared: a `nearby_gem:*` note voices a Nearby Gem,
+        // a `master_location:*` note voices a master location.
+        res = String(job.notes ?? "").startsWith("nearby_gem")
+            ? await doGemAudio(job)
+            : await doLocationAudio(job);
         break;
       case "wikimedia_import":
         res = await doWikimediaImport(job);
@@ -703,7 +758,12 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.master_location*` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
-  const jobs = [...primary, ...locAudio]
+  // `audio` jobs that target a Nearby Gem (notes start with "nearby_gem").
+  const gemAudio = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.nearby_gem*` +
+      `&order=created_at.asc&limit=${limit}&select=*`,
+  );
+  const jobs = [...primary, ...locAudio, ...gemAudio]
     .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
     .slice(0, limit);
   const results: unknown[] = [];
