@@ -68,4 +68,17 @@ if [ -n "${GOOGLE_MAPS_API_KEY:-}" ]; then
   done
 fi
 
+# 5. Service-worker KILL SWITCH. Flutter's service worker aggressively caches the
+# app shell, so returning users kept seeing stale builds (e.g. an admin page
+# missing newly-shipped buttons). Replace it with a self-unregistering worker:
+# when a browser (even one with a stuck old SW) fetches the new
+# flutter_service_worker.js — which is served no-cache — it installs this,
+# clears ALL caches, and unregisters itself. No fetch handler = nothing is ever
+# served stale; every load comes from the network (hashed assets stay cacheable
+# via HTTP). It does NOT force-navigate, so there is no reload loop.
+KILL_SW='self.addEventListener("install",function(){self.skipWaiting();});self.addEventListener("activate",function(e){e.waitUntil((async function(){try{var k=await caches.keys();await Promise.all(k.map(function(c){return caches.delete(c);}));}catch(_){}try{await self.registration.unregister();}catch(_){}})());});'
+for f in build/web/flutter_service_worker.js build/web/admin/flutter_service_worker.js; do
+  [ -f "$f" ] && printf '%s' "$KILL_SW" > "$f"
+done
+
 echo "Build complete -> build/web (app at /, admin at /admin/)"
