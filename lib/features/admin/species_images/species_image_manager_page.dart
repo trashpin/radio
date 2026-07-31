@@ -207,18 +207,44 @@ class _ManageTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(_selectedSpeciesProvider);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SizedBox(width: 280, child: _SpeciesPicker(selected: selected)),
-        const VerticalDivider(width: 1),
-        Expanded(
-          child: selected == null
-              ? const Center(child: Text('Select a species to manage its photos.'))
-              : _SpeciesPanel(species: selected),
-        ),
-      ],
-    );
+    return LayoutBuilder(builder: (context, c) {
+      // Wide: two columns (list + panel). Narrow (phone/tablet): one column —
+      // show the searchable list, or the selected species' panel with a back
+      // affordance — so the Upload button is never squeezed off-screen.
+      final wide = c.maxWidth >= 720;
+      if (wide) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: 300, child: _SpeciesPicker(selected: selected)),
+            const VerticalDivider(width: 1),
+            Expanded(
+              child: selected == null
+                  ? const Center(
+                      child: Text('Select a species to manage its photos.'))
+                  : _SpeciesPanel(species: selected),
+            ),
+          ],
+        );
+      }
+      if (selected == null) return _SpeciesPicker(selected: selected);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: ListTile(
+              leading: const Icon(Icons.arrow_back_rounded),
+              title: const Text('Choose a different species'),
+              onTap: () =>
+                  ref.read(_selectedSpeciesProvider.notifier).select(null),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(child: _SpeciesPanel(species: selected)),
+        ],
+      );
+    });
   }
 }
 
@@ -344,31 +370,37 @@ class _SpeciesPanelState extends ConsumerState<_SpeciesPanel> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Row(children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(s.commonName, style: theme.textTheme.headlineSmall),
-                if ((s.scientificName ?? '').isNotEmpty)
-                  Text(s.scientificName!,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(fontStyle: FontStyle.italic)),
-                Text(s.category, style: theme.textTheme.bodySmall),
-              ],
-            ),
-          ),
-          FilledButton.icon(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(s.commonName, style: theme.textTheme.headlineSmall),
+            if ((s.scientificName ?? '').isNotEmpty)
+              Text(s.scientificName!,
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(fontStyle: FontStyle.italic)),
+            Text(s.category, style: theme.textTheme.bodySmall),
+          ],
+        ),
+        const SizedBox(height: 14),
+        // Always-visible, full-width upload action.
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
             onPressed: _busy ? null : _upload,
             icon: _busy
                 ? const SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.upload_rounded),
-            label: const Text('Upload photos'),
+                : const Icon(Icons.add_photo_alternate_rounded),
+            label: Text(_busy ? 'Uploading…' : 'Upload / Replace Photos'),
           ),
-        ]),
+        ),
+        const SizedBox(height: 6),
+        Text('Photos save automatically. Set featured, approve, reorder or '
+            'delete each photo below.',
+            style: theme.textTheme.bodySmall),
         const SizedBox(height: 20),
         // Card preview (how the species card looks).
         Text('Card preview', style: theme.textTheme.titleMedium),
