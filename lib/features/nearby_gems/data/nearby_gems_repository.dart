@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show FileOptions, PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
@@ -21,10 +22,7 @@ class NearbyGemsRepository {
       var q = SupabaseService.client.from('nearby_gems').select();
       if (activeOnly) q = q.eq('active', true);
       final rows = await q.order('name', ascending: true) as List;
-      return rows
-          .cast<Map<String, dynamic>>()
-          .map(NearbyGem.fromJson)
-          .toList();
+      return rows.cast<Map<String, dynamic>>().map(NearbyGem.fromJson).toList();
     } catch (_) {
       return const []; // table may not exist until migration 0034 is applied
     }
@@ -33,20 +31,70 @@ class NearbyGemsRepository {
   Future<List<NearbyGem>> all() => _query();
   Future<List<NearbyGem>> active() => _query(activeOnly: true);
 
-  Future<void> create(Map<String, dynamic> row) =>
-      SupabaseService.client.from('nearby_gems').insert(row);
-  Future<void> update(String id, Map<String, dynamic> fields) =>
-      SupabaseService.client.from('nearby_gems').update(fields).eq('id', id);
+  Future<void> create(Map<String, dynamic> row) => _resilient(
+    row,
+    (r) => SupabaseService.client.from('nearby_gems').insert(r),
+  );
+  Future<void> update(String id, Map<String, dynamic> fields) => _resilient(
+    fields,
+    (r) => SupabaseService.client.from('nearby_gems').update(r).eq('id', id),
+  );
   Future<void> delete(String id) =>
       SupabaseService.client.from('nearby_gems').delete().eq('id', id);
 
+  /// Runs a write, and if it fails only because `narration_script` isn't in the
+  /// schema yet (migration 0035 not applied), transparently retries without it
+  /// so existing gem editing never breaks before the column exists.
+  Future<void> _resilient(
+    Map<String, dynamic> row,
+    Future<void> Function(Map<String, dynamic>) run,
+  ) async {
+    try {
+      await run(row);
+    } on PostgrestException catch (e) {
+      final missingScript =
+          row.containsKey('narration_script') &&
+          e.message.contains('narration_script');
+      if (!missingScript) rethrow;
+      final fallback = Map<String, dynamic>.from(row)
+        ..remove('narration_script');
+      await run(fallback);
+    }
+  }
+
+  /// Enqueues an ElevenLabs narration-generation job for a gem, drained by the
+  /// existing narration worker (same pipeline as master-location audio). The
+  /// worker voices the gem's script/Long Description and sets `narration_url`.
+  /// Returns false when Supabase isn't configured.
+  Future<bool> enqueueGemAudio(NearbyGem gem, {String? voiceId}) async {
+    if (!SupabaseService.isConfigured) return false;
+    await SupabaseService.client.from('generation_jobs').insert({
+      'destination': gem.name,
+      'job_type': 'audio',
+      'status': 'pending',
+      'latitude': gem.latitude,
+      'longitude': gem.longitude,
+      'radius_m': 150,
+      'progress': 0,
+      'notes':
+          'nearby_gem:voice;id=${gem.id}'
+          '${(voiceId ?? '').isEmpty ? '' : ';voice=$voiceId'}',
+    });
+    return true;
+  }
+
   /// Uploads an image to the `media` bucket and returns its public URL.
-  Future<String> uploadImage(Uint8List bytes, String filename,
-      {String contentType = 'image/jpeg'}) async {
+  Future<String> uploadImage(
+    Uint8List bytes,
+    String filename, {
+    String contentType = 'image/jpeg',
+  }) async {
     final client = SupabaseService.client;
     final slug = filename.toLowerCase().replaceAll(RegExp(r'[^a-z0-9.]+'), '_');
     final path = 'nearby_gems/${DateTime.now().millisecondsSinceEpoch}_$slug';
-    await client.storage.from(bucket).uploadBinary(
+    await client.storage
+        .from(bucket)
+        .uploadBinary(
           path,
           bytes,
           fileOptions: FileOptions(upsert: true, contentType: contentType),
@@ -55,8 +103,9 @@ class NearbyGemsRepository {
   }
 }
 
-final nearbyGemsRepositoryProvider =
-    Provider<NearbyGemsRepository>((ref) => const NearbyGemsRepository());
+final nearbyGemsRepositoryProvider = Provider<NearbyGemsRepository>(
+  (ref) => const NearbyGemsRepository(),
+);
 
 class NearbyGemsRefresh extends Notifier<int> {
   @override
@@ -64,8 +113,9 @@ class NearbyGemsRefresh extends Notifier<int> {
   void bump() => state++;
 }
 
-final nearbyGemsRefreshProvider =
-    NotifierProvider<NearbyGemsRefresh, int>(NearbyGemsRefresh.new);
+final nearbyGemsRefreshProvider = NotifierProvider<NearbyGemsRefresh, int>(
+  NearbyGemsRefresh.new,
+);
 
 /// Every gem (admin list).
 final allNearbyGemsProvider = FutureProvider<List<NearbyGem>>((ref) {
@@ -99,7 +149,11 @@ final nearbyGemsForUserProvider = Provider<List<NearbyGemHit>>((ref) {
   for (final g in gems) {
     if (!g.hasCoordinates) continue;
     final m = GeoMath.distanceMeters(
-        center.latitude, center.longitude, g.latitude!, g.longitude!);
+      center.latitude,
+      center.longitude,
+      g.latitude!,
+      g.longitude!,
+    );
     if (m <= kNearbyGemsRadiusMeters) hits.add(NearbyGemHit(g, m));
   }
   hits.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));

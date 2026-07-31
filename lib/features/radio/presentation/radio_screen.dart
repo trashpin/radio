@@ -15,6 +15,7 @@ import 'package:explorer_os_mobile/features/locations/presentation/destination_d
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/gem_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/observation_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
@@ -104,7 +105,9 @@ class RadioScreen extends ConsumerWidget {
       body: session.when(
         loading: () => const _Message(message: 'Tuning in…', spinner: true),
         error: (error, stack) {
-          final e = error is AppException ? error : ErrorHandler.from(error, stack);
+          final e = error is AppException
+              ? error
+              : ErrorHandler.from(error, stack);
           return _Message(
             message: e.message,
             onRetry: () => ref.invalidate(radioSessionProvider),
@@ -144,8 +147,10 @@ class _Message extends StatelessWidget {
               const SizedBox(height: 20),
               TextButton(
                 onPressed: onRetry,
-                child: const Text('Try again',
-                    style: TextStyle(color: RD.green)),
+                child: const Text(
+                  'Try again',
+                  style: TextStyle(color: RD.green),
+                ),
               ),
             ],
           ],
@@ -156,7 +161,7 @@ class _Message extends StatelessWidget {
 }
 
 /// Which temporary live "report" is interrupting the station (if any).
-enum _Interruption { none, iSeeSomething, whatsNearMe }
+enum _Interruption { none, iSeeSomething, whatsNearMe, gem }
 
 class _Player extends ConsumerStatefulWidget {
   const _Player({required this.station});
@@ -190,6 +195,7 @@ class _PlayerState extends ConsumerState<_Player> {
     final controller = ref.read(radioEngineControllerProvider.notifier);
     final obs = ref.watch(observationControllerProvider);
     final nearby = ref.watch(nearbyNarrationControllerProvider);
+    final gem = ref.watch(gemNarrationControllerProvider);
     final nearbyStories = ref.watch(nearbyLocationsProvider);
     final weather = ref.watch(currentWeatherProvider);
     final isPlaying = playback.status == PlaybackStatus.playing;
@@ -200,21 +206,27 @@ class _PlayerState extends ConsumerState<_Player> {
     final interruption = (obs.active && obs.narrating)
         ? _Interruption.iSeeSomething
         : (nearby.active && nearby.narrating
-            ? _Interruption.whatsNearMe
-            : _Interruption.none);
+              ? _Interruption.whatsNearMe
+              : (gem.active && gem.narrating
+                    ? _Interruption.gem
+                    : _Interruption.none));
 
     // What's on air right now (never the internal category).
     final nowPlaying = playback.current?.segment;
     final title = switch (interruption) {
       _Interruption.iSeeSomething => obs.species!.commonName,
       _Interruption.whatsNearMe => nearby.location?.name ?? 'Nearby',
-      _Interruption.none => (nowPlaying?.title.trim().isNotEmpty ?? false)
-          ? nowPlaying!.title
-          : 'ExplorerOS Radio',
+      _Interruption.gem => gem.gem?.name ?? 'Local Gem',
+      _Interruption.none =>
+        (nowPlaying?.title.trim().isNotEmpty ?? false)
+            ? nowPlaying!.title
+            : 'ExplorerOS Radio',
     };
-    final onAir = isPlaying ||
+    final onAir =
+        isPlaying ||
         (obs.active && obs.narrating) ||
-        (nearby.active && nearby.narrating);
+        (nearby.active && nearby.narrating) ||
+        (gem.active && gem.narrating);
 
     // A song's cover art takes over the display while music is playing.
     final songCover = nowPlaying?.type == AudioSegmentType.music
@@ -226,25 +238,36 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
-    final heroImage = obs.species?.heroImageUrl ??
+    final heroImage =
+        obs.species?.heroImageUrl ??
         ((songCover ?? '').isNotEmpty
             ? songCover
             : (nearest?.location.images.isNotEmpty ?? false
-                ? nearest!.location.images.first
-                : widget.station.imageUrl));
+                  ? nearest!.location.images.first
+                  : widget.station.imageUrl));
     final nearbyPlace = nearest?.location.name ?? widget.station.name;
-    final nearbyDistance =
-        nearest == null ? null : _miles(nearest.distanceMeters);
+    final nearbyDistance = nearest == null
+        ? null
+        : _miles(nearest.distanceMeters);
 
     void backToRadio() {
       if (obs.active) ref.read(observationControllerProvider.notifier).clear();
       if (nearby.active) {
         ref.read(nearbyNarrationControllerProvider.notifier).clear();
       }
+      if (gem.active) {
+        ref.read(gemNarrationControllerProvider.notifier).clear();
+      }
     }
 
     // The item currently on air (if any) → drives the expanded Now Playing hero.
-    final np = _nowPlayingContent(interruption, obs, nearby, nearbyStories);
+    final np = _nowPlayingContent(
+      interruption,
+      obs,
+      nearby,
+      gem,
+      nearbyStories,
+    );
     final expanded = np != null;
     final favorites = ref.watch(locationFavoritesProvider);
     final isFav = np?.locationId != null && favorites.contains(np!.locationId);
@@ -272,8 +295,9 @@ class _PlayerState extends ConsumerState<_Player> {
                 opacity: anim,
                 child: SlideTransition(
                   position: Tween(
-                          begin: const Offset(0, 0.05), end: Offset.zero)
-                      .animate(anim),
+                    begin: const Offset(0, 0.05),
+                    end: Offset.zero,
+                  ).animate(anim),
                   child: child,
                 ),
               ),
@@ -283,20 +307,24 @@ class _PlayerState extends ConsumerState<_Player> {
                       content: np,
                       isPlaying: isPlaying,
                       isFavorite: isFav,
-                      onPlayPause:
-                          isPlaying ? controller.pause : controller.play,
+                      onPlayPause: isPlaying
+                          ? controller.pause
+                          : controller.play,
                       onSkip: controller.skip,
                       onFavorite: np.canFavorite
                           ? () => ref
-                              .read(locationFavoritesProvider.notifier)
-                              .toggle(np.locationId!)
+                                .read(locationFavoritesProvider.notifier)
+                                .toggle(np.locationId!)
                           : null,
                       onNavigate: np.canNavigate
                           ? () => _navigate(np.latitude!, np.longitude!)
                           : null,
                       onMorePhotos: np.hasGallery
                           ? () => showRadioPhotoGallery(
-                              context, np.images, np.title)
+                              context,
+                              np.images,
+                              np.title,
+                            )
                           : null,
                       onBackToRadio: backToRadio,
                     )
@@ -320,8 +348,9 @@ class _PlayerState extends ConsumerState<_Player> {
                         const SizedBox(height: RD.md),
                         _TransportRow(
                           isPlaying: isPlaying,
-                          onPlayPause:
-                              isPlaying ? controller.pause : controller.play,
+                          onPlayPause: isPlaying
+                              ? controller.pause
+                              : controller.play,
                           onPrevious: controller.previous,
                           onNext: controller.skip,
                           active: onAir,
@@ -364,8 +393,25 @@ class _PlayerState extends ConsumerState<_Player> {
     _Interruption interruption,
     ObservationState obs,
     NearbyNarrationState nearby,
+    GemNarrationState gemState,
     List<NearbyLocation> nearbyStories,
   ) {
+    if (interruption == _Interruption.gem && gemState.gem != null) {
+      final g = gemState.gem!;
+      final images = <String>[
+        if ((g.featuredImage ?? '').isNotEmpty) g.featuredImage!,
+        ...g.galleryImages.where((u) => u != g.featuredImage),
+      ];
+      return _NowPlayingContent(
+        title: g.name,
+        category: (g.category ?? '').isNotEmpty ? g.category! : 'Local Gem',
+        images: images,
+        // Gems keep the Navigate button visible during playback when we have
+        // coordinates; they aren't part of the locations favorites list.
+        latitude: g.hasCoordinates ? g.latitude : null,
+        longitude: g.hasCoordinates ? g.longitude : null,
+      );
+    }
     if (interruption == _Interruption.iSeeSomething && obs.species != null) {
       final s = obs.species!;
       final img = _resolveSpeciesImage(s.heroImageUrl);
@@ -399,18 +445,21 @@ class _PlayerState extends ConsumerState<_Player> {
 
   Future<void> _navigate(double lat, double lng) async {
     final uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+      'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+    );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) _snack('Could not open navigation');
   }
 
   static String _miles(double meters) {
     final mi = meters / 1609.344;
-    return mi < 10 ? '${mi.toStringAsFixed(1)} miles away' : '${mi.round()} miles away';
+    return mi < 10
+        ? '${mi.toStringAsFixed(1)} miles away'
+        : '${mi.round()} miles away';
   }
 
-  void _snack(String m) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
   void _openMenu() {
     showModalBottomSheet<void>(
@@ -428,12 +477,16 @@ class _PlayerState extends ConsumerState<_Player> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                  color: RD.stroke, borderRadius: BorderRadius.circular(2)),
+                color: RD.stroke,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.radio_rounded, color: RD.green),
-              title: const Text('Change station',
-                  style: TextStyle(color: RD.textPrimary)),
+              title: const Text(
+                'Change station',
+                style: TextStyle(color: RD.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(sheet);
                 context.push(AppRoute.stationSelect.path);
@@ -441,18 +494,25 @@ class _PlayerState extends ConsumerState<_Player> {
             ),
             ListTile(
               leading: const Icon(Icons.grid_view_rounded, color: RD.green),
-              title: const Text('Browse stations',
-                  style: TextStyle(color: RD.textPrimary)),
+              title: const Text(
+                'Browse stations',
+                style: TextStyle(color: RD.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(sheet);
-                Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const StationsScreen()));
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const StationsScreen(),
+                  ),
+                );
               },
             ),
             ListTile(
               leading: const Icon(Icons.settings_rounded, color: RD.green),
-              title: const Text('Settings',
-                  style: TextStyle(color: RD.textPrimary)),
+              title: const Text(
+                'Settings',
+                style: TextStyle(color: RD.textPrimary),
+              ),
               onTap: () {
                 Navigator.pop(sheet);
                 context.push(AppRoute.settings.path);
@@ -494,10 +554,13 @@ class _Hero extends StatelessWidget {
             AnimatedSwitcher(
               duration: RD.slow,
               child: (imageUrl != null && imageUrl!.isNotEmpty)
-                  ? Image.network(imageUrl!,
-                      key: ValueKey(imageUrl), fit: BoxFit.cover,
+                  ? Image.network(
+                      imageUrl!,
+                      key: ValueKey(imageUrl),
+                      fit: BoxFit.cover,
                       errorBuilder: (_, _, _) =>
-                          const ColoredBox(color: RD.panel))
+                          const ColoredBox(color: RD.panel),
+                    )
                   : const ColoredBox(key: ValueKey('ph'), color: RD.panel),
             ),
             const DecoratedBox(
@@ -505,7 +568,11 @@ class _Hero extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0x55000000), Colors.transparent, Color(0x66000000)],
+                  colors: [
+                    Color(0x55000000),
+                    Colors.transparent,
+                    Color(0x66000000),
+                  ],
                   stops: [0, 0.5, 1],
                 ),
               ),
@@ -519,11 +586,19 @@ class _Hero extends StatelessWidget {
               top: RD.md,
               right: RD.md,
               child: GlassChip(
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const LiveBadge(compact: true),
-                  const SizedBox(width: RD.sm),
-                  Equalizer(active: onAir, bars: 7, height: 18, barWidth: 2.5),
-                ]),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const LiveBadge(compact: true),
+                    const SizedBox(width: RD.sm),
+                    Equalizer(
+                      active: onAir,
+                      bars: 7,
+                      height: 18,
+                      barWidth: 2.5,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -544,16 +619,20 @@ class _NowPlayingLine extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(title,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: RD.title.copyWith(fontSize: 20)),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: RD.title.copyWith(fontSize: 20),
+        ),
         const SizedBox(height: 2),
-        Text(subtitle ?? 'Hosted by $_stationHost',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: RD.caption.copyWith(color: RD.green, fontSize: 12)),
+        Text(
+          subtitle ?? 'Hosted by $_stationHost',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: RD.caption.copyWith(color: RD.green, fontSize: 12),
+        ),
       ],
     );
   }
@@ -614,8 +693,10 @@ class _NowPlayingView extends StatelessWidget {
           child: TextButton.icon(
             onPressed: onBackToRadio,
             icon: const Icon(Icons.radio_rounded, color: RD.green, size: 18),
-            label: const Text('Back to radio',
-                style: TextStyle(color: RD.green)),
+            label: const Text(
+              'Back to radio',
+              style: TextStyle(color: RD.green),
+            ),
           ),
         ),
       ],
@@ -705,14 +786,24 @@ class _NearbyStoriesState extends State<_NearbyStories> {
               borderRadius: BorderRadius.circular(RD.rSm),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: RD.xs, vertical: 2),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text('VIEW MAP',
-                      style: RD.sectionLabel.copyWith(fontSize: 12)),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.location_on_rounded,
-                      color: RD.green, size: 15),
-                ]),
+                  horizontal: RD.xs,
+                  vertical: 2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'VIEW MAP',
+                      style: RD.sectionLabel.copyWith(fontSize: 12),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(
+                      Icons.location_on_rounded,
+                      color: RD.green,
+                      size: 15,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -720,16 +811,18 @@ class _NearbyStoriesState extends State<_NearbyStories> {
         const SizedBox(height: RD.md),
         if (stories.isEmpty)
           GlassPanel(
-            child: Row(children: [
-              const Icon(Icons.explore_rounded, color: RD.green),
-              const SizedBox(width: RD.md),
-              Expanded(
-                child: Text(
-                  'Finding stories around you… make sure location is on.',
-                  style: RD.body,
+            child: Row(
+              children: [
+                const Icon(Icons.explore_rounded, color: RD.green),
+                const SizedBox(width: RD.md),
+                Expanded(
+                  child: Text(
+                    'Finding stories around you… make sure location is on.',
+                    style: RD.body,
+                  ),
                 ),
-              ),
-            ]),
+              ],
+            ),
           )
         else ...[
           SizedBox(
@@ -751,10 +844,12 @@ class _NearbyStoriesState extends State<_NearbyStories> {
                     imageUrl: s.location.images.isNotEmpty
                         ? s.location.images.first
                         : null,
-                    distanceLabel:
-                        '${mi.toStringAsFixed(mi < 10 ? 1 : 0)} mi',
-                    onTap: () => showDestinationDetail(context, s.location,
-                        distanceMeters: s.distanceMeters),
+                    distanceLabel: '${mi.toStringAsFixed(mi < 10 ? 1 : 0)} mi',
+                    onTap: () => showDestinationDetail(
+                      context,
+                      s.location,
+                      distanceMeters: s.distanceMeters,
+                    ),
                   ),
                 );
               },
@@ -810,8 +905,18 @@ class _StatusBar extends StatelessWidget {
 
   static const _days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   static String _date(DateTime d) =>
       '${_days[d.weekday - 1]}, ${_months[d.month - 1]} ${d.day}';
