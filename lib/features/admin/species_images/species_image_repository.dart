@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show FileOptions;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/admin/csv/csv_import_logic.dart' show uuidV4;
 import 'package:explorer_os_mobile/features/discovery/data/species_repository.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
 
@@ -115,7 +116,11 @@ class SpeciesImageRepository {
     final makeFeatured = featured || existing.isEmpty;
 
     await client.from('media').insert({
+      // The `media` table has no default on media_id — supply one.
+      'media_id': uuidV4(),
       'species_id': species.id,
+      // `media.destination_id` is NOT NULL — use the species' owning park.
+      'destination_id': species.destinationId,
       'media_type': 'image',
       'file_url': url,
       'thumbnail_url': url,
