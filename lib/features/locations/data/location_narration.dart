@@ -118,9 +118,16 @@ LocationNarrationLinks resolveNarrationLinks(
     final hasContent =
         (c.audioUrl?.isNotEmpty ?? false) || (c.text?.isNotEmpty ?? false);
     if (!hasContent) continue;
+    // Only link narration that's actually ABOUT this place: a name match, or a
+    // relevant category that is essentially co-located (≤250 m). A neighbor's
+    // narration (e.g. a lake near a boat ramp) must NOT get attached, or the
+    // location plays the wrong place's audio.
+    final nameMatch = _nameOverlap(loc.name, c.title);
+    final categoryMatch = relevant.contains(c.category);
+    if (!nameMatch && !(categoryMatch && m <= 250)) continue;
     var score = -(m ~/ 50);
-    if (_nameOverlap(loc.name, c.title)) score += 500;
-    if (relevant.contains(c.category)) score += 200;
+    if (nameMatch) score += 500;
+    if (categoryMatch) score += 200;
     if (c.audioUrl?.isNotEmpty ?? false) score += 120;
     score += c.basePriority;
     scored.add((c, score));
