@@ -329,13 +329,40 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
         width: 560,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Featured image
+            // Featured image — tap the image itself to upload (unmissable).
             AspectRatio(
               aspectRatio: 16 / 9,
-              child: ClipRRect(
+              child: Material(
+                color: Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
-                child: SpeciesImageOrPlaceholder(
-                    url: _featured, category: _category, label: _name.text),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: _busy ? null : () => _pickImage(featured: true),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      SpeciesImageOrPlaceholder(
+                          url: _featured,
+                          category: _category,
+                          label: _name.text),
+                      if ((_featured ?? '').isEmpty)
+                        const Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_a_photo_rounded,
+                                  color: Colors.white, size: 30),
+                              SizedBox(height: 6),
+                              Text('Tap to add a photo',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
