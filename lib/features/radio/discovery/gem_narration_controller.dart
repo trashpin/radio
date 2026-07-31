@@ -45,8 +45,12 @@ class GemNarrationController extends Notifier<GemNarrationState> {
   void _wire() {
     if (_wired) return;
     _wired = true;
-    _tts.setCompletionHandler(_finishTts);
-    _tts.setErrorHandler((_) => _finishTts());
+    // NOTE: the TTS path is driven by a duration TIMER (see _speak), NOT by
+    // flutter_tts's completion/error callbacks. On web those callbacks fire
+    // almost instantly (SpeechSynthesis errors/completes synchronously), which
+    // would collapse the Now Playing view before it ever renders. The timer
+    // keeps the gem's story on air for its full narration duration on every
+    // platform.
     // When the engine finishes our recorded narration segment, drop the
     // "narrating" flag (the engine resumes music on its own).
     _events = ref.read(radioEngineServiceProvider).events.listen((e) {
@@ -113,20 +117,21 @@ class GemNarrationController extends Notifier<GemNarrationState> {
         ref.read(radioEngineControllerProvider).status ==
         PlaybackStatus.playing;
     if (_wasPlaying) controller.pause();
+    // Keep the Now Playing story on air for its estimated narration duration.
+    // A timer (not the TTS callback) is the source of truth so the view is
+    // reliable even where on-device speech is unavailable (e.g. web).
+    final secs = (script.split(RegExp(r'\s+')).length / 2.6).round().clamp(
+      12,
+      240,
+    );
+    _fallback = Timer(Duration(seconds: secs), _finishTts);
     try {
       await _tts.awaitSpeakCompletion(true);
       await _tts.setSpeechRate(0.45);
       await _tts.setPitch(1.0);
-    } catch (_) {}
-    final secs = (script.split(RegExp(r'\s+')).length / 2.6).round().clamp(
-      15,
-      240,
-    );
-    _fallback = Timer(Duration(seconds: secs + 6), _finishTts);
-    try {
       await _tts.speak(script);
     } catch (_) {
-      _finishTts();
+      // Speech unavailable — the timer still returns to the radio on schedule.
     }
   }
 
