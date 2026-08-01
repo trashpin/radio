@@ -763,9 +763,12 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.nearby_gem*` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
-  const jobs = [...primary, ...locAudio, ...gemAudio]
-    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-    .slice(0, limit);
+  // User-initiated Nearby Gem narration ("Generate Narration") runs FIRST so a
+  // stale backlog of older narration/audio jobs can never starve it. The rest
+  // is processed oldest-first as before.
+  const rest = [...primary, ...locAudio]
+    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  const jobs = [...gemAudio, ...rest].slice(0, limit);
   const results: unknown[] = [];
   for (const job of jobs) {
     await processJob(job);
