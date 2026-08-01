@@ -11,6 +11,22 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/image_match/filename_normalizer.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
+/// Turns a raw Supabase error into an admin-friendly hint. Row-level-security
+/// (`42501`) means the `songs` table / `music`+`artwork` buckets don't allow
+/// this client to write — run migration `0036_songs_admin_write.sql` (or sign
+/// in), which grants admin song imports.
+String friendlySongError(Object e) {
+  final s = e.toString();
+  if (s.contains('42501') ||
+      s.toLowerCase().contains('row-level security') ||
+      s.toLowerCase().contains('violates row-level')) {
+    return 'The database blocked this write (row-level security). Run migration '
+        '0036_songs_admin_write.sql to allow admin song imports, then retry. '
+        'Details: $s';
+  }
+  return s;
+}
+
 /// Parsed ID3 metadata from an MP3 (any field may be null).
 class Mp3Tags {
   const Mp3Tags({this.title, this.artist, this.album, this.artwork});
@@ -24,8 +40,7 @@ class Mp3Tags {
 /// Never throws — returns an empty [Mp3Tags] if parsing fails.
 Future<Mp3Tags> extractMp3Tags(Uint8List bytes) async {
   try {
-    final tags =
-        await TagProcessor().getTagsFromByteArray(Future.value(bytes));
+    final tags = await TagProcessor().getTagsFromByteArray(Future.value(bytes));
     String? pick(String key) {
       for (final t in tags) {
         final v = t.tags[key];
@@ -50,22 +65,26 @@ Future<Mp3Tags> extractMp3Tags(Uint8List bytes) async {
       }
     }
     return Mp3Tags(
-        title: pick('title'),
-        artist: pick('artist'),
-        album: pick('album'),
-        artwork: art);
+      title: pick('title'),
+      artist: pick('artist'),
+      album: pick('album'),
+      artwork: art,
+    );
   } catch (_) {
     return const Mp3Tags();
   }
 }
 
 /// Loads songs from the `songs` table (public read).
-final radioSongsProvider =
-    FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final rows = await SupabaseService.client
-      .from('songs')
-      .select()
-      .order('created_at', ascending: false) as List;
+final radioSongsProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  final rows =
+      await SupabaseService.client
+              .from('songs')
+              .select()
+              .order('created_at', ascending: false)
+          as List;
   return rows.cast<Map<String, dynamic>>();
 });
 
@@ -88,18 +107,22 @@ class SongUploaderPage extends ConsumerWidget {
             OutlinedButton.icon(
               onPressed: () async {
                 final r = await FilePicker.platform.pickFiles(
-                    type: FileType.audio, allowMultiple: true, withData: true);
+                  type: FileType.audio,
+                  allowMultiple: true,
+                  withData: true,
+                );
                 if (r == null || r.files.isEmpty) return;
                 if (!context.mounted) return;
                 final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => _BulkImportDialog(files: r.files));
+                  context: context,
+                  builder: (_) => _BulkImportDialog(files: r.files),
+                );
                 if (ok == true) ref.invalidate(radioSongsProvider);
               },
               style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg)),
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              ),
               icon: const Icon(Icons.library_add_rounded, size: 18),
               label: const Text('Bulk import'),
             ),
@@ -107,19 +130,24 @@ class SongUploaderPage extends ConsumerWidget {
             FilledButton.icon(
               onPressed: () async {
                 final ok = await showDialog<bool>(
-                    context: context, builder: (_) => const _SongDialog());
+                  context: context,
+                  builder: (_) => const _SongDialog(),
+                );
                 if (ok == true) {
                   ref.invalidate(radioSongsProvider);
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Song saved — it will appear below.')));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Song saved — it will appear below.'),
+                      ),
+                    );
                   }
                 }
               },
               style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.lg)),
+                minimumSize: const Size(0, 44),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+              ),
               icon: const Icon(Icons.upload_rounded, size: 18),
               label: const Text('Upload song'),
             ),
@@ -128,50 +156,68 @@ class SongUploaderPage extends ConsumerWidget {
         const Gap.v(AppSpacing.lg),
         async.when(
           loading: () => const Padding(
-              padding: EdgeInsets.all(AppSpacing.xxl),
-              child: Center(child: CircularProgressIndicator())),
+            padding: EdgeInsets.all(AppSpacing.xxl),
+            child: Center(child: CircularProgressIndicator()),
+          ),
           error: (e, _) => AdminSectionCard(
-              child: AdminEmptyState(
-                  icon: Icons.error_outline_rounded,
-                  message: 'Could not load songs.\n$e')),
+            child: AdminEmptyState(
+              icon: Icons.error_outline_rounded,
+              message: 'Could not load songs.\n$e',
+            ),
+          ),
           data: (songs) => songs.isEmpty
               ? const AdminSectionCard(
                   child: AdminEmptyState(
-                      message: 'No songs yet. Click "Upload song".',
-                      icon: Icons.library_music_rounded))
+                    message: 'No songs yet. Click "Upload song".',
+                    icon: Icons.library_music_rounded,
+                  ),
+                )
               : AdminSectionCard(
-                  child: Column(children: [
-                    for (final s in songs)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: (s['cover_image'] != null)
-                              ? Image.network(s['cover_image'] as String,
-                                  width: 48, height: 48, fit: BoxFit.cover,
-                                  errorBuilder: (c, e, st) =>
-                                      const Icon(Icons.music_note_rounded))
-                              : Container(
-                                  width: 48,
-                                  height: 48,
-                                  color:
-                                      theme.dividerColor.withValues(alpha: 0.3),
-                                  child: const Icon(Icons.music_note_rounded)),
+                  child: Column(
+                    children: [
+                      for (final s in songs)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: (s['cover_image'] != null)
+                                ? Image.network(
+                                    s['cover_image'] as String,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (c, e, st) =>
+                                        const Icon(Icons.music_note_rounded),
+                                  )
+                                : Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: theme.dividerColor.withValues(
+                                      alpha: 0.3,
+                                    ),
+                                    child: const Icon(Icons.music_note_rounded),
+                                  ),
+                          ),
+                          title: Text(
+                            (s['title'] ?? 'Untitled') as String,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            [
+                              if (s['artist'] != null) s['artist'],
+                              if (s['station'] != null) s['station'],
+                              if (s['genre'] != null) s['genre'],
+                              if (s['park_code'] != null) s['park_code'],
+                            ].whereType<String>().join('  ·  '),
+                          ),
+                          trailing: (s['is_active'] == true)
+                              ? const Chip(label: Text('Active'))
+                              : null,
                         ),
-                        title: Text((s['title'] ?? 'Untitled') as String,
-                            style: theme.textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600)),
-                        subtitle: Text([
-                          if (s['artist'] != null) s['artist'],
-                          if (s['station'] != null) s['station'],
-                          if (s['genre'] != null) s['genre'],
-                          if (s['park_code'] != null) s['park_code'],
-                        ].whereType<String>().join('  ·  ')),
-                        trailing: (s['is_active'] == true)
-                            ? const Chip(label: Text('Active'))
-                            : null,
-                      ),
-                  ]),
+                    ],
+                  ),
                 ),
         ),
       ],
@@ -210,8 +256,10 @@ class _SongDialogState extends State<_SongDialog> {
   }
 
   Future<void> _pickAudio() async {
-    final r = await FilePicker.platform
-        .pickFiles(type: FileType.audio, withData: true);
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.audio,
+      withData: true,
+    );
     if (r == null || r.files.isEmpty) return;
     final f = r.files.first;
     setState(() {
@@ -250,8 +298,10 @@ class _SongDialogState extends State<_SongDialog> {
   }
 
   Future<void> _pickCover() async {
-    final r = await FilePicker.platform
-        .pickFiles(type: FileType.image, withData: true);
+    final r = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
     if (r != null && r.files.isNotEmpty) {
       setState(() {
         _coverBytes = r.files.first.bytes;
@@ -277,8 +327,13 @@ class _SongDialogState extends State<_SongDialog> {
       // 1. Upload audio to the music bucket.
       final aext = (_audioName ?? 'mp3').split('.').last.toLowerCase();
       final apath = '$park/$key.$aext';
-      await client.storage.from('music').uploadBinary(apath, _audioBytes!,
-          fileOptions: FileOptions(upsert: true, contentType: 'audio/$aext'));
+      await client.storage
+          .from('music')
+          .uploadBinary(
+            apath,
+            _audioBytes!,
+            fileOptions: FileOptions(upsert: true, contentType: 'audio/$aext'),
+          );
       final audioUrl = client.storage.from('music').getPublicUrl(apath);
 
       // 2. Optional cover art to the artwork bucket.
@@ -286,8 +341,16 @@ class _SongDialogState extends State<_SongDialog> {
       if (_coverBytes != null) {
         final cext = (_coverName ?? 'jpg').split('.').last.toLowerCase();
         final cpath = '$park/$key.$cext';
-        await client.storage.from('artwork').uploadBinary(cpath, _coverBytes!,
-            fileOptions: FileOptions(upsert: true, contentType: 'image/$cext'));
+        await client.storage
+            .from('artwork')
+            .uploadBinary(
+              cpath,
+              _coverBytes!,
+              fileOptions: FileOptions(
+                upsert: true,
+                contentType: 'image/$cext',
+              ),
+            );
         coverUrl = client.storage.from('artwork').getPublicUrl(cpath);
       }
 
@@ -307,7 +370,7 @@ class _SongDialogState extends State<_SongDialog> {
     } catch (e) {
       setState(() {
         _saving = false;
-        _error = 'Upload failed (signed in + migration 0011 run?): $e';
+        _error = 'Upload failed: ${friendlySongError(e)}';
       });
     }
   }
@@ -319,66 +382,88 @@ class _SongDialogState extends State<_SongDialog> {
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _f(_title, 'Title *'),
-            const Gap.v(AppSpacing.sm),
-            _f(_artist, 'Artist'),
-            const Gap.v(AppSpacing.sm),
-            Row(children: [
-              Expanded(child: _f(_park, 'Park code')),
-              const Gap.h(AppSpacing.sm),
-              Expanded(child: _f(_genre, 'Genre')),
-            ]),
-            const Gap.v(AppSpacing.sm),
-            _f(_station, 'Station'),
-            const Gap.v(AppSpacing.md),
-            Row(children: [
-              OutlinedButton.icon(
-                onPressed: _pickAudio,
-                icon: const Icon(Icons.audiotrack_rounded, size: 18),
-                label: Text(_audioName ?? 'Choose audio *'),
-              ),
-              const Gap.h(AppSpacing.sm),
-              OutlinedButton.icon(
-                onPressed: _pickCover,
-                icon: const Icon(Icons.image_rounded, size: 18),
-                label: Text(_coverName ?? 'Cover art'),
-              ),
-            ]),
-            if (_coverBytes != null) ...[
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _f(_title, 'Title *'),
               const Gap.v(AppSpacing.sm),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(_coverBytes!, height: 64, width: 64,
-                      fit: BoxFit.cover),
-                ),
-              ),
-            ],
-            if (_tagInfo != null) ...[
+              _f(_artist, 'Artist'),
               const Gap.v(AppSpacing.sm),
-              Row(children: [
-                const Icon(Icons.auto_awesome_rounded,
-                    size: 14, color: Colors.teal),
-                const SizedBox(width: 6),
-                Expanded(
-                    child: Text(_tagInfo!,
-                        style: Theme.of(context).textTheme.bodySmall)),
-              ]),
-            ],
-            if (_error != null) ...[
+              Row(
+                children: [
+                  Expanded(child: _f(_park, 'Park code')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_genre, 'Genre')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              _f(_station, 'Station'),
               const Gap.v(AppSpacing.md),
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _pickAudio,
+                    icon: const Icon(Icons.audiotrack_rounded, size: 18),
+                    label: Text(_audioName ?? 'Choose audio *'),
+                  ),
+                  const Gap.h(AppSpacing.sm),
+                  OutlinedButton.icon(
+                    onPressed: _pickCover,
+                    icon: const Icon(Icons.image_rounded, size: 18),
+                    label: Text(_coverName ?? 'Cover art'),
+                  ),
+                ],
+              ),
+              if (_coverBytes != null) ...[
+                const Gap.v(AppSpacing.sm),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      _coverBytes!,
+                      height: 64,
+                      width: 64,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ],
+              if (_tagInfo != null) ...[
+                const Gap.v(AppSpacing.sm),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      size: 14,
+                      color: Colors.teal,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _tagInfo!,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (_error != null) ...[
+                const Gap.v(AppSpacing.md),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
             ],
-          ]),
+          ),
         ),
       ),
       actions: [
         TextButton(
-            onPressed: _saving ? null : () => Navigator.pop(context, false),
-            child: const Text('Cancel')),
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           onPressed: _saving ? null : _save,
           child: _saving
@@ -386,7 +471,10 @@ class _SongDialogState extends State<_SongDialog> {
                   width: 18,
                   height: 18,
                   child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
               : const Text('Upload'),
         ),
       ],
@@ -394,9 +482,12 @@ class _SongDialogState extends State<_SongDialog> {
   }
 
   Widget _f(TextEditingController c, String label) => TextField(
-      controller: c,
-      decoration:
-          InputDecoration(labelText: label, border: const OutlineInputBorder()));
+    controller: c,
+    decoration: InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+    ),
+  );
 }
 
 enum _Stage { pending, working, done, failed }
@@ -428,8 +519,9 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
   final _park = TextEditingController(text: 'ocala');
   final _station = TextEditingController(text: 'Country Roads Radio');
   final _genre = TextEditingController(text: 'country');
-  late final List<_FileState> _items =
-      widget.files.map((f) => _FileState(f.name)).toList();
+  late final List<_FileState> _items = widget.files
+      .map((f) => _FileState(f.name))
+      .toList();
   final Set<String> _usedKeys = {};
   bool _running = false;
   bool _finished = false;
@@ -503,18 +595,31 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
             ? file.name.split('.').last.toLowerCase()
             : 'mp3';
         final apath = '$park/$key.$aext';
-        await client.storage.from('music').uploadBinary(apath, bytes,
-            fileOptions:
-                FileOptions(upsert: true, contentType: 'audio/$aext'));
+        await client.storage
+            .from('music')
+            .uploadBinary(
+              apath,
+              bytes,
+              fileOptions: FileOptions(
+                upsert: true,
+                contentType: 'audio/$aext',
+              ),
+            );
         final audioUrl = client.storage.from('music').getPublicUrl(apath);
 
         String? coverUrl;
         if (tags.artwork != null) {
           final cpath = '$park/$key.jpg';
-          await client.storage.from('artwork').uploadBinary(
-              cpath, tags.artwork!,
-              fileOptions:
-                  FileOptions(upsert: true, contentType: 'image/jpeg'));
+          await client.storage
+              .from('artwork')
+              .uploadBinary(
+                cpath,
+                tags.artwork!,
+                fileOptions: FileOptions(
+                  upsert: true,
+                  contentType: 'image/jpeg',
+                ),
+              );
           coverUrl = client.storage.from('artwork').getPublicUrl(cpath);
         }
 
@@ -536,7 +641,7 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
       } catch (e) {
         setState(() {
           item.stage = _Stage.failed;
-          item.message = '$e';
+          item.message = friendlySongError(e);
           _fail++;
         });
       }
@@ -554,59 +659,67 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
       title: Text('Bulk import — ${widget.files.length} files'),
       content: SizedBox(
         width: 520,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Row(children: [
-            Expanded(child: _f(_park, 'Park code')),
-            const Gap.h(AppSpacing.sm),
-            Expanded(child: _f(_genre, 'Genre')),
-          ]),
-          const Gap.v(AppSpacing.sm),
-          _f(_station, 'Station'),
-          const Gap.v(AppSpacing.sm),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              _finished
-                  ? 'Done — $_ok imported${_fail > 0 ? ', $_fail failed' : ''}.'
-                  : _running
-                      ? 'Importing… ${_ok + _fail} of ${widget.files.length}'
-                      : 'Title & artist auto-fill from each MP3\'s ID3 tags. '
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(child: _f(_park, 'Park code')),
+                const Gap.h(AppSpacing.sm),
+                Expanded(child: _f(_genre, 'Genre')),
+              ],
+            ),
+            const Gap.v(AppSpacing.sm),
+            _f(_station, 'Station'),
+            const Gap.v(AppSpacing.sm),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _finished
+                    ? 'Done — $_ok imported${_fail > 0 ? ', $_fail failed' : ''}.'
+                    : _running
+                    ? 'Importing… ${_ok + _fail} of ${widget.files.length}'
+                    : 'Title & artist auto-fill from each MP3\'s ID3 tags. '
                           'Shared fields above apply to all.',
-              style: theme.textTheme.bodySmall,
+                style: theme.textTheme.bodySmall,
+              ),
             ),
-          ),
-          const Gap.v(AppSpacing.sm),
-          SizedBox(
-            height: 320,
-            child: ListView.builder(
-              itemCount: _items.length,
-              itemBuilder: (c, i) {
-                final it = _items[i];
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: _stageIcon(it.stage),
-                  title: Text(it.title ?? _stripExt(it.name),
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(
-                    it.stage == _Stage.failed
-                        ? (it.message ?? 'Failed')
-                        : [
-                            if (it.artist != null) it.artist,
-                            if (it.hasArt) 'artwork',
-                            it.name,
-                          ].whereType<String>().join('  ·  '),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: it.stage == _Stage.failed
-                        ? TextStyle(color: theme.colorScheme.error)
-                        : null,
-                  ),
-                );
-              },
+            const Gap.v(AppSpacing.sm),
+            SizedBox(
+              height: 320,
+              child: ListView.builder(
+                itemCount: _items.length,
+                itemBuilder: (c, i) {
+                  final it = _items[i];
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: _stageIcon(it.stage),
+                    title: Text(
+                      it.title ?? _stripExt(it.name),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(
+                      it.stage == _Stage.failed
+                          ? (it.message ?? 'Failed')
+                          : [
+                              if (it.artist != null) it.artist,
+                              if (it.hasArt) 'artwork',
+                              it.name,
+                            ].whereType<String>().join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: it.stage == _Stage.failed
+                          ? TextStyle(color: theme.colorScheme.error)
+                          : null,
+                    ),
+                  );
+                },
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -621,11 +734,14 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.cloud_upload_rounded, size: 18),
-            label: Text(_running
-                ? 'Importing…'
-                : 'Import ${widget.files.length} songs'),
+            label: Text(
+              _running ? 'Importing…' : 'Import ${widget.files.length} songs',
+            ),
           ),
       ],
     );
@@ -637,9 +753,10 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
         return const Icon(Icons.schedule_rounded, color: Colors.grey);
       case _Stage.working:
         return const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2));
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
       case _Stage.done:
         return const Icon(Icons.check_circle_rounded, color: Colors.green);
       case _Stage.failed:
@@ -648,7 +765,10 @@ class _BulkImportDialogState extends State<_BulkImportDialog> {
   }
 
   Widget _f(TextEditingController c, String label) => TextField(
-      controller: c,
-      decoration:
-          InputDecoration(labelText: label, border: const OutlineInputBorder()));
+    controller: c,
+    decoration: InputDecoration(
+      labelText: label,
+      border: const OutlineInputBorder(),
+    ),
+  );
 }
