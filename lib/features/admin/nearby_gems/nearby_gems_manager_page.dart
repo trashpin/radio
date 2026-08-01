@@ -540,21 +540,38 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
                 ),
               ),
               const SizedBox(height: 8),
+              // Bounded (Expanded): the theme's button minimumSize is
+              // Size.fromHeight(56) = Size(infinity, 56), so an un-Expanded
+              // button in a Row overflows and renders blank.
               Row(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _pickImage(featured: true),
-                    icon: const Icon(Icons.image_rounded, size: 18),
-                    label: const Text('Featured image'),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () => _pickImage(featured: true),
+                      icon: const Icon(Icons.image_rounded, size: 18),
+                      label: const Text(
+                        'Featured image',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _pickImage(featured: false),
-                    icon: const Icon(
-                      Icons.add_photo_alternate_rounded,
-                      size: 18,
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _busy
+                          ? null
+                          : () => _pickImage(featured: false),
+                      icon: const Icon(
+                        Icons.add_photo_alternate_rounded,
+                        size: 18,
+                      ),
+                      label: Text(
+                        'Gallery (${_gallery.length})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    label: Text('Gallery (${_gallery.length})'),
                   ),
                 ],
               ),
