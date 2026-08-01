@@ -102,14 +102,56 @@ void main() {
       );
       addTearDown(c.dispose);
       await c.read(activeNearbyGemsProvider.future);
+      // Widen to 10 miles so the ~7-mile "mid" gem is in range for this check.
+      c.read(nearbyGemsRadiusProvider.notifier).set(kGemsRadius10Mi);
 
       final hits = c.read(nearbyGemsForUserProvider);
       expect(
         hits.map((h) => h.gem.id),
         ['near', 'mid'],
-        reason: 'far (>25mi) and no-coords are excluded; sorted nearest-first',
+        reason: 'far (>10mi) and no-coords are excluded; sorted nearest-first',
       );
       expect(hits.first.distanceMeters, lessThan(hits.last.distanceMeters));
     },
   );
+
+  test('default radius is 5 miles; toggle widens to 10 and back', () {
+    final c = ProviderContainer();
+    addTearDown(c.dispose);
+    expect(c.read(nearbyGemsRadiusProvider), kGemsRadius5Mi);
+    c.read(nearbyGemsRadiusProvider.notifier).toggle();
+    expect(c.read(nearbyGemsRadiusProvider), kGemsRadius10Mi);
+    c.read(nearbyGemsRadiusProvider.notifier).toggle();
+    expect(c.read(nearbyGemsRadiusProvider), kGemsRadius5Mi);
+  });
+
+  test('rankNearbyGems: featured → priority → popularity → distance', () {
+    NearbyGem g(
+      String id, {
+      bool featured = false,
+      int priority = 0,
+      int popularity = 0,
+    }) => NearbyGem(
+      id: id,
+      name: id,
+      latitude: 29.2,
+      longitude: -82.05,
+      featured: featured,
+      priority: priority,
+      popularity: popularity,
+    );
+
+    final ranked = rankNearbyGems([
+      NearbyGemHit(g('nearPlain'), 500),
+      NearbyGemHit(g('farFeatured', featured: true), 9000),
+      NearbyGemHit(g('midPriority', priority: 5), 3000),
+      NearbyGemHit(g('midPopular', popularity: 99), 3000),
+    ]);
+    expect(ranked.map((h) => h.gem.id), [
+      'farFeatured',
+      'midPriority',
+      'midPopular',
+      'nearPlain',
+    ]);
+  });
 }

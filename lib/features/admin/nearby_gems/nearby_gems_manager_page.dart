@@ -195,6 +195,10 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
   String? _voiceId; // transient — used only when generating narration
   late final List<String> _gallery = [...?widget.gem?.galleryImages];
   late bool _active = widget.gem?.active ?? true;
+  late bool _featuredFlag = widget.gem?.featured ?? false;
+  late final _priority = TextEditingController(
+    text: (widget.gem?.priority ?? 0) == 0 ? '' : '${widget.gem!.priority}',
+  );
   bool _busy = false;
 
   final AudioPlayer _preview = AudioPlayer();
@@ -213,6 +217,7 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
       _long,
       _script,
       _narration,
+      _priority,
     ]) {
       c.dispose();
     }
@@ -358,6 +363,8 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
     'short_description': _nn(_short.text),
     'long_story': _nn(_long.text),
     'active': _active,
+    'featured': _featuredFlag,
+    'priority': int.tryParse(_priority.text.trim()) ?? 0,
   };
 
   Future<void> _save() async {
@@ -694,6 +701,21 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
                 value: _active,
                 onChanged: (v) => setState(() => _active = v),
                 title: const Text('Active (visible to users)'),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: _featuredFlag,
+                      onChanged: (v) => setState(() => _featuredFlag = v),
+                      title: const Text('Featured'),
+                      subtitle: const Text('Surfaces first in Nearby Gems'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(width: 120, child: _f(_priority, 'Priority')),
+                ],
               ),
               if (_busy)
                 const Padding(

@@ -13,6 +13,10 @@ import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/radio/discovery/community_welcome_director.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/location_intelligence.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
@@ -63,6 +67,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Welcome the traveler into each new county with a weather + recommendation
   // report (once per county, like a live travel radio station).
   _attachCountyWelcome(ref);
+
+  // Announce approaching communities (~1 mile out) and welcome the traveler
+  // into each town/community as they arrive (once per visit).
+  _attachCommunityWelcome(ref);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -121,8 +129,9 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
     return selected;
   }
 
-  final destinations =
-      await ref.watch(destinationRepositoryProvider).fetchDestinations();
+  final destinations = await ref
+      .watch(destinationRepositoryProvider)
+      .fetchDestinations();
   if (destinations.isEmpty) {
     throw const AppException(
       'No destinations are available yet. Add a destination (and audio media) '
@@ -170,16 +179,18 @@ void _attachDiscovery(Ref ref, RadioEngineService engine) {
       final category = _discoveryCategoryFor(r.item.category);
       if (category == null) continue;
       final desc = (r.item.text ?? '').trim();
-      candidates.add(DiscoveryCandidate(
-        id: r.item.id,
-        category: category,
-        title: r.item.title,
-        distanceMeters: r.distanceMeters,
-        audioUrl: r.item.audioUrl,
-        spokenText: desc.isEmpty
-            ? "You're near ${r.item.title}."
-            : "You're near ${r.item.title}. $desc",
-      ));
+      candidates.add(
+        DiscoveryCandidate(
+          id: r.item.id,
+          category: category,
+          title: r.item.title,
+          distanceMeters: r.distanceMeters,
+          audioUrl: r.item.audioUrl,
+          spokenText: desc.isEmpty
+              ? "You're near ${r.item.title}."
+              : "You're near ${r.item.title}. $desc",
+        ),
+      );
     }
     engine.discovery.updateNearby(candidates);
   }
@@ -187,10 +198,7 @@ void _attachDiscovery(Ref ref, RadioEngineService engine) {
   try {
     push(ref.read(locationContextProvider));
   } catch (_) {}
-  ref.listen<LocationContext>(
-    locationContextProvider,
-    (_, next) => push(next),
-  );
+  ref.listen<LocationContext>(locationContextProvider, (_, next) => push(next));
 }
 
 /// Maps a rich [ContentCategory] to the discovery scheduler's smaller taxonomy
@@ -311,12 +319,19 @@ void _attachCountyWelcome(Ref ref) {
         w = await weather.fetch(lat, lng);
       }
       final greetings = ref.read(countyGreetingsProvider);
-      final script = director.scriptFor(county, ctx.state, w,
-          greetings: greetings);
+      final script = director.scriptFor(
+        county,
+        ctx.state,
+        w,
+        greetings: greetings,
+      );
       if (script == null) return;
-      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+      ref
+          .read(radioEngineControllerProvider.notifier)
+          .requestInterruption(
             AudioSegment(
-              id: 'county:${county.toLowerCase()}'
+              id:
+                  'county:${county.toLowerCase()}'
                   ':${DateTime.now().millisecondsSinceEpoch}',
               title: 'Welcome to $county County',
               type: AudioSegmentType.gpsNarration,
@@ -335,10 +350,114 @@ void _attachCountyWelcome(Ref ref) {
 
   maybeWelcome(ref.read(locationContextProvider));
   ref.listen<LocationContext>(locationContextProvider, (prev, next) {
-    if ((prev?.county ?? '').toLowerCase() != (next.county ?? '').toLowerCase()) {
+    if ((prev?.county ?? '').toLowerCase() !=
+        (next.county ?? '').toLowerCase()) {
+      // Leaving a county re-arms its welcome so returning later replays it
+      // ("only once until you leave the county").
+      director.leftCounty(prev?.county);
       maybeWelcome(next);
     }
   });
+}
+
+/// Level 2 — Communities. Announces "in about a mile you'll be entering …" as
+/// the traveler approaches a town/community (from the master `locations` table,
+/// type community/city), then fades the music and welcomes them on arrival —
+/// each at most once per visit, replaying on a later return. Reuses the radio
+/// engine's interrupt→resume path (same as the county welcome).
+void _attachCommunityWelcome(Ref ref) {
+  final director = CommunityWelcomeDirector();
+
+  List<CommunityPlace> communities() {
+    final all = ref.read(masterLocationsProvider).value ?? const [];
+    final out = <CommunityPlace>[];
+    for (final l in all) {
+      if (l.type != LocationType.community && l.type != LocationType.city) {
+        continue;
+      }
+      if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      out.add(
+        CommunityPlace(
+          id: l.id,
+          name: l.name,
+          latitude: l.latitude!,
+          longitude: l.longitude!,
+          entryRadiusMeters: l.triggerRadius,
+        ),
+      );
+    }
+    return out;
+  }
+
+  MasterLocation? locById(String id) {
+    for (final l in ref.read(masterLocationsProvider).value ?? const []) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
+
+  void evaluateAndPlay(LocationContext ctx) {
+    if (ctx.latitude == 0 && ctx.longitude == 0) return; // no GPS fix yet
+    final list = communities();
+    if (list.isEmpty) return;
+    final cue = director.evaluate(ctx.latitude, ctx.longitude, list);
+    if (cue == null) return;
+
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    if (cue.kind == CommunityCueKind.approach) {
+      radio.requestInterruption(
+        AudioSegment(
+          id: 'community-approach:${cue.place.id}:$ts',
+          title: 'Approaching ${cue.place.name}',
+          type: AudioSegmentType.gpsNarration,
+          priority: PlaybackPriority.scheduledAnnouncement,
+          spokenText: CommunityWelcomeDirector.approachScript(cue.place.name),
+          interruptible: true,
+          resumeAfter: true,
+        ),
+      );
+    } else {
+      // Entry welcome: prefer the community's recorded narration, else speak a
+      // composed script (falls back to a simple "Welcome to …").
+      final loc = locById(cue.place.id);
+      final narration = loc == null
+          ? null
+          : resolveLocationNarration(
+              loc,
+              ref.read(locationContentItemsProvider),
+            );
+      final hasAudio = narration?.hasAudio ?? false;
+      final text = (narration?.text.trim().isNotEmpty ?? false)
+          ? narration!.text.trim()
+          : CommunityWelcomeDirector.entryFallbackScript(cue.place.name);
+      radio.requestInterruption(
+        AudioSegment(
+          id: 'community-entry:${cue.place.id}:$ts',
+          title: 'Welcome to ${cue.place.name}',
+          type: AudioSegmentType.narration,
+          priority: PlaybackPriority.scheduledAnnouncement,
+          audioUrl: hasAudio ? narration!.audioUrl : null,
+          spokenText: hasAudio ? null : text,
+          interruptible: true,
+          resumeAfter: true,
+        ),
+      );
+    }
+  }
+
+  // Guarded so a community-detection hiccup can never break the radio session.
+  void handle(LocationContext ctx) {
+    try {
+      evaluateAndPlay(ctx);
+    } catch (_) {}
+  }
+
+  handle(ref.read(locationContextProvider));
+  ref.listen<LocationContext>(
+    locationContextProvider,
+    (_, next) => handle(next),
+  );
 }
 
 bool _hasWord(String c, List<String> words) => words.any(c.contains);
@@ -356,13 +475,14 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     exps = const [];
   }
   List<String> named(List<String> words) => [
-        for (final e in exps)
-          if (_hasWord(e.category.toLowerCase(), words)) e.name,
-      ].take(3).toList();
+    for (final e in exps)
+      if (_hasWord(e.category.toLowerCase(), words)) e.name,
+  ].take(3).toList();
 
   final stationName = engine.getCurrentStation()?.name;
   final park = t.currentParkId ?? stationName?.replaceAll(' Radio', '');
-  final upcoming = t.nextAttraction?.name ??
+  final upcoming =
+      t.nextAttraction?.name ??
       t.nearestAttraction?.name ??
       (exps.isNotEmpty ? exps.first.name : null);
 
@@ -373,8 +493,14 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     county: t.currentCounty,
     road: t.currentRoad,
     upcomingAttraction: upcoming,
-    nearbyWildlife:
-        named(['wildlife', 'animal', 'mammal', 'bear', 'gator', 'deer']),
+    nearbyWildlife: named([
+      'wildlife',
+      'animal',
+      'mammal',
+      'bear',
+      'gator',
+      'deer',
+    ]),
     nearbySprings: named(['spring']),
     nearbyRivers: named(['river', 'creek']),
     nearbyLakes: named(['lake']),
