@@ -399,18 +399,33 @@ class _SongDialogState extends State<_SongDialog> {
               const Gap.v(AppSpacing.sm),
               _f(_station, 'Station'),
               const Gap.v(AppSpacing.md),
+              // NOTE: these buttons MUST be bounded (Expanded). The app theme
+              // sets a button minimumSize of Size.fromHeight(56), which is
+              // Size(double.infinity, 56) — an infinite minimum WIDTH. In a Row
+              // without Expanded that overflows and the buttons render blank
+              // (the bug that made song uploads impossible from this dialog).
               Row(
                 children: [
-                  OutlinedButton.icon(
-                    onPressed: _pickAudio,
-                    icon: const Icon(Icons.audiotrack_rounded, size: 18),
-                    label: Text(_audioName ?? 'Choose audio *'),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickAudio,
+                      icon: const Icon(Icons.audiotrack_rounded, size: 18),
+                      label: Text(
+                        _audioName ?? 'Choose audio *',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                   const Gap.h(AppSpacing.sm),
-                  OutlinedButton.icon(
-                    onPressed: _pickCover,
-                    icon: const Icon(Icons.image_rounded, size: 18),
-                    label: Text(_coverName ?? 'Cover art'),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _pickCover,
+                      icon: const Icon(Icons.image_rounded, size: 18),
+                      label: Text(
+                        _coverName ?? 'Cover art',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ),
                 ],
               ),
