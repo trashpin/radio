@@ -420,13 +420,31 @@ class _GemEditorState extends ConsumerState<_GemEditor> {
         shortDescription: _nn(_short.text),
       );
       final queued = await repo.enqueueGemAudio(gem, voiceId: _voiceId);
+      if (!queued) {
+        _snack('Could not queue narration (Supabase not configured).');
+        return;
+      }
+      // Try to voice it immediately via the worker Edge Function, then surface
+      // the audio URL as soon as it lands (instant if the function is deployed,
+      // otherwise the scheduled worker fills it in shortly).
+      final triggered = await repo.triggerNarrationWorker();
+      String? url = await repo.narrationUrlFor(existing.id);
+      if (url == null && triggered) {
+        for (var i = 0; i < 5 && url == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          url = await repo.narrationUrlFor(existing.id);
+        }
+      }
       ref.read(nearbyGemsRefreshProvider.notifier).bump();
-      _snack(
-        queued
-            ? 'Narration queued — the voice worker runs every few minutes. '
-                  'Reopen this gem to preview the audio once it appears.'
-            : 'Could not queue narration (Supabase not configured).',
-      );
+      if (url != null) {
+        setState(() => _narration.text = url!);
+        _snack('Narration generated — press Save to keep it.');
+      } else {
+        _snack(
+          'Narration queued — audio is generating in the background and will '
+          'appear here shortly. Reopen this gem to check.',
+        );
+      }
     } catch (e) {
       _snack('Generate failed: $e');
     } finally {

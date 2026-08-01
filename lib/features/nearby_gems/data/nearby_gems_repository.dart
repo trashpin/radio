@@ -83,6 +83,37 @@ class NearbyGemsRepository {
     return true;
   }
 
+  /// Asks the narration worker to drain the queue NOW so "Generate Narration"
+  /// produces audio immediately instead of waiting for the scheduled worker.
+  /// Works only if the `narration-worker` Edge Function is deployed; returns
+  /// false otherwise (the scheduled GitHub worker still processes the job).
+  Future<bool> triggerNarrationWorker() async {
+    if (!SupabaseService.isConfigured) return false;
+    try {
+      await SupabaseService.client.functions.invoke('narration-worker');
+      return true;
+    } catch (_) {
+      return false; // not deployed / unreachable — scheduled worker will run
+    }
+  }
+
+  /// Reads back a gem's current narration audio URL (to surface it in the admin
+  /// as soon as generation completes). Null when absent/blank.
+  Future<String?> narrationUrlFor(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('nearby_gems')
+          .select('narration_url')
+          .eq('id', id)
+          .maybeSingle();
+      final u = (row?['narration_url'] as String?)?.trim();
+      return (u == null || u.isEmpty) ? null : u;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Uploads an image to the `media` bucket and returns its public URL.
   Future<String> uploadImage(
     Uint8List bytes,
