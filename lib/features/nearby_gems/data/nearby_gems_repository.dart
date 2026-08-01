@@ -42,24 +42,36 @@ class NearbyGemsRepository {
   Future<void> delete(String id) =>
       SupabaseService.client.from('nearby_gems').delete().eq('id', id);
 
-  /// Runs a write, and if it fails only because `narration_script` isn't in the
-  /// schema yet (migration 0035 not applied), transparently retries without it
-  /// so existing gem editing never breaks before the column exists.
+  /// Runs a write, and if it fails only because a column isn't in the schema
+  /// yet (e.g. migration 0035/0037 not applied), transparently drops that
+  /// column and retries — so gem editing never breaks before newer columns
+  /// exist. Handles several missing columns by retrying (bounded).
   Future<void> _resilient(
     Map<String, dynamic> row,
     Future<void> Function(Map<String, dynamic>) run,
   ) async {
-    try {
-      await run(row);
-    } on PostgrestException catch (e) {
-      final missingScript =
-          row.containsKey('narration_script') &&
-          e.message.contains('narration_script');
-      if (!missingScript) rethrow;
-      final fallback = Map<String, dynamic>.from(row)
-        ..remove('narration_script');
-      await run(fallback);
+    var current = Map<String, dynamic>.from(row);
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        await run(current);
+        return;
+      } on PostgrestException catch (e) {
+        final col = _missingColumn(e.message);
+        if (col == null || !current.containsKey(col)) {
+          rethrow;
+        }
+        current.remove(col);
+      }
     }
+    // Last resort — try once more so a real error surfaces to the caller.
+    await run(current);
+  }
+
+  /// Extracts a missing/unknown column name from a PostgREST schema error like
+  /// `Could not find the 'featured' column of 'nearby_gems' in the schema cache`.
+  static String? _missingColumn(String message) {
+    final m = RegExp(r"'([a-zA-Z0-9_]+)' column").firstMatch(message);
+    return m?.group(1);
   }
 
   /// Enqueues an ElevenLabs narration-generation job for a gem, drained by the
@@ -167,14 +179,52 @@ class NearbyGemHit {
   final double distanceMeters;
 }
 
-/// The configured max distance for showing Nearby Gems (≈25 miles).
-const double kNearbyGemsRadiusMeters = 40233.6;
+/// Selectable Nearby Gems radii (meters): 5 miles (default) or 10 miles.
+const double kGemsRadius5Mi = 8046.72;
+const double kGemsRadius10Mi = 16093.44;
 
-/// The gems shown to the user: ACTIVE only, within the configured distance of
-/// the current GPS position, sorted nearest-first. Empty until a fix exists.
+/// The traveler-selectable Nearby Gems search radius. Defaults to 5 miles;
+/// the Local Gems screen can toggle to 10. The user provider watches this, so
+/// the list updates automatically as the radius (or GPS position) changes.
+class NearbyGemsRadius extends Notifier<double> {
+  @override
+  double build() => kGemsRadius5Mi;
+  void set(double meters) => state = meters;
+  void toggle() =>
+      state = state <= kGemsRadius5Mi ? kGemsRadius10Mi : kGemsRadius5Mi;
+}
+
+final nearbyGemsRadiusProvider = NotifierProvider<NearbyGemsRadius, double>(
+  NearbyGemsRadius.new,
+);
+
+/// Composite discovery ranking: featured first, then editorial priority, then
+/// popularity, then nearest. Distance filtering happens before this. Pure, so
+/// it's unit-testable.
+List<NearbyGemHit> rankNearbyGems(List<NearbyGemHit> hits) {
+  final out = [...hits];
+  out.sort((a, b) {
+    final af = a.gem.featured ? 1 : 0, bf = b.gem.featured ? 1 : 0;
+    if (af != bf) return bf - af;
+    if (a.gem.priority != b.gem.priority) {
+      return b.gem.priority - a.gem.priority;
+    }
+    if (a.gem.popularity != b.gem.popularity) {
+      return b.gem.popularity - a.gem.popularity;
+    }
+    return a.distanceMeters.compareTo(b.distanceMeters);
+  });
+  return out;
+}
+
+/// The gems shown to the user: ACTIVE only, within the selected radius of the
+/// current GPS position, ranked by featured/priority/popularity/distance.
+/// Recomputes automatically as GPS position or radius changes (gems that fall
+/// out of range drop off; newly in-range gems appear) — no manual refresh.
 final nearbyGemsForUserProvider = Provider<List<NearbyGemHit>>((ref) {
   final center = ref.watch(mapCenterProvider);
   if (center == null) return const [];
+  final radius = ref.watch(nearbyGemsRadiusProvider);
   final gems = ref.watch(activeNearbyGemsProvider).value ?? const [];
   final hits = <NearbyGemHit>[];
   for (final g in gems) {
@@ -185,8 +235,7 @@ final nearbyGemsForUserProvider = Provider<List<NearbyGemHit>>((ref) {
       g.latitude!,
       g.longitude!,
     );
-    if (m <= kNearbyGemsRadiusMeters) hits.add(NearbyGemHit(g, m));
+    if (m <= radius) hits.add(NearbyGemHit(g, m));
   }
-  hits.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
-  return hits;
+  return rankNearbyGems(hits);
 });

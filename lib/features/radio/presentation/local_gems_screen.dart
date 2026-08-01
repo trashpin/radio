@@ -44,6 +44,11 @@ class _LocalGemsScreenState extends ConsumerState<LocalGemsScreen> {
                   title: 'Nearby Gems',
                   subtitle: 'ExplorerOS-approved places worth discovering.',
                 ),
+                _RadiusSelector(
+                  radius: ref.watch(nearbyGemsRadiusProvider),
+                  onSelect: (m) =>
+                      ref.read(nearbyGemsRadiusProvider.notifier).set(m),
+                ),
                 Expanded(
                   child: hits.isEmpty
                       ? _empty()
@@ -116,6 +121,56 @@ class _LocalGemsScreenState extends ConsumerState<LocalGemsScreen> {
         const SnackBar(content: Text('Could not open navigation')),
       );
     }
+  }
+}
+
+/// A 5 / 10 mile radius selector for Nearby Gems. Changing it updates the list
+/// live (the provider re-filters + re-ranks; no manual refresh).
+class _RadiusSelector extends StatelessWidget {
+  const _RadiusSelector({required this.radius, required this.onSelect});
+  final double radius;
+  final ValueChanged<double> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip(String label, double meters) {
+      final selected = (radius - meters).abs() < 1;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: RD.xs),
+          child: Material(
+            color: selected ? RD.green : RD.panelAlt,
+            borderRadius: BorderRadius.circular(RD.rPill),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(RD.rPill),
+              onTap: () => onSelect(meters),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: RD.body.copyWith(
+                    color: selected ? RD.onGreen : RD.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(RD.lg, 0, RD.lg, RD.md),
+      child: Row(
+        children: [
+          chip('Within 5 miles', kGemsRadius5Mi),
+          chip('Within 10 miles', kGemsRadius10Mi),
+        ],
+      ),
+    );
   }
 }
 

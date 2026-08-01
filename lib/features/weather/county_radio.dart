@@ -12,8 +12,11 @@ const kDefaultCountyGreetings = <String, String>{
   'volusia': 'Welcome to Volusia County.',
 };
 
-String greetingFor(String? county, String? state,
-    [Map<String, String> overrides = const {}]) {
+String greetingFor(
+  String? county,
+  String? state, [
+  Map<String, String> overrides = const {},
+]) {
   final key = (county ?? '').toLowerCase().trim();
   if (key.isEmpty) {
     return state == null || state.trim().isEmpty
@@ -101,6 +104,15 @@ class CountyWelcomeDirector {
       _recRotation++;
     }
     return lines.join(' ');
+  }
+
+  /// Marks that the traveler has LEFT [county], so entering it again later in
+  /// the same trip plays the welcome once more ("only once until you leave the
+  /// county"). Called on a county transition with the previous county.
+  void leftCounty(String? county) {
+    final key = (county ?? '').toLowerCase().trim();
+    if (key.isEmpty) return;
+    _welcomed.remove(key);
   }
 
   /// Clears welcomed history (e.g. new trip). County change itself is handled

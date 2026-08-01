@@ -18,6 +18,9 @@ class NearbyGem {
     this.shortDescription,
     this.longStory,
     this.active = true,
+    this.featured = false,
+    this.priority = 0,
+    this.popularity = 0,
     this.updatedAt,
   });
 
@@ -48,6 +51,15 @@ class NearbyGem {
   /// The Long Description — rich detail, and the last-resort narration text.
   final String? longStory;
   final bool active;
+
+  /// Editorial "featured" flag — featured gems surface first in discovery.
+  final bool featured;
+
+  /// Editorial priority (higher = surfaced sooner). Admin-controlled.
+  final int priority;
+
+  /// Popularity signal (e.g. play/visit count) — higher surfaces sooner.
+  final int popularity;
   final DateTime? updatedAt;
 
   bool get hasCoordinates =>
@@ -125,6 +137,9 @@ class NearbyGem {
     shortDescription: j['short_description'] as String?,
     longStory: j['long_story'] as String?,
     active: (j['active'] ?? true) as bool,
+    featured: (j['featured'] ?? false) as bool,
+    priority: (j['priority'] as num?)?.toInt() ?? 0,
+    popularity: (j['popularity'] as num?)?.toInt() ?? 0,
     updatedAt: DateTime.tryParse('${j['updated_at']}'),
   );
 
@@ -145,5 +160,8 @@ class NearbyGem {
     'short_description': shortDescription,
     'long_story': longStory,
     'active': active,
+    'featured': featured,
+    'priority': priority,
+    'popularity': popularity,
   };
 }
