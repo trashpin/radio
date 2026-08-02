@@ -14,20 +14,16 @@ import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.da
 import 'package:explorer_os_mobile/features/admin/presentation/admin_settings_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/database_tools_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/destination_dashboard_page.dart';
-import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
+import 'package:explorer_os_mobile/features/admin/categories/category_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_completion_dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/dj_banter_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
-import 'package:explorer_os_mobile/features/admin/audio_recall/audio_recall_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/presentation/audio_production_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/media_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/media_search/presentation/media_search_center_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_automation_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_director_settings_page.dart';
@@ -35,7 +31,6 @@ import 'package:explorer_os_mobile/features/admin/presentation/song_uploader_pag
 import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/species_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/species_images/species_image_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/voice_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
@@ -72,14 +67,16 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const LocationsAdminPage();
       case AdminModule.countyManager:
         return const CountyManagerPage();
+      case AdminModule.categoryManager:
+        return const CategoryManagerPage();
+      case AdminModule.countyCompletionDashboard:
+        return const CountyCompletionDashboardPage();
       case AdminModule.nearbyGems:
         return const NearbyGemsManagerPage();
       case AdminModule.destinations:
         return const DestinationDashboardPage();
       case AdminModule.settings:
         return const AdminSettingsPage();
-      case AdminModule.parks:
-        return const ParksPage();
       case AdminModule.mediaLibrary:
         return const MediaLibraryPage();
       case AdminModule.stories:
@@ -92,16 +89,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const ContentUploaderPage(scheduleConfig);
       case AdminModule.explorerSightings:
         return const SightingsAdminPage();
-      case AdminModule.imageMatching:
-        return const ImageMatchingPage();
-      case AdminModule.narrationStudio:
-        return const NarrationStudioPage();
-      case AdminModule.voiceManager:
-        return const VoiceManagerPage();
       case AdminModule.djStudio:
         return const DjStudioPage();
-      case AdminModule.djBanterStudio:
-        return const DjBanterStudioPage();
       case AdminModule.radioAutomation:
         return const RadioAutomationPage();
       case AdminModule.radioDirector:
@@ -110,8 +99,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const StoryStudioPage();
       case AdminModule.contentGenerator:
         return const ContentGeneratorPage();
-      case AdminModule.locationContent:
-        return const LocationContentPage();
       case AdminModule.databaseTools:
         return const DatabaseToolsPage();
       case AdminModule.playbackDebug:
@@ -126,12 +113,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const SongUploaderPage();
       case AdminModule.mediaManager:
         return const MediaManagerPage();
-      case AdminModule.mediaSearch:
-        return const MediaSearchCenterPage();
       case AdminModule.audioProduction:
         return const AudioProductionPage();
-      case AdminModule.audioRecall:
-        return const AudioRecallPage();
       default:
         return ModulePlaceholder(module: module);
     }
@@ -246,7 +229,7 @@ class _Sidebar extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    for (final module in AdminModule.inGroup(group))
+                    for (final module in AdminModule.visibleInGroup(group))
                       _SidebarItem(
                         module: module,
                         selected: module == selected,
@@ -425,9 +408,11 @@ class _QuickActions extends ConsumerWidget {
       onSelected: (m) =>
           ref.read(adminSelectedModuleProvider.notifier).select(m),
       itemBuilder: (context) => const [
-        PopupMenuItem(value: AdminModule.parks, child: Text('Go to Parks')),
         PopupMenuItem(
-            value: AdminModule.mediaLibrary, child: Text('Go to Media')),
+            value: AdminModule.masterLocations,
+            child: Text('Go to Master Locations')),
+        PopupMenuItem(
+            value: AdminModule.mediaManager, child: Text('Go to Media')),
         PopupMenuItem(value: AdminModule.stories, child: Text('Go to Stories')),
       ],
     );

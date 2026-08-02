@@ -15,8 +15,20 @@ class EnvConfig {
   static const String _supabaseUrlKey = 'SUPABASE_URL';
   static const String _publishableKeyKey = 'SUPABASE_PUBLISHABLE_KEY';
   static const String _anonKeyKey = 'SUPABASE_ANON_KEY';
+  static const String _googleMapsApiKeyKey = 'GOOGLE_MAPS_API_KEY';
 
   static String get supabaseUrl => dotenv.maybeGet(_supabaseUrlKey) ?? '';
+
+  /// The same key used for the Maps SDK (Android manifest / iOS) — also used
+  /// client-side for Maps Platform web services (e.g. Distance Matrix) that
+  /// need driving distance/ETA. Requires the "Distance Matrix API" to be
+  /// enabled for this key in Google Cloud Console, or those calls fail closed
+  /// (callers fall back to straight-line distance — see
+  /// [DrivingDistanceService]).
+  static String get googleMapsApiKey =>
+      dotenv.maybeGet(_googleMapsApiKeyKey) ?? '';
+
+  static bool get hasGoogleMapsApiKey => googleMapsApiKey.isNotEmpty;
 
   /// Client key for the Supabase SDK. Prefers the explicit
   /// `SUPABASE_PUBLISHABLE_KEY`; falls back to `SUPABASE_ANON_KEY` for backward

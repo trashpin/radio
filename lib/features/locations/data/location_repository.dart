@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_narration_automation.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
@@ -33,6 +34,35 @@ class LocationRepository {
     row,
     (r) => SupabaseService.client.from('locations').insert(r),
   );
+
+  /// Same resilient insert as [create], but returns the new row's id (for a
+  /// caller that needs it immediately — e.g. to queue a narration job right
+  /// after creating a location). Kept separate from [create]/[_resilient] so
+  /// existing callers of [create] are unaffected.
+  Future<String?> createAndReturnId(Map<String, dynamic> row) async {
+    var current = Map<String, dynamic>.from(row);
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        final inserted = await SupabaseService.client
+            .from('locations')
+            .insert(current)
+            .select('id')
+            .single();
+        return inserted['id']?.toString();
+      } on PostgrestException catch (e) {
+        final m = RegExp(r"'([a-zA-Z0-9_]+)' column").firstMatch(e.message);
+        final col = m?.group(1);
+        if (col == null || !current.containsKey(col)) rethrow;
+        current.remove(col);
+      }
+    }
+    final inserted = await SupabaseService.client
+        .from('locations')
+        .insert(current)
+        .select('id')
+        .single();
+    return inserted['id']?.toString();
+  }
 
   Future<void> update(String id, Map<String, dynamic> fields) => _resilient(
     fields,
@@ -90,6 +120,63 @@ class LocationRepository {
     return rows.length;
   }
 
+  /// Enqueues a single audio-generation job for [location] and returns the
+  /// new job's id (for polling), or null if Supabase isn't configured.
+  /// Powers the automated "generate narration on save" flow — same job shape
+  /// as [enqueueMissingAudio], just for one location with its id back.
+  Future<String?> enqueueAudioJob(MasterLocation location) async {
+    if (!SupabaseService.isConfigured) return null;
+    final row = {
+      'destination': location.name,
+      'job_type': 'audio',
+      'status': 'pending',
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+      'county': location.county,
+      'radius_m': 150,
+      'progress': 0,
+      'notes':
+          'master_location:voice;id=${location.id}'
+          ';code=${location.destinationCode ?? ''}',
+    };
+    final inserted = await SupabaseService.client
+        .from('generation_jobs')
+        .insert(row)
+        .select('id')
+        .single();
+    return inserted['id']?.toString();
+  }
+
+  /// Asks the narration worker to drain the queue NOW, so a just-enqueued job
+  /// runs immediately instead of waiting for the scheduled worker. Returns
+  /// false if the `narration-worker` Edge Function isn't deployed/reachable
+  /// (the scheduled worker will still pick the job up eventually).
+  Future<bool> triggerNarrationWorker() async {
+    if (!SupabaseService.isConfigured) return false;
+    try {
+      await SupabaseService.client.functions.invoke('narration-worker');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Current status/message of a queued job (for polling progress in the UI).
+  /// Returns null if the job can't be found or Supabase isn't configured.
+  Future<Map<String, dynamic>?> jobStatus(String jobId) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('generation_jobs')
+          .select('status, message')
+          .eq('id', jobId)
+          .maybeSingle();
+      return row;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Enqueues a Wikimedia Commons hero-image import job for every location
   /// missing a hero (drained server-side by tool/wikimedia_import.py). Returns
   /// how many were queued.
@@ -136,6 +223,18 @@ class LocationRepository {
 final locationRepositoryProvider = Provider<LocationRepository>(
   (ref) => const LocationRepository(),
 );
+
+/// The automated narration flow, wired to the real repository — see
+/// [LocationNarrationAutomation] for the orchestration itself.
+final locationNarrationAutomationProvider =
+    Provider<LocationNarrationAutomation>((ref) {
+  final repo = ref.watch(locationRepositoryProvider);
+  return LocationNarrationAutomation(
+    enqueue: repo.enqueueAudioJob,
+    triggerWorker: repo.triggerNarrationWorker,
+    checkStatus: repo.jobStatus,
+  );
+});
 
 final locationEngineProvider = Provider<LocationEngine>(
   (ref) => const LocationEngine(),

@@ -356,13 +356,20 @@ class _PlayerState extends ConsumerState<_Player> {
                           active: onAir,
                         ),
                         const SizedBox(height: RD.xl),
+                        // Replaces the former "I SEE SOMETHING" button per
+                        // the Discover This Area spec — a location-aware
+                        // discovery hub instead of a single point of
+                        // interest. The old screen/route (ISeeSomethingScreen,
+                        // AppRoute.iSeeSomething) is left in place, unused
+                        // from here, in case that flow is wanted elsewhere
+                        // later — nothing was deleted, just un-linked.
                         PrimaryActionCard(
-                          icon: Icons.visibility_rounded,
-                          title: 'I SEE SOMETHING',
+                          icon: Icons.explore_rounded,
+                          title: 'DISCOVER THIS AREA',
                           subtitle:
-                              'Discover wildlife, landmarks and hidden gems',
+                              'History, wildlife, attractions & tours for wherever you are',
                           onTap: () =>
-                              context.push(AppRoute.iSeeSomething.path),
+                              context.push(AppRoute.discoverArea.path),
                         ),
                         const SizedBox(height: RD.md),
                         PrimaryActionCard(

@@ -2,13 +2,19 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/categories/category_repository.dart';
+import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
+import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
+import 'package:explorer_os_mobile/features/locations/data/location_narration_automation.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_health.dart';
 import 'package:explorer_os_mobile/features/locations/media_match.dart';
@@ -29,7 +35,7 @@ class LocationsAdminPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           Material(
@@ -40,6 +46,7 @@ class LocationsAdminPage extends StatelessWidget {
               tabs: [
                 Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
                 Tab(icon: Icon(Icons.place_rounded), text: 'Locations'),
+                Tab(icon: Icon(Icons.pin_drop_rounded), text: 'Location Content'),
               ],
             ),
           ),
@@ -47,7 +54,7 @@ class LocationsAdminPage extends StatelessWidget {
           const Expanded(
             child: TabBarView(
               physics: NeverScrollableScrollPhysics(),
-              children: [_OverviewTab(), _ListTab()],
+              children: [_OverviewTab(), _ListTab(), LocationContentPage()],
             ),
           ),
         ],
@@ -1182,7 +1189,7 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late final _tags = TextEditingController(
     text: (widget.item?.tags ?? const []).join(', '),
   );
-  late LocationType _type = widget.item?.type ?? LocationType.pointOfInterest;
+  late String _type = widget.item?.type.id ?? LocationType.pointOfInterest.id;
   late bool _active = widget.item?.active ?? true;
   late bool _featured = widget.item?.featured ?? false;
   late bool _hidden = widget.item?.hidden ?? false;
@@ -1193,6 +1200,8 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late final List<String> _audio = [...?widget.item?.audioFiles];
   bool _saving = false;
   bool _uploading = false;
+  NarrationAutomationResult? _narrationResult;
+  MasterLocation? _lastSaved;
 
   @override
   void dispose() {
@@ -1229,11 +1238,14 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       s.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
 
   Future<void> _save() async {
-    setState(() => _saving = true);
+    setState(() {
+      _saving = true;
+      _narrationResult = null;
+    });
     final repo = ref.read(locationRepositoryProvider);
     final row = <String, dynamic>{
       'name': _name.text.trim(),
-      'category': _type.id,
+      'category': _type,
       'latitude': double.tryParse(_lat.text.trim()),
       'longitude': double.tryParse(_lng.text.trim()),
       'county': _county.text.trim().isEmpty ? null : _county.text.trim(),
@@ -1266,13 +1278,15 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'pet_friendly': _petFriendly,
       'wheelchair_accessible': _wheelchair,
     };
+
+    String? id;
     try {
       if (widget.item == null) {
-        await repo.create({...row, 'source': 'manual'});
+        id = await repo.createAndReturnId({...row, 'source': 'manual'});
       } else {
         await repo.update(widget.item!.id, row);
+        id = widget.item!.id;
       }
-      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -1280,7 +1294,50 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
           context,
         ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
+      return;
     }
+
+    // The location record itself is saved at this point — refresh the list
+    // right away so it's never lost even if narration generation below fails.
+    ref.read(locationRefreshProvider.notifier).bump();
+
+    if (id == null) {
+      // Couldn't get an id back (e.g. Supabase not configured) — nothing to
+      // automate; close exactly like before this feature existed.
+      if (mounted) Navigator.pop(context, true);
+      return;
+    }
+
+    await _runNarrationAutomation(MasterLocation.fromJson({...row, 'id': id}));
+  }
+
+  /// Drives the automated narration flow for [saved] and updates the dialog
+  /// with each stage. Auto-closes on success/skip; stays open on failure so
+  /// the admin can read the reason and retry without losing their save.
+  Future<void> _runNarrationAutomation(MasterLocation saved) async {
+    _lastSaved = saved;
+    final automation = ref.read(locationNarrationAutomationProvider);
+    await for (final result in automation.run(saved)) {
+      if (!mounted) return;
+      setState(() => _narrationResult = result);
+    }
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    if (_narrationResult?.isSuccess ?? true) {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      if (mounted) Navigator.pop(context, true);
+    }
+  }
+
+  Future<void> _retryNarration() async {
+    final saved = _lastSaved;
+    if (saved == null) return;
+    setState(() {
+      _saving = true;
+      _narrationResult = null;
+    });
+    await _runNarrationAutomation(saved);
   }
 
   @override
@@ -1295,20 +1352,52 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
             children: [
               _f(_name, 'Name'),
               const Gap.v(AppSpacing.sm),
-              DropdownButtonFormField<LocationType>(
-                initialValue: _type,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Type',
-                  isDense: true,
-                  border: OutlineInputBorder(),
+              Builder(builder: (context) {
+                final options = ref.watch(categoryOptionsProvider);
+                final knownIds = options.map((o) => o.id).toSet();
+                final items = [
+                  ...options,
+                  // Defensive: if the location's current category isn't in
+                  // the (active-only) merged list — e.g. it was deactivated,
+                  // or custom categories haven't loaded yet — keep it
+                  // selectable rather than crashing the dropdown.
+                  if (!knownIds.contains(_type))
+                    CategoryOption(id: _type, label: _type, isCustom: true),
+                ];
+                return DropdownButtonFormField<String>(
+                  initialValue: _type,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Type',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final o in items)
+                      DropdownMenuItem(
+                        value: o.id,
+                        child:
+                            Text(o.isCustom ? '${o.label} (custom)' : o.label),
+                      ),
+                  ],
+                  onChanged: (t) => setState(() => _type = t ?? _type),
+                );
+              }),
+              if (_type == 'area' && widget.item != null) ...[
+                const Gap.v(AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AreaContentManagerPage(
+                      locationId: widget.item!.id,
+                      areaName: _name.text.trim().isEmpty
+                          ? widget.item!.name
+                          : _name.text.trim(),
+                    ),
+                  )),
+                  icon: const Icon(Icons.menu_book_rounded),
+                  label: const Text('Manage Discovery Content (History, Nature, Geology...)'),
                 ),
-                items: [
-                  for (final t in LocationType.values)
-                    DropdownMenuItem(value: t, child: Text(t.label)),
-                ],
-                onChanged: (t) => setState(() => _type = t ?? _type),
-              ),
+              ],
               const Gap.v(AppSpacing.sm),
               Row(
                 children: [
@@ -1418,20 +1507,77 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                   ),
                 ],
               ),
+              if (_narrationResult != null) ...[
+                const Gap.v(AppSpacing.md),
+                _narrationPanel(context, _narrationResult!),
+              ],
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Saving…' : 'Save'),
-        ),
-      ],
+      actions: _narrationResult?.stage == NarrationAutomationStage.failed
+          ? [
+              TextButton(
+                onPressed: _saving ? null : _retryNarration,
+                child: const Text('Retry Narration'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Close'),
+              ),
+            ]
+          : [
+              TextButton(
+                onPressed: _saving ? null : () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? 'Saving…' : 'Save'),
+              ),
+            ],
+    );
+  }
+
+  Widget _narrationPanel(BuildContext context, NarrationAutomationResult r) {
+    final theme = Theme.of(context);
+    final color = r.stage == NarrationAutomationStage.failed
+        ? theme.colorScheme.error
+        : (r.isSuccess ? Colors.green : theme.colorScheme.primary);
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: AppRadius.mdAll,
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!r.isTerminal)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else
+            Icon(
+              r.isSuccess ? Icons.check_circle_rounded : Icons.error_rounded,
+              color: color,
+              size: 18,
+            ),
+          const Gap.h(AppSpacing.sm),
+          Expanded(
+            child: Text(
+              r.message,
+              style: theme.textTheme.bodySmall?.copyWith(color: color),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
