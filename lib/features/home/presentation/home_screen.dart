@@ -14,7 +14,7 @@ import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 ///
 /// Pick a music station (Country / Rock / Top Hits / Kids) to start exploring.
 /// Every station shares the exact same educational content (GPS stories,
-/// wildlife, "I See Something", etc.) — only the music differs. The Guide button
+/// wildlife, Discover This Area, etc.) — only the music differs. The Guide button
 /// opens the guided exploration features (map, GPS tour, POIs).
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});

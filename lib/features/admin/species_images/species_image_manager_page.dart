@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/admin/presentation/image_matching_page.dart';
 import 'package:explorer_os_mobile/features/admin/species_images/species_image_repository.dart';
 import 'package:explorer_os_mobile/features/admin/species_images/wildlife_placeholder.dart';
 import 'package:explorer_os_mobile/features/discovery/data/species_repository.dart';
@@ -19,7 +20,7 @@ class SpeciesImageManagerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Column(
         children: [
           Material(
@@ -28,6 +29,7 @@ class SpeciesImageManagerPage extends StatelessWidget {
               tabs: [
                 Tab(icon: Icon(Icons.fact_check_rounded), text: 'Image Audit'),
                 Tab(icon: Icon(Icons.photo_library_rounded), text: 'Manage'),
+                Tab(icon: Icon(Icons.image_search_rounded), text: 'Image Matching'),
               ],
             ),
           ),
@@ -35,7 +37,7 @@ class SpeciesImageManagerPage extends StatelessWidget {
           const Expanded(
             child: TabBarView(
               physics: NeverScrollableScrollPhysics(),
-              children: [_AuditTab(), _ManageTab()],
+              children: [_AuditTab(), _ManageTab(), ImageMatchingPage()],
             ),
           ),
         ],

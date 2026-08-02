@@ -9,6 +9,7 @@ import 'package:explorer_os_mobile/features/admin/media_manager/logic/media_audi
 import 'package:explorer_os_mobile/features/admin/media_manager/models/media_asset.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/widgets/media_uploader.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/widgets/media_widgets.dart';
+import 'package:explorer_os_mobile/features/admin/media_search/presentation/media_search_center_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
 /// The Media Manager admin module: a single, comprehensive place to manage
@@ -21,7 +22,7 @@ class MediaManagerPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Column(
         children: [
           Material(
@@ -32,6 +33,7 @@ class MediaManagerPage extends StatelessWidget {
               tabs: [
                 Tab(text: 'Dashboard'),
                 Tab(text: 'Media Library'),
+                Tab(text: 'Search & Import'),
                 Tab(text: 'Media Audit'),
                 Tab(text: 'Upload Center'),
                 Tab(text: 'Settings'),
@@ -45,6 +47,7 @@ class MediaManagerPage extends StatelessWidget {
               children: [
                 _DashboardTab(),
                 _LibraryTab(),
+                MediaSearchCenterPage(),
                 _AuditTab(),
                 _UploadTab(),
                 _SettingsTab(),

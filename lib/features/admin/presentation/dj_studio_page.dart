@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/dj_banter_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
 import 'package:explorer_os_mobile/features/dj/models/dj_personality.dart';
@@ -20,7 +21,7 @@ class DjStudioPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Column(
         children: [
           Material(
@@ -32,6 +33,7 @@ class DjStudioPage extends StatelessWidget {
                 Tab(icon: Icon(Icons.record_voice_over_rounded), text: 'DJ Personalities'),
                 Tab(icon: Icon(Icons.auto_awesome_rounded), text: 'Banter Generator'),
                 Tab(icon: Icon(Icons.queue_music_rounded), text: 'Song Intro Generator'),
+                Tab(icon: Icon(Icons.spatial_audio_off_rounded), text: 'Banter Library'),
               ],
             ),
           ),
@@ -43,6 +45,7 @@ class DjStudioPage extends StatelessWidget {
                 _PersonalitiesTab(),
                 _BanterTab(),
                 _SongIntroTab(),
+                DjBanterStudioPage(),
               ],
             ),
           ),

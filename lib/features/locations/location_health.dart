@@ -249,3 +249,121 @@ List<MasterLocation> recentlyAdded(List<MasterLocation> all, {int limit = 10}) {
     ..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
   return withDates.take(limit).toList();
 }
+
+/// Per-county content-readiness rollup for the County Completion Dashboard.
+/// Every count is scoped to locations whose `county` matches [county]
+/// (case-insensitively).
+class CountyCompletion {
+  const CountyCompletion({
+    required this.county,
+    required this.totalLocations,
+    required this.totalCities,
+    required this.totalCommunities,
+    required this.totalAttractions,
+    required this.museumsComplete,
+    required this.museumsTotal,
+    required this.parksComplete,
+    required this.parksTotal,
+    required this.trailsComplete,
+    required this.trailsTotal,
+    required this.hiddenGemsComplete,
+    required this.hiddenGemsTotal,
+    required this.narrationsComplete,
+    required this.imagesComplete,
+    required this.gpsVerified,
+    required this.overallCompletionPercent,
+  });
+
+  final String county;
+  final int totalLocations;
+  final int totalCities;
+  final int totalCommunities;
+  final int totalAttractions;
+
+  final int museumsComplete;
+  final int museumsTotal;
+  final int parksComplete;
+  final int parksTotal;
+  final int trailsComplete;
+  final int trailsTotal;
+  final int hiddenGemsComplete;
+  final int hiddenGemsTotal;
+
+  final int narrationsComplete;
+  final int imagesComplete;
+  final int gpsVerified;
+
+  /// Average of every location's [LocationCompletion.percent] (the existing
+  /// hero/gallery/narration/gps/map checklist) across the whole county —
+  /// 0..100, rounded.
+  final int overallCompletionPercent;
+}
+
+bool _isParkType(LocationType t) =>
+    t == LocationType.statePark ||
+    t == LocationType.nationalPark ||
+    t == LocationType.countyPark;
+
+bool _isTrailType(LocationType t) =>
+    t == LocationType.trail || t == LocationType.trailhead;
+
+/// Rolls up completion for every location in [county] (case-insensitive
+/// match against [MasterLocation.county]). Pure — no I/O, easy to test.
+CountyCompletion computeCountyCompletion(
+  List<MasterLocation> all, {
+  required String county,
+}) {
+  final key = county.trim().toLowerCase();
+  final scoped =
+      all.where((l) => (l.county ?? '').trim().toLowerCase() == key).toList();
+
+  int countType(LocationType t) => scoped.where((l) => l.type == t).length;
+  int countComplete(bool Function(LocationType) match) => scoped
+      .where((l) => match(l.type) && completionFor(l).complete)
+      .length;
+  int countTotal(bool Function(LocationType) match) =>
+      scoped.where((l) => match(l.type)).length;
+
+  final overall = scoped.isEmpty
+      ? 0
+      : (scoped.map((l) => completionFor(l).percent).reduce((a, b) => a + b) /
+              scoped.length)
+          .round();
+
+  return CountyCompletion(
+    county: county,
+    totalLocations: scoped.length,
+    totalCities: countType(LocationType.city),
+    totalCommunities: countType(LocationType.community),
+    totalAttractions: countType(LocationType.attraction),
+    museumsComplete: countComplete((t) => t == LocationType.museum),
+    museumsTotal: countTotal((t) => t == LocationType.museum),
+    parksComplete: countComplete(_isParkType),
+    parksTotal: countTotal(_isParkType),
+    trailsComplete: countComplete(_isTrailType),
+    trailsTotal: countTotal(_isTrailType),
+    hiddenGemsComplete: countComplete((t) => t == LocationType.hiddenGem),
+    hiddenGemsTotal: countTotal((t) => t == LocationType.hiddenGem),
+    narrationsComplete: scoped.where((l) => l.hasNarration).length,
+    imagesComplete: scoped.where((l) => l.images.isNotEmpty).length,
+    gpsVerified: scoped.where((l) => l.hasCoordinates).length,
+    overallCompletionPercent: overall,
+  );
+}
+
+/// One [CountyCompletion] per distinct county found in [all] (case-
+/// insensitive grouping; locations with no county set are excluded), sorted
+/// alphabetically.
+List<CountyCompletion> computeCountyCompletions(List<MasterLocation> all) {
+  final byKey = <String, String>{}; // lowercase key -> first-seen display name
+  for (final l in all) {
+    final name = (l.county ?? '').trim();
+    if (name.isEmpty) continue;
+    byKey.putIfAbsent(name.toLowerCase(), () => name);
+  }
+  final names = byKey.values.toList()
+    ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  return [
+    for (final name in names) computeCountyCompletion(all, county: name),
+  ];
+}

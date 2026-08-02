@@ -27,6 +27,7 @@ enum AppRoute {
   localGems('/local-gems'),
   stationSelect('/station-select'),
   discover('/discover'),
+  discoverArea('/discover-area'),
   explore('/explore'),
   profile('/profile'),
   settings('/settings'),

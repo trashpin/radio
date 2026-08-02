@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/audio_recall/audio_recall_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/data/audio_production_repository.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/logic/audio_audit.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/models/audio_asset.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/widgets/media_widgets.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/narration_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/content_generator/data/content_generator_repository.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
@@ -51,7 +53,7 @@ class AudioProductionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 7,
+      length: 9,
       child: Column(
         children: [
           Material(
@@ -66,6 +68,8 @@ class AudioProductionPage extends StatelessWidget {
                 Tab(text: 'Audio Library'),
                 Tab(text: 'Batch Generator'),
                 Tab(text: 'Audio Audit'),
+                Tab(text: 'Narration'),
+                Tab(text: 'Audio Recall'),
                 Tab(text: 'Settings'),
               ],
             ),
@@ -81,6 +85,8 @@ class AudioProductionPage extends StatelessWidget {
                 _AudioLibraryTab(),
                 _BatchTab(),
                 _AuditTab(),
+                NarrationStudioPage(),
+                AudioRecallPage(),
                 _SettingsTab(),
               ],
             ),

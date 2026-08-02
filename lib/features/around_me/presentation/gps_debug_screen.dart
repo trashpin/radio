@@ -3,17 +3,22 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/around_me/logic/around_me_events.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_status.dart';
+import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
 import 'package:explorer_os_mobile/features/gps/presentation/gps_status_card.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_providers.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
+import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
+import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// A developer panel that shows live GPS Intelligence state and a Simulator that
@@ -147,6 +152,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   Widget build(BuildContext context) {
     final snap = ref.watch(aroundMeControllerProvider);
     final gps = ref.watch(gpsStatusProvider);
+    final ctx = ref.watch(gpsControllerProvider);
+    final mapCenter = ref.watch(mapCenterProvider);
     final experiences = ref.watch(aroundMeExperiencesProvider);
     final theme = Theme.of(context);
 
@@ -172,7 +179,9 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
         children: [
           const GpsStatusCard(),
           const Gap.v(AppSpacing.lg),
-          _debugPanel(theme, snap, gps, experiences.length),
+          _debugPanel(theme, snap, gps, experiences.length, ctx, mapCenter),
+          const Gap.v(AppSpacing.lg),
+          _nearbyDiagnostics(theme),
           const Gap.v(AppSpacing.lg),
           _deviceGps(theme, gps),
           const Gap.v(AppSpacing.lg),
@@ -182,8 +191,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
     );
   }
 
-  Widget _debugPanel(
-      ThemeData theme, AroundMeSnapshot snap, GpsStatus gps, int expCount) {
+  Widget _debugPanel(ThemeData theme, AroundMeSnapshot snap, GpsStatus gps,
+      int expCount, TravelContext ctx, LatLng? mapCenter) {
     String f(double? v, {int digits = 5, String suffix = ''}) =>
         v == null ? '—' : '${v.toStringAsFixed(digits)}$suffix';
     String time(DateTime? t) => t == null ? '—' : t.toIso8601String().substring(11, 19);
@@ -191,13 +200,19 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
     final rows = <(String, String)>[
       ('Latitude', f(snap.latitude, digits: 6)),
       ('Longitude', f(snap.longitude, digits: 6)),
+      ('Map Center Lat', f(mapCenter?.latitude, digits: 6)),
+      ('Map Center Lng', f(mapCenter?.longitude, digits: 6)),
       ('Heading', f(snap.headingDegrees, digits: 0, suffix: '°')),
       ('Speed', '${snap.speedMps.toStringAsFixed(1)} m/s · '
           '${snap.speedMph.toStringAsFixed(0)} mph'),
       ('GPS Accuracy', f(snap.accuracyMeters, digits: 0, suffix: ' m')),
+      if (gps.isLowAccuracy) ('Accuracy Warning', 'low accuracy fix'),
       ('Altitude', f(snap.altitudeMeters, digits: 0, suffix: ' m')),
       ('Movement', snap.movement.name),
       ('Travel Mode', snap.travelMode.name),
+      ('Current State', ctx.currentStateName ?? '—'),
+      ('Current County', ctx.currentCounty ?? '—'),
+      ('Current City', ctx.currentCity ?? '— (not implemented)'),
       ('Current Destination', snap.currentDestination ?? '—'),
       ('Current Zone', snap.zone ?? '—'),
       ('Nearby Experiences', '$expCount'),
@@ -205,6 +220,7 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       ('Permission Status', gps.permission.name),
       ('GPS Enabled', _lost ? 'no (signal lost)' : '${gps.serviceEnabled}'),
       ('Last Update Time', time(gps.lastUpdate)),
+      ('Stale?', gps.isStale ? 'yes (>${GpsStatus.staleAfter.inSeconds}s old)' : 'no'),
       ('Updates Received', '${gps.updateCount}'),
       ('Current Device Time', time(DateTime.now())),
       ('GPS Status', _lost ? 'signal lost' : snap.status.name),
@@ -245,6 +261,102 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
                     child: Text(v,
                         style: theme.textTheme.bodyMedium
                             ?.copyWith(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _nearbyDiagnostics(ThemeData theme) {
+    final center = ref.watch(mapCenterProvider);
+    final radius = ref.watch(searchRadiusProvider);
+    final all = ref.watch(mapLocationsProvider).value ?? const [];
+
+    if (center == null) {
+      return Container(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: AppRadius.lgAll,
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.4)),
+        ),
+        child: Text('No GPS fix yet — nothing to measure distance from.',
+            style: theme.textTheme.bodySmall),
+      );
+    }
+
+    // Every candidate with its live distance, regardless of whether it's
+    // currently shown to the user — this is what makes "why isn't X
+    // appearing?" answerable from the debug screen instead of guessing.
+    final withDist = [
+      for (final item in all)
+        (
+          item: item,
+          meters: GeoMath.distanceMeters(
+            center.latitude,
+            center.longitude,
+            item.latitude,
+            item.longitude,
+          ),
+        ),
+    ]..sort((a, b) => a.meters.compareTo(b.meters));
+
+    final shown = withDist.take(25).toList(growable: false);
+    final insideCount =
+        withDist.where((r) => r.meters <= radius.meters).length;
+
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: AppRadius.lgAll,
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Nearby Locations Diagnostic',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const Gap.v(AppSpacing.xs),
+          Text(
+            '${withDist.length} candidates total · $insideCount inside '
+            '${radius.label} · nearest 25 shown',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.disabledColor),
+          ),
+          const Gap.v(AppSpacing.sm),
+          for (final r in shown)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(r.item.name,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium),
+                  ),
+                  SizedBox(
+                    width: 70,
+                    child: Text(formatDistance(r.meters),
+                        textAlign: TextAlign.end,
+                        style: theme.textTheme.bodySmall),
+                  ),
+                  SizedBox(
+                    width: 60,
+                    child: Text(
+                      r.meters <= radius.meters ? 'inside' : 'outside',
+                      textAlign: TextAlign.end,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: r.meters <= radius.meters
+                            ? theme.colorScheme.primary
+                            : theme.disabledColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
                 ],
               ),

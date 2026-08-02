@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/presentation/voice_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/narration/data/narration_settings_repository.dart';
 import 'package:explorer_os_mobile/features/narration/voices.dart';
 
-/// Admin Settings — currently the AI Narration automation switches. Everything
-/// defaults OFF: scripts, audio, and publishing are all manual unless enabled.
+/// Admin Settings — General (AI Narration automation switches) + Voices
+/// (browse/preview/assign ElevenLabs voices — absorbed the former standalone
+/// Voice Manager page as a tab). Everything in General defaults OFF: scripts,
+/// audio, and publishing are all manual unless enabled.
 class AdminSettingsPage extends ConsumerWidget {
   const AdminSettingsPage({super.key});
 
@@ -22,6 +25,41 @@ class AdminSettingsPage extends ConsumerWidget {
           content: Text('Could not save (run migration 0023): $e')));
     }
   }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return DefaultTabController(
+      length: 2,
+      child: Column(
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: const TabBar(
+              tabs: [
+                Tab(text: 'General'),
+                Tab(text: 'Voices'),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: TabBarView(
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _GeneralTab(onSet: (col, v) => _set(context, ref, col, v)),
+                const VoiceManagerPage(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GeneralTab extends ConsumerWidget {
+  const _GeneralTab({required this.onSet});
+  final void Function(String column, bool value) onSet;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,7 +96,7 @@ class AdminSettingsPage extends ConsumerWidget {
                 subtitle: const Text(
                     'When a destination is imported, generate its scripts.'),
                 value: s.autoGenerateScripts,
-                onChanged: (v) => _set(context, ref, 'auto_generate_scripts', v),
+                onChanged: (v) => onSet('auto_generate_scripts', v),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -66,7 +104,7 @@ class AdminSettingsPage extends ConsumerWidget {
                 subtitle: const Text(
                     'When a script is approved, send it to ElevenLabs.'),
                 value: s.autoGenerateAudio,
-                onChanged: (v) => _set(context, ref, 'auto_generate_audio', v),
+                onChanged: (v) => onSet('auto_generate_audio', v),
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -74,7 +112,7 @@ class AdminSettingsPage extends ConsumerWidget {
                 subtitle: const Text(
                     'When audio is generated, publish to Explorer Radio.'),
                 value: s.autoPublish,
-                onChanged: (v) => _set(context, ref, 'auto_publish', v),
+                onChanged: (v) => onSet('auto_publish', v),
               ),
               const Divider(),
               const Gap.v(AppSpacing.sm),

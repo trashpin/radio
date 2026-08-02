@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/features/admin/species_images/wildlife_placeh
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/nearby_gems/models/nearby_gem.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/providers/nearby_gems_driving_distance_provider.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/gem_narration_controller.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -31,6 +32,7 @@ class _LocalGemsScreenState extends ConsumerState<LocalGemsScreen> {
   @override
   Widget build(BuildContext context) {
     final hits = ref.watch(nearbyGemsForUserProvider);
+    final driving = ref.watch(nearbyGemsDrivingDistanceProvider);
     return Scaffold(
       backgroundColor: RD.bg,
       body: SafeArea(
@@ -65,6 +67,8 @@ class _LocalGemsScreenState extends ConsumerState<LocalGemsScreen> {
                           itemBuilder: (_, i) => _GemCard(
                             gem: hits[i].gem,
                             distanceMeters: hits[i].distanceMeters,
+                            drivingDistanceMeters:
+                                driving[hits[i].gem.id]?.distanceMeters,
                             onHearStory: () => _hearStory(hits[i].gem),
                             onNavigate: () => _navigate(hits[i].gem),
                             onOpen: () => _hearStory(hits[i].gem),
@@ -178,18 +182,27 @@ class _GemCard extends StatelessWidget {
   const _GemCard({
     required this.gem,
     required this.distanceMeters,
+    this.drivingDistanceMeters,
     required this.onHearStory,
     required this.onNavigate,
     required this.onOpen,
   });
   final NearbyGem gem;
+
+  /// Straight-line ("as the crow flies") distance — always available.
   final double distanceMeters;
+
+  /// Real driving distance from the Distance Matrix API, once it arrives.
+  /// Null until fetched (or if the lookup failed) — falls back to
+  /// [distanceMeters] so the card never shows a blank distance.
+  final double? drivingDistanceMeters;
+
   final VoidCallback onHearStory;
   final VoidCallback onNavigate;
   final VoidCallback onOpen;
 
   String get _miles {
-    final mi = distanceMeters / 1609.344;
+    final mi = (drivingDistanceMeters ?? distanceMeters) / 1609.344;
     return mi < 10 ? '${mi.toStringAsFixed(1)} mi' : '${mi.round()} mi';
   }
 
@@ -252,9 +265,19 @@ class _GemCard extends StatelessWidget {
                         horizontal: RD.sm,
                         vertical: 4,
                       ),
-                      child: Text(
-                        _miles,
-                        style: RD.badge.copyWith(color: RD.textPrimary),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (drivingDistanceMeters != null) ...[
+                            const Icon(Icons.directions_car_rounded,
+                                size: 12, color: RD.textPrimary),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            _miles,
+                            style: RD.badge.copyWith(color: RD.textPrimary),
+                          ),
+                        ],
                       ),
                     ),
                   ),

@@ -12,6 +12,7 @@ import 'package:explorer_os_mobile/features/dj/banter_studio/banter_moment.dart'
 import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/services/location_trigger_engine.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -71,6 +72,13 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Announce approaching communities (~1 mile out) and welcome the traveler
   // into each town/community as they arrive (once per visit).
   _attachCommunityWelcome(ref);
+
+  // Points of Interest — every OTHER location type (springs, museums, trails,
+  // parks, hidden gems, attractions, etc.) gets a generic GPS arrival/
+  // departure trigger honoring its own arrival_trigger, departure_trigger,
+  // play_once, and cooldown_seconds (migration 0040). County/city/community
+  // stay owned by the directors above so nothing double-fires.
+  _attachLocationTriggers(ref);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -450,6 +458,101 @@ void _attachCommunityWelcome(Ref ref) {
   void handle(LocationContext ctx) {
     try {
       evaluateAndPlay(ctx);
+    } catch (_) {}
+  }
+
+  handle(ref.read(locationContextProvider));
+  ref.listen<LocationContext>(
+    locationContextProvider,
+    (_, next) => handle(next),
+  );
+}
+
+/// Level 3 — Points of Interest. Generic GPS arrival/departure triggers for
+/// every master location EXCEPT county/city/community (those have their own
+/// directors above, so nothing double-fires). Honors each location's own
+/// arrival_trigger, departure_trigger, play_once, and cooldown_seconds
+/// (migration 0040) via [LocationTriggerEngine] — a location with no
+/// `trigger_radius` set simply never participates (opt-in, same as today).
+void _attachLocationTriggers(Ref ref) {
+  final engine = LocationTriggerEngine();
+
+  List<TriggerableLocation> candidates() {
+    final all = ref.read(masterLocationsProvider).value ?? const [];
+    final out = <TriggerableLocation>[];
+    for (final l in all) {
+      if (l.type == LocationType.county ||
+          l.type == LocationType.city ||
+          l.type == LocationType.community) {
+        continue; // owned by the county/community welcome directors
+      }
+      if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.triggerRadius == null) continue;
+      out.add(
+        TriggerableLocation(
+          id: l.id,
+          latitude: l.latitude!,
+          longitude: l.longitude!,
+          radiusMeters: l.triggerRadius!,
+          arrivalTrigger: l.arrivalTrigger,
+          departureTrigger: l.departureTrigger,
+          playOnce: l.playOnce,
+          cooldownSeconds: l.cooldownSeconds,
+        ),
+      );
+    }
+    return out;
+  }
+
+  MasterLocation? locById(String id) {
+    for (final l in ref.read(masterLocationsProvider).value ?? const []) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
+
+  void fire(LocationTriggerEvent event) {
+    final loc = locById(event.locationId);
+    if (loc == null) return;
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final isArrival = event.kind == LocationTriggerKind.arrival;
+
+    // Departure has no dedicated narration content today — only arrival
+    // reuses the location's recorded/generated narration.
+    final narration = isArrival
+        ? resolveLocationNarration(loc, ref.read(locationContentItemsProvider))
+        : null;
+    final hasAudio = narration?.hasAudio ?? false;
+    final fallback =
+        isArrival ? 'Welcome to ${loc.name}.' : "You're leaving ${loc.name}.";
+    final text = (narration?.text.trim().isNotEmpty ?? false)
+        ? narration!.text.trim()
+        : fallback;
+
+    radio.requestInterruption(
+      AudioSegment(
+        id: 'location-${event.kind.name}:${loc.id}:$ts',
+        title: isArrival ? 'Arriving at ${loc.name}' : 'Leaving ${loc.name}',
+        type: AudioSegmentType.narration,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        audioUrl: hasAudio ? narration!.audioUrl : null,
+        spokenText: hasAudio ? null : text,
+        interruptible: true,
+        resumeAfter: true,
+      ),
+    );
+  }
+
+  // Guarded so a location-trigger hiccup can never break the radio session.
+  void handle(LocationContext ctx) {
+    if (ctx.latitude == 0 && ctx.longitude == 0) return; // no GPS fix yet
+    try {
+      final events =
+          engine.evaluate(ctx.latitude, ctx.longitude, candidates());
+      for (final e in events) {
+        fire(e);
+      }
     } catch (_) {}
   }
 

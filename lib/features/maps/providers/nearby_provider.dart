@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -9,6 +7,7 @@ import 'package:explorer_os_mobile/core/services/connectivity_service.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
+import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_map_bridge.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 
@@ -125,17 +124,12 @@ class SearchRadiusNotifier extends Notifier<SearchRadius> {
   void set(SearchRadius r) => state = r;
 }
 
-double _haversineMeters(LatLng a, LatLng b) {
-  const earth = 6371000.0;
-  final dLat = (b.latitude - a.latitude) * math.pi / 180;
-  final dLng = (b.longitude - a.longitude) * math.pi / 180;
-  final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
-      math.cos(a.latitude * math.pi / 180) *
-          math.cos(b.latitude * math.pi / 180) *
-          math.sin(dLng / 2) *
-          math.sin(dLng / 2);
-  return earth * 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
-}
+double _haversineMeters(LatLng a, LatLng b) => GeoMath.distanceMeters(
+      a.latitude,
+      a.longitude,
+      b.latitude,
+      b.longitude,
+    );
 
 /// Records within the selected radius of the user, sorted nearest-first.
 final nearbyItemsProvider = Provider<List<NearbyHit>>((ref) {

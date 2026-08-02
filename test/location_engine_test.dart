@@ -34,8 +34,8 @@ const _engine = LocationEngine();
 
 void main() {
   group('LocationType', () {
-    test('covers all 28 types and maps free-form categories', () {
-      expect(LocationType.values.length, 28);
+    test('covers all 29 types and maps free-form categories', () {
+      expect(LocationType.values.length, 29);
       expect(LocationType.fromId('state_park'), LocationType.statePark);
       expect(LocationType.fromId('Silver Springs'), LocationType.spring);
       expect(LocationType.fromId('Ocklawaha River'), LocationType.river);

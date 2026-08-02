@@ -28,7 +28,8 @@ enum LocationType {
   parking('parking', 'Parking'),
   safetyAlert('safety_alert', 'Safety Alert'),
   hiddenGem('hidden_gem', 'Hidden Gem'),
-  pointOfInterest('point_of_interest', 'Point of Interest');
+  pointOfInterest('point_of_interest', 'Point of Interest'),
+  area('area', 'Area / District');
 
   const LocationType(this.id, this.label);
   final String id;
@@ -80,6 +81,7 @@ enum LocationType {
     }
     if (has('hidden') || has('gem')) return LocationType.hiddenGem;
     if (has('attraction')) return LocationType.attraction;
+    if (has('district') || has('area')) return LocationType.area;
     return LocationType.pointOfInterest;
   }
 }
@@ -96,6 +98,32 @@ enum LocationStatus {
 
   const LocationStatus(this.label);
   final String label;
+}
+
+/// Explicit editorial workflow status (the `content_status` column, migration
+/// 0038) — separate from the computed [LocationStatus] above. Settable by an
+/// admin; [MasterLocation.effectiveContentStatus] supplies a sensible default
+/// for rows where it hasn't been set yet.
+enum ContentStatus {
+  draft('draft', 'Draft'),
+  needsImages('needs_images', 'Needs Images'),
+  needsNarration('needs_narration', 'Needs Narration'),
+  needsGpsVerification('needs_gps_verification', 'Needs GPS Verification'),
+  needsReview('needs_review', 'Needs Review'),
+  published('published', 'Published'),
+  archived('archived', 'Archived');
+
+  const ContentStatus(this.id, this.label);
+  final String id;
+  final String label;
+
+  static ContentStatus? fromId(String? raw) {
+    if (raw == null) return null;
+    for (final s in ContentStatus.values) {
+      if (s.id == raw) return s;
+    }
+    return null;
+  }
 }
 
 /// The one canonical location record every system reads (`public.locations`).
@@ -141,6 +169,12 @@ class MasterLocation {
     this.familyFriendly,
     this.petFriendly,
     this.wheelchairAccessible,
+    this.arrivalTrigger = true,
+    this.departureTrigger = false,
+    this.playOnce = false,
+    this.cooldownSeconds,
+    this.contentStatus,
+    this.estimatedListeningMinutes,
   });
 
   final String id;
@@ -187,6 +221,36 @@ class MasterLocation {
   final bool? familyFriendly;
   final bool? petFriendly;
   final bool? wheelchairAccessible;
+
+  // ── GPS trigger configuration (migration 0040) ──
+  /// Whether this location should fire its GPS trigger on arrival (entering
+  /// [triggerRadius]). Defaults to true — matches the existing behavior
+  /// before this column existed (every location triggered on arrival).
+  final bool arrivalTrigger;
+
+  /// Whether this location should also fire a trigger on departure (leaving
+  /// [triggerRadius]). Defaults to false — opt-in, since most locations only
+  /// want an arrival narration today.
+  final bool departureTrigger;
+
+  /// When true, the trigger fires at most once ever for this location
+  /// (regardless of [cooldownSeconds]).
+  final bool playOnce;
+
+  /// Minimum seconds between repeat triggers for this location. Null = no
+  /// cooldown enforced (falls back to whatever the trigger engine's own
+  /// default is, unchanged from today).
+  final int? cooldownSeconds;
+
+  /// Explicit editorial status (migration 0040); null = not yet set by an
+  /// admin. Use [effectiveContentStatus] for display/filtering — it supplies
+  /// a sensible computed default so untouched rows aren't just blank.
+  final ContentStatus? contentStatus;
+
+  /// "Discover This Area" (migration 0041) — how long this area's full
+  /// narrated content takes to listen to, shown on the Discover Screen.
+  /// Only meaningful for `type == LocationType.area`; null elsewhere.
+  final int? estimatedListeningMinutes;
 
   /// The richest description available (long → plain → short).
   String? get bestDescription {
@@ -254,6 +318,21 @@ class MasterLocation {
   bool get isReady => status == LocationStatus.ready;
   bool get isPending => status == LocationStatus.pending;
 
+  /// The editorial workflow status to show/filter by: the explicit
+  /// [contentStatus] if an admin has set one, otherwise a computed default so
+  /// existing/untouched rows still land somewhere sensible in the workflow.
+  /// Deliberately defaults a fully-ready row to [ContentStatus.needsReview]
+  /// rather than [ContentStatus.published] — publishing is an editorial
+  /// decision this doesn't make on an admin's behalf.
+  ContentStatus get effectiveContentStatus {
+    if (contentStatus != null) return contentStatus!;
+    if (!active || hidden) return ContentStatus.archived;
+    if (!hasCoordinates) return ContentStatus.needsGpsVerification;
+    if (images.isEmpty) return ContentStatus.needsImages;
+    if (!hasNarration) return ContentStatus.needsNarration;
+    return ContentStatus.needsReview;
+  }
+
   String? get placeLine {
     final parts = [
       city ?? community,
@@ -309,6 +388,13 @@ class MasterLocation {
     familyFriendly: j['family_friendly'] as bool?,
     petFriendly: j['pet_friendly'] as bool?,
     wheelchairAccessible: j['wheelchair_accessible'] as bool?,
+    arrivalTrigger: (j['arrival_trigger'] ?? true) as bool,
+    departureTrigger: (j['departure_trigger'] ?? false) as bool,
+    playOnce: (j['play_once'] ?? false) as bool,
+    cooldownSeconds: (j['cooldown_seconds'] as num?)?.toInt(),
+    contentStatus: ContentStatus.fromId(j['content_status'] as String?),
+    estimatedListeningMinutes:
+        (j['estimated_listening_minutes'] as num?)?.toInt(),
   );
 
   /// Column map for insert/update (id/timestamps/provenance managed elsewhere).
@@ -347,5 +433,11 @@ class MasterLocation {
     'family_friendly': familyFriendly,
     'pet_friendly': petFriendly,
     'wheelchair_accessible': wheelchairAccessible,
+    'arrival_trigger': arrivalTrigger,
+    'departure_trigger': departureTrigger,
+    'play_once': playOnce,
+    'cooldown_seconds': cooldownSeconds,
+    'content_status': contentStatus?.id,
+    'estimated_listening_minutes': estimatedListeningMinutes,
   };
 }

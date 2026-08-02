@@ -80,6 +80,23 @@ class GpsStatus {
   bool get isGranted => permission.isGranted;
   double get speedMph => (speedMps ?? 0) * 2.2369362921;
 
+  /// Diagnostic only — NOT used to filter/reject fixes anywhere. A fix older
+  /// than this while tracking is still shown to the user (never blocks the
+  /// UI), but the debug screen flags it so a stuck/backgrounded GPS is easy
+  /// to spot.
+  static const Duration staleAfter = Duration(seconds: 30);
+  bool get isStale =>
+      lastUpdate != null &&
+      DateTime.now().difference(lastUpdate!) > staleAfter;
+
+  /// Diagnostic only — NOT used to reject fixes. Flags a fix whose reported
+  /// horizontal accuracy is poor enough that distance/geofence reasoning
+  /// built on it should be treated with suspicion (e.g. indoors, urban
+  /// canyon, cold GPS start).
+  static const double lowAccuracyThresholdMeters = 100;
+  bool get isLowAccuracy =>
+      accuracyMeters != null && accuracyMeters! > lowAccuracyThresholdMeters;
+
   factory GpsStatus.initial() => const GpsStatus();
 
   GpsStatus copyWith({
