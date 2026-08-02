@@ -42,7 +42,9 @@ enum LocationType {
     // Loose keyword fallback for free-form sources.
     bool has(String s) => n.contains(s);
     if (has('county')) return LocationType.county;
-    if (has('community') || has('unincorporated')) return LocationType.community;
+    if (has('community') || has('unincorporated')) {
+      return LocationType.community;
+    }
     if (has('city') || has('town')) return LocationType.city;
     if (has('spring')) return LocationType.spring;
     if (has('river') || has('creek')) return LocationType.river;
@@ -124,6 +126,21 @@ class MasterLocation {
     this.sourceId,
     this.destinationCode,
     this.updatedAt,
+    this.createdAt,
+    this.state,
+    this.shortDescription,
+    this.longDescription,
+    this.narrationScript,
+    this.hours,
+    this.admission,
+    this.externalWebsite,
+    this.parkingInfo,
+    this.restrooms,
+    this.difficulty,
+    this.tags = const [],
+    this.familyFriendly,
+    this.petFriendly,
+    this.wheelchairAccessible,
   });
 
   final String id;
@@ -151,6 +168,36 @@ class MasterLocation {
   final String? sourceId;
   final String? destinationCode;
   final DateTime? updatedAt;
+  final DateTime? createdAt;
+
+  // ── Richer PoI fields (county-agnostic; all optional) ──
+  final String? state;
+  final String? shortDescription;
+  final String? longDescription;
+
+  /// The spoken narration script (fed to ElevenLabs / on-device TTS).
+  final String? narrationScript;
+  final String? hours;
+  final String? admission;
+  final String? externalWebsite;
+  final String? parkingInfo;
+  final String? restrooms;
+  final String? difficulty;
+  final List<String> tags;
+  final bool? familyFriendly;
+  final bool? petFriendly;
+  final bool? wheelchairAccessible;
+
+  /// The richest description available (long → plain → short).
+  String? get bestDescription {
+    for (final s in [longDescription, description, shortDescription]) {
+      if ((s ?? '').trim().isNotEmpty) return s!.trim();
+    }
+    return null;
+  }
+
+  bool get hasDescription => bestDescription != null;
+  bool get hasTags => tags.any((t) => t.trim().isNotEmpty);
 
   MasterLocation copyWith({
     List<String>? images,
@@ -159,37 +206,37 @@ class MasterLocation {
     bool? featured,
     bool? active,
     bool? hidden,
-  }) =>
-      MasterLocation(
-        id: id,
-        name: name,
-        type: type,
-        latitude: latitude,
-        longitude: longitude,
-        county: county,
-        city: city,
-        community: community,
-        address: address,
-        description: description,
-        triggerRadius: triggerRadius,
-        mapVisibilityRadius: mapVisibilityRadius,
-        priority: priority,
-        narrationIds: narrationIds ?? this.narrationIds,
-        audioFiles: audioFiles ?? this.audioFiles,
-        images: images ?? this.images,
-        videos: videos,
-        relatedLocations: relatedLocations,
-        active: active ?? this.active,
-        featured: featured ?? this.featured,
-        hidden: hidden ?? this.hidden,
-        source: source,
-        sourceId: sourceId,
-        destinationCode: destinationCode,
-        updatedAt: updatedAt,
-      );
+  }) => MasterLocation(
+    id: id,
+    name: name,
+    type: type,
+    latitude: latitude,
+    longitude: longitude,
+    county: county,
+    city: city,
+    community: community,
+    address: address,
+    description: description,
+    triggerRadius: triggerRadius,
+    mapVisibilityRadius: mapVisibilityRadius,
+    priority: priority,
+    narrationIds: narrationIds ?? this.narrationIds,
+    audioFiles: audioFiles ?? this.audioFiles,
+    images: images ?? this.images,
+    videos: videos,
+    relatedLocations: relatedLocations,
+    active: active ?? this.active,
+    featured: featured ?? this.featured,
+    hidden: hidden ?? this.hidden,
+    source: source,
+    sourceId: sourceId,
+    destinationCode: destinationCode,
+    updatedAt: updatedAt,
+  );
 
   bool get hasCoordinates =>
-      latitude != null && longitude != null &&
+      latitude != null &&
+      longitude != null &&
       !(latitude == 0 && longitude == 0);
 
   /// Has playable recorded audio.
@@ -208,67 +255,97 @@ class MasterLocation {
   bool get isPending => status == LocationStatus.pending;
 
   String? get placeLine {
-    final parts = [city ?? community, county == null ? null : '$county County']
-        .whereType<String>()
-        .where((s) => s.trim().isNotEmpty)
-        .toList();
+    final parts = [
+      city ?? community,
+      county == null ? null : '$county County',
+    ].whereType<String>().where((s) => s.trim().isNotEmpty).toList();
     return parts.isEmpty ? null : parts.join(' · ');
   }
 
-  static double? _d(dynamic v) => v is num ? v.toDouble() : double.tryParse('$v');
-  static List<String> _strs(dynamic v) =>
-      v is List ? v.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
-                : const [];
+  static double? _d(dynamic v) =>
+      v is num ? v.toDouble() : double.tryParse('$v');
+  static List<String> _strs(dynamic v) => v is List
+      ? v.map((e) => e.toString()).where((s) => s.isNotEmpty).toList()
+      : const [];
 
   factory MasterLocation.fromJson(Map<String, dynamic> j) => MasterLocation(
-        id: (j['id'] ?? '').toString(),
-        name: (j['name'] ?? '') as String,
-        type: LocationType.fromId(j['category'] as String?),
-        latitude: _d(j['latitude']),
-        longitude: _d(j['longitude']),
-        county: j['county'] as String?,
-        city: j['city'] as String?,
-        community: j['community'] as String?,
-        address: j['address'] as String?,
-        description: j['description'] as String?,
-        triggerRadius: _d(j['trigger_radius']),
-        mapVisibilityRadius: _d(j['map_visibility_radius']),
-        priority: (j['priority'] as num?)?.toInt() ?? 0,
-        narrationIds: _strs(j['narration_ids']),
-        audioFiles: _strs(j['audio_files']),
-        images: _strs(j['images']),
-        videos: _strs(j['videos']),
-        relatedLocations: _strs(j['related_locations']),
-        active: (j['active'] ?? true) as bool,
-        featured: (j['featured'] ?? false) as bool,
-        hidden: (j['hidden'] ?? false) as bool,
-        source: j['source'] as String?,
-        sourceId: j['source_id']?.toString(),
-        destinationCode: j['destination_code'] as String?,
-        updatedAt: DateTime.tryParse('${j['updated_at']}'),
-      );
+    id: (j['id'] ?? '').toString(),
+    name: (j['name'] ?? '') as String,
+    type: LocationType.fromId(j['category'] as String?),
+    latitude: _d(j['latitude']),
+    longitude: _d(j['longitude']),
+    county: j['county'] as String?,
+    city: j['city'] as String?,
+    community: j['community'] as String?,
+    address: j['address'] as String?,
+    description: j['description'] as String?,
+    triggerRadius: _d(j['trigger_radius']),
+    mapVisibilityRadius: _d(j['map_visibility_radius']),
+    priority: (j['priority'] as num?)?.toInt() ?? 0,
+    narrationIds: _strs(j['narration_ids']),
+    audioFiles: _strs(j['audio_files']),
+    images: _strs(j['images']),
+    videos: _strs(j['videos']),
+    relatedLocations: _strs(j['related_locations']),
+    active: (j['active'] ?? true) as bool,
+    featured: (j['featured'] ?? false) as bool,
+    hidden: (j['hidden'] ?? false) as bool,
+    source: j['source'] as String?,
+    sourceId: j['source_id']?.toString(),
+    destinationCode: j['destination_code'] as String?,
+    updatedAt: DateTime.tryParse('${j['updated_at']}'),
+    createdAt: DateTime.tryParse('${j['created_at']}'),
+    state: j['state'] as String?,
+    shortDescription: j['short_description'] as String?,
+    longDescription: j['long_description'] as String?,
+    narrationScript: j['narration_script'] as String?,
+    hours: j['hours'] as String?,
+    admission: j['admission'] as String?,
+    externalWebsite: j['external_website'] as String?,
+    parkingInfo: j['parking_info'] as String?,
+    restrooms: j['restrooms'] as String?,
+    difficulty: j['difficulty'] as String?,
+    tags: _strs(j['tags']),
+    familyFriendly: j['family_friendly'] as bool?,
+    petFriendly: j['pet_friendly'] as bool?,
+    wheelchairAccessible: j['wheelchair_accessible'] as bool?,
+  );
 
   /// Column map for insert/update (id/timestamps/provenance managed elsewhere).
   Map<String, dynamic> toWrite() => {
-        'name': name,
-        'category': type.id,
-        'latitude': latitude,
-        'longitude': longitude,
-        'county': county,
-        'city': city,
-        'community': community,
-        'address': address,
-        'description': description,
-        'trigger_radius': triggerRadius,
-        'map_visibility_radius': mapVisibilityRadius,
-        'priority': priority,
-        'narration_ids': narrationIds,
-        'audio_files': audioFiles,
-        'images': images,
-        'videos': videos,
-        'related_locations': relatedLocations,
-        'active': active,
-        'featured': featured,
-        'hidden': hidden,
-      };
+    'name': name,
+    'category': type.id,
+    'latitude': latitude,
+    'longitude': longitude,
+    'county': county,
+    'city': city,
+    'community': community,
+    'address': address,
+    'description': description,
+    'trigger_radius': triggerRadius,
+    'map_visibility_radius': mapVisibilityRadius,
+    'priority': priority,
+    'narration_ids': narrationIds,
+    'audio_files': audioFiles,
+    'images': images,
+    'videos': videos,
+    'related_locations': relatedLocations,
+    'active': active,
+    'featured': featured,
+    'hidden': hidden,
+    'state': state,
+    'short_description': shortDescription,
+    'long_description': longDescription,
+    'narration_script': narrationScript,
+    'hours': hours,
+    'admission': admission,
+    'external_website': externalWebsite,
+    'parking_info': parkingInfo,
+    'restrooms': restrooms,
+    'difficulty': difficulty,
+    'tags': tags,
+    'family_friendly': familyFriendly,
+    'pet_friendly': petFriendly,
+    'wheelchair_accessible': wheelchairAccessible,
+  };
 }

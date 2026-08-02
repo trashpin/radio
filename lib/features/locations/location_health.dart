@@ -21,6 +21,8 @@ class LocationHealth {
     required this.missingAudio,
     required this.missingImages,
     required this.missingCoordinates,
+    required this.missingDescription,
+    required this.missingNarration,
     required this.brokenAudio,
     required this.hidden,
     this.lastGenerated,
@@ -33,6 +35,8 @@ class LocationHealth {
   final int missingAudio;
   final int missingImages;
   final int missingCoordinates;
+  final int missingDescription;
+  final int missingNarration;
   final int brokenAudio;
   final int hidden;
   final DateTime? lastGenerated;
@@ -41,9 +45,48 @@ class LocationHealth {
   double get readyProgress => total == 0 ? 0 : ready / total;
 
   static const empty = LocationHealth(
-    total: 0, ready: 0, pending: 0, disabled: 0, missingAudio: 0,
-    missingImages: 0, missingCoordinates: 0, brokenAudio: 0, hidden: 0,
+    total: 0,
+    ready: 0,
+    pending: 0,
+    disabled: 0,
+    missingAudio: 0,
+    missingImages: 0,
+    missingCoordinates: 0,
+    missingDescription: 0,
+    missingNarration: 0,
+    brokenAudio: 0,
+    hidden: 0,
   );
+}
+
+/// A "missing content" facet the admin can filter/count by.
+enum MissingContent { images, narration, gps, description }
+
+extension MissingContentLabel on MissingContent {
+  String get label => switch (this) {
+    MissingContent.images => 'Missing images',
+    MissingContent.narration => 'Missing narration',
+    MissingContent.gps => 'Missing GPS',
+    MissingContent.description => 'Missing description',
+  };
+}
+
+/// True when [l] is missing the given content facet. Shared by the dashboard
+/// counts and the admin search filter so they never disagree. Disabled
+/// locations are ignored for content facets (they're intentionally off).
+bool locationIsMissing(MasterLocation l, MissingContent m) {
+  switch (m) {
+    case MissingContent.gps:
+      return !l.hasCoordinates;
+    case MissingContent.images:
+      return l.status != LocationStatus.disabled && l.images.isEmpty;
+    case MissingContent.narration:
+      return l.status != LocationStatus.disabled &&
+          !l.hasNarration &&
+          (l.narrationScript ?? '').trim().isEmpty;
+    case MissingContent.description:
+      return l.status != LocationStatus.disabled && l.bestDescription == null;
+  }
 }
 
 /// Per-location content completeness — the admin checklist (Hero / Gallery /
@@ -70,12 +113,12 @@ class LocationCompletion {
 }
 
 LocationCompletion completionFor(MasterLocation l) => LocationCompletion(
-      hero: l.images.isNotEmpty,
-      gallery: l.images.length >= 2,
-      narration: l.hasNarration,
-      gps: l.hasCoordinates,
-      map: l.active && !l.hidden,
-    );
+  hero: l.images.isNotEmpty,
+  gallery: l.images.length >= 2,
+  narration: l.hasNarration,
+  gps: l.hasCoordinates,
+  map: l.active && !l.hidden,
+);
 
 /// Image-library health across all locations.
 class ImageHealth {
@@ -100,8 +143,14 @@ class ImageHealth {
   final int locations;
 
   static const empty = ImageHealth(
-    totalImages: 0, withHero: 0, missingHero: 0, missingGallery: 0,
-    brokenImageLinks: 0, duplicateImages: 0, locationsComplete: 0, locations: 0,
+    totalImages: 0,
+    withHero: 0,
+    missingHero: 0,
+    missingGallery: 0,
+    brokenImageLinks: 0,
+    duplicateImages: 0,
+    locationsComplete: 0,
+    locations: 0,
   );
 }
 
@@ -138,7 +187,12 @@ ImageHealth computeImageHealth(List<MasterLocation> all) {
 
 LocationHealth computeLocationHealth(List<MasterLocation> all) {
   var ready = 0, pending = 0, disabled = 0;
-  var missingAudio = 0, missingImages = 0, missingCoords = 0, broken = 0, hidden = 0;
+  var missingAudio = 0,
+      missingImages = 0,
+      missingCoords = 0,
+      broken = 0,
+      hidden = 0;
+  var missingDesc = 0, missingNarration = 0;
   DateTime? last;
   for (final l in all) {
     switch (l.status) {
@@ -154,8 +208,10 @@ LocationHealth computeLocationHealth(List<MasterLocation> all) {
         disabled++;
     }
     if (l.status != LocationStatus.disabled && !l.hasAudio) missingAudio++;
-    if (l.status != LocationStatus.disabled && l.images.isEmpty) missingImages++;
-    if (!l.hasCoordinates) missingCoords++;
+    if (locationIsMissing(l, MissingContent.images)) missingImages++;
+    if (locationIsMissing(l, MissingContent.gps)) missingCoords++;
+    if (locationIsMissing(l, MissingContent.description)) missingDesc++;
+    if (locationIsMissing(l, MissingContent.narration)) missingNarration++;
     if (!l.active || l.hidden) hidden++;
     for (final u in l.audioFiles) {
       if (isBrokenAudioLink(u)) broken++;
@@ -169,8 +225,27 @@ LocationHealth computeLocationHealth(List<MasterLocation> all) {
     missingAudio: missingAudio,
     missingImages: missingImages,
     missingCoordinates: missingCoords,
+    missingDescription: missingDesc,
+    missingNarration: missingNarration,
     brokenAudio: broken,
     hidden: hidden,
     lastGenerated: last,
   );
+}
+
+/// Locations sorted most-recently-updated first (for a "Recently updated" list).
+List<MasterLocation> recentlyUpdated(
+  List<MasterLocation> all, {
+  int limit = 10,
+}) {
+  final withDates = all.where((l) => l.updatedAt != null).toList()
+    ..sort((a, b) => b.updatedAt!.compareTo(a.updatedAt!));
+  return withDates.take(limit).toList();
+}
+
+/// Locations sorted most-recently-created first (for a "Recently added" list).
+List<MasterLocation> recentlyAdded(List<MasterLocation> all, {int limit = 10}) {
+  final withDates = all.where((l) => l.createdAt != null).toList()
+    ..sort((a, b) => b.createdAt!.compareTo(a.createdAt!));
+  return withDates.take(limit).toList();
 }

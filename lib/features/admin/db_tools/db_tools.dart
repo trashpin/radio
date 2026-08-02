@@ -11,6 +11,7 @@ class DbTable {
 /// The tables the admin can browse/export/count. (Only app tables — never the
 /// internal `auth`/`storage` schemas.)
 const List<DbTable> kDbTables = [
+  DbTable('locations', 'Master Locations', group: 'Core'),
   DbTable('destinations', 'Destinations', group: 'Core'),
   DbTable('species', 'Species', group: 'Nature'),
   DbTable('media', 'Media', group: 'Assets'),
