@@ -34,11 +34,22 @@ class _AreaCategoryExperienceScreenState
     extends ConsumerState<AreaCategoryExperienceScreen> {
   bool _started = false;
 
+  // Captured in initState so dispose() never touches `ref` (unsafe after
+  // unmount) — a lazy `late` field would initialize during dispose if build
+  // never read it.
+  late final AreaContentPlaybackController _playback;
+
+  @override
+  void initState() {
+    super.initState();
+    _playback = ref.read(areaContentPlaybackControllerProvider.notifier);
+  }
+
   @override
   void dispose() {
     // Leaving the screen always stops playback and hands control back to the
     // normal radio — never leaves a stray narration running in background.
-    ref.read(areaContentPlaybackControllerProvider.notifier).stop();
+    _playback.stop();
     super.dispose();
   }
 
@@ -46,7 +57,7 @@ class _AreaCategoryExperienceScreenState
     if (_started || blocks.isEmpty) return;
     _started = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(areaContentPlaybackControllerProvider.notifier).play(blocks);
+      _playback.play(blocks);
     });
   }
 

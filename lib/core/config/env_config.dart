@@ -17,7 +17,12 @@ class EnvConfig {
   static const String _anonKeyKey = 'SUPABASE_ANON_KEY';
   static const String _googleMapsApiKeyKey = 'GOOGLE_MAPS_API_KEY';
 
-  static String get supabaseUrl => dotenv.maybeGet(_supabaseUrlKey) ?? '';
+  /// Reads a key without throwing if `.env` hasn't been loaded yet (e.g. in
+  /// unit tests, or any code path that runs before `dotenv.load`).
+  static String? _get(String key) =>
+      dotenv.isInitialized ? dotenv.maybeGet(key) : null;
+
+  static String get supabaseUrl => _get(_supabaseUrlKey) ?? '';
 
   /// The same key used for the Maps SDK (Android manifest / iOS) — also used
   /// client-side for Maps Platform web services (e.g. Distance Matrix) that
@@ -25,8 +30,7 @@ class EnvConfig {
   /// enabled for this key in Google Cloud Console, or those calls fail closed
   /// (callers fall back to straight-line distance — see
   /// [DrivingDistanceService]).
-  static String get googleMapsApiKey =>
-      dotenv.maybeGet(_googleMapsApiKeyKey) ?? '';
+  static String get googleMapsApiKey => _get(_googleMapsApiKeyKey) ?? '';
 
   static bool get hasGoogleMapsApiKey => googleMapsApiKey.isNotEmpty;
 
@@ -34,9 +38,7 @@ class EnvConfig {
   /// `SUPABASE_PUBLISHABLE_KEY`; falls back to `SUPABASE_ANON_KEY` for backward
   /// compatibility. Browser clients (web admin) MUST use a publishable/anon key.
   static String get supabaseAnonKey =>
-      dotenv.maybeGet(_publishableKeyKey) ??
-      dotenv.maybeGet(_anonKeyKey) ??
-      '';
+      _get(_publishableKeyKey) ?? _get(_anonKeyKey) ?? '';
 
   /// True only when both Supabase values are present.
   static bool get hasSupabase =>

@@ -26,9 +26,19 @@ class AreaTourScreen extends ConsumerStatefulWidget {
 class _AreaTourScreenState extends ConsumerState<AreaTourScreen> {
   bool _started = false;
 
+  // Captured in initState so dispose() never touches `ref` (unsafe after
+  // unmount) — a lazy `late` field would initialize during dispose.
+  late final AreaTourController _tour;
+
+  @override
+  void initState() {
+    super.initState();
+    _tour = ref.read(areaTourControllerProvider.notifier);
+  }
+
   @override
   void dispose() {
-    ref.read(areaTourControllerProvider.notifier).stop();
+    _tour.stop();
     super.dispose();
   }
 
@@ -36,7 +46,7 @@ class _AreaTourScreenState extends ConsumerState<AreaTourScreen> {
     if (_started) return;
     _started = true;
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => ref.read(areaTourControllerProvider.notifier).start(stops, widget.mode),
+      (_) => _tour.start(stops, widget.mode),
     );
   }
 

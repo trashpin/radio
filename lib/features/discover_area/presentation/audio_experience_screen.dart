@@ -23,9 +23,19 @@ class AudioExperienceScreen extends ConsumerStatefulWidget {
 class _AudioExperienceScreenState extends ConsumerState<AudioExperienceScreen> {
   bool _started = false;
 
+  // Captured in initState so dispose() never touches `ref` (unsafe after
+  // unmount) — a lazy `late` field would initialize during dispose.
+  late final AudioExperienceController _audio;
+
+  @override
+  void initState() {
+    super.initState();
+    _audio = ref.read(audioExperienceControllerProvider.notifier);
+  }
+
   @override
   void dispose() {
-    ref.read(audioExperienceControllerProvider.notifier).stop();
+    _audio.stop();
     super.dispose();
   }
 

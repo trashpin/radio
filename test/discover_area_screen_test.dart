@@ -43,6 +43,11 @@ void main() {
 
   testWidgets('shows area name, intro, listening time, and every category',
       (tester) async {
+    // Tall surface so the lazy category grid lays out fully in the test.
+    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -51,20 +56,26 @@ void main() {
         child: const MaterialApp(home: DiscoverAreaScreen()),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(find.text('Historic Downtown Ocala'), findsOneWidget);
+    // The area name appears in both the hero title and the "You're here" badge.
+    expect(find.text('Historic Downtown Ocala'), findsWidgets);
     expect(find.text('The heart of Marion County.'), findsOneWidget);
     expect(find.text('~12 min'), findsOneWidget);
     expect(find.text("You're here"), findsOneWidget);
 
     for (final cat in areaDiscoveryCategories) {
-      expect(find.text(cat.label), findsOneWidget);
+      expect(find.text(cat.label), findsWidgets,
+          reason: '${cat.label} category should render');
     }
   });
 
   testWidgets('tapping a category navigates to its placeholder screen',
       (tester) async {
+    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -73,9 +84,12 @@ void main() {
         child: const MaterialApp(home: DiscoverAreaScreen()),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    await tester.tap(find.text('History'));
+    final history = find.text('History');
+    await tester.ensureVisible(history);
+    await tester.pumpAndSettle();
+    await tester.tap(history);
     await tester.pumpAndSettle();
 
     expect(find.text('History for Historic Downtown Ocala'), findsOneWidget);
