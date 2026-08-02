@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
@@ -13,10 +14,12 @@ class LocationRepository {
   Future<List<MasterLocation>> all() async {
     if (!SupabaseService.isConfigured) return const [];
     try {
-      final rows = await SupabaseService.client
-          .from('locations')
-          .select()
-          .order('name', ascending: true) as List;
+      final rows =
+          await SupabaseService.client
+                  .from('locations')
+                  .select()
+                  .order('name', ascending: true)
+              as List;
       return rows
           .cast<Map<String, dynamic>>()
           .map(MasterLocation.fromJson)
@@ -26,11 +29,39 @@ class LocationRepository {
     }
   }
 
-  Future<void> create(Map<String, dynamic> row) =>
-      SupabaseService.client.from('locations').insert(row);
+  Future<void> create(Map<String, dynamic> row) => _resilient(
+    row,
+    (r) => SupabaseService.client.from('locations').insert(r),
+  );
 
-  Future<void> update(String id, Map<String, dynamic> fields) =>
-      SupabaseService.client.from('locations').update(fields).eq('id', id);
+  Future<void> update(String id, Map<String, dynamic> fields) => _resilient(
+    fields,
+    (r) => SupabaseService.client.from('locations').update(r).eq('id', id),
+  );
+
+  /// Runs a write, dropping any column the DB doesn't have yet (e.g. before
+  /// migration 0038) and retrying — so richer PoI fields never break editing
+  /// on an un-migrated database.
+  Future<void> _resilient(
+    Map<String, dynamic> row,
+    Future<void> Function(Map<String, dynamic>) run,
+  ) async {
+    final current = Map<String, dynamic>.from(row);
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        await run(current);
+        return;
+      } on PostgrestException catch (e) {
+        final m = RegExp(r"'([a-zA-Z0-9_]+)' column").firstMatch(e.message);
+        final col = m?.group(1);
+        if (col == null || !current.containsKey(col)) {
+          rethrow;
+        }
+        current.remove(col);
+      }
+    }
+    await run(current);
+  }
 
   Future<void> delete(String id) =>
       SupabaseService.client.from('locations').delete().eq('id', id);
@@ -50,7 +81,8 @@ class LocationRepository {
           'county': l.county,
           'radius_m': 150,
           'progress': 0,
-          'notes': 'master_location:voice;id=${l.id}'
+          'notes':
+              'master_location:voice;id=${l.id}'
               ';code=${l.destinationCode ?? ''}',
         },
     ];
@@ -86,15 +118,13 @@ class LocationRepository {
     String id, {
     required List<String> narrationIds,
     required List<String> audioFiles,
-  }) =>
-      update(id, {'narration_ids': narrationIds, 'audio_files': audioFiles});
+  }) => update(id, {'narration_ids': narrationIds, 'audio_files': audioFiles});
 
   /// Merges [loserId] into [winnerId]: moves the loser's media/narration onto
   /// the winner and deletes the loser (dedup without losing data).
   Future<void> merge(MasterLocation winner, MasterLocation loser) async {
     await update(winner.id, {
-      'narration_ids':
-          {...winner.narrationIds, ...loser.narrationIds}.toList(),
+      'narration_ids': {...winner.narrationIds, ...loser.narrationIds}.toList(),
       'audio_files': {...winner.audioFiles, ...loser.audioFiles}.toList(),
       'images': {...winner.images, ...loser.images}.toList(),
       'videos': {...winner.videos, ...loser.videos}.toList(),
@@ -103,10 +133,13 @@ class LocationRepository {
   }
 }
 
-final locationRepositoryProvider =
-    Provider<LocationRepository>((ref) => const LocationRepository());
+final locationRepositoryProvider = Provider<LocationRepository>(
+  (ref) => const LocationRepository(),
+);
 
-final locationEngineProvider = Provider<LocationEngine>((ref) => const LocationEngine());
+final locationEngineProvider = Provider<LocationEngine>(
+  (ref) => const LocationEngine(),
+);
 
 class LocationRefresh extends Notifier<int> {
   @override
@@ -114,8 +147,9 @@ class LocationRefresh extends Notifier<int> {
   void bump() => state++;
 }
 
-final locationRefreshProvider =
-    NotifierProvider<LocationRefresh, int>(LocationRefresh.new);
+final locationRefreshProvider = NotifierProvider<LocationRefresh, int>(
+  LocationRefresh.new,
+);
 
 /// Every master location (the whole dataset). Cached; bump [locationRefreshProvider]
 /// after a write.

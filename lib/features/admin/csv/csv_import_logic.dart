@@ -4,8 +4,12 @@ import 'package:explorer_os_mobile/features/admin/image_match/filename_normalize
 
 /// One column expected by an import target.
 class CsvCol {
-  const CsvCol(this.key, this.label,
-      {this.required = false, this.number = false});
+  const CsvCol(
+    this.key,
+    this.label, {
+    this.required = false,
+    this.number = false,
+  });
   final String key; // DB column
   final String label; // human label
   final bool required;
@@ -84,124 +88,158 @@ const _speciesCols = <CsvCol>[
 ];
 
 CsvTarget _species(String label, String category) => CsvTarget(
-      label: label,
-      table: 'species',
-      columns: _speciesCols,
-      defaults: {
-        'category': category,
-        'destination_id': _ocalaDest,
-        'published': true,
-      },
-      matchKeyFrom: 'common_name',
-    );
+  label: label,
+  table: 'species',
+  columns: _speciesCols,
+  defaults: {
+    'category': category,
+    'destination_id': _ocalaDest,
+    'published': true,
+  },
+  matchKeyFrom: 'common_name',
+);
 
 /// The supported import targets (one per content type in the brief).
 List<CsvTarget> buildCsvTargets() => [
-      _species('Wildlife', 'animals'),
-      _species('Birds', 'birds'),
-      _species('Plants', 'plants'),
-      _species('Trees', 'trees'),
-      _species('Wildflowers', 'wildflowers'),
-      const CsvTarget(
-        label: 'Destinations',
-        table: 'destinations',
-        passthrough: true,
-        upsertKey: 'destination_code',
-        autoUuidColumn: 'destination_id',
-        autoSlugAndCode: true,
-        note: 'Direct import: every column maps straight to the destinations '
-            'table by name (values sent as-is, e.g. "USA", "State Park"). '
-            'destination_id is OPTIONAL — a UUID is generated automatically when '
-            'blank. Rows are matched by destination_code: existing codes update '
-            '(keeping their destination_id), new codes insert.',
-        columns: [],
-      ),
-      const CsvTarget(
-        label: 'Trails',
-        table: 'trails',
-        note: 'Run migration 0014 once to create this table.',
-        columns: [
-          CsvCol('name', 'Name', required: true),
-          CsvCol('difficulty', 'Difficulty'),
-          CsvCol('distance_miles', 'Distance (miles)', number: true),
-          CsvCol('description', 'Description'),
-        ],
-        defaults: {'destination_id': _ocalaDest},
-      ),
-      const CsvTarget(
-        label: 'Points of Interest',
-        table: 'map_locations',
-        note: 'Run migration 0014 (or 0009) once to create this table.',
-        columns: [
-          CsvCol('name', 'Name', required: true),
-          CsvCol('category', 'Category'),
-          CsvCol('latitude', 'Latitude', number: true),
-          CsvCol('longitude', 'Longitude', number: true),
-          CsvCol('description', 'Description'),
-          CsvCol('trigger_radius_m', 'Trigger radius (m)', number: true),
-        ],
-        defaults: {'park_code': 'ocala'},
-      ),
-      const CsvTarget(
-        label: 'Stories',
-        table: 'stories',
-        generatedIdColumn: 'story_id',
-        columns: [
-          CsvCol('title', 'Title', required: true),
-          CsvCol('story_category', 'Category'),
-          CsvCol('short_summary', 'Short summary'),
-          CsvCol('full_story', 'Full story'),
-          CsvCol('voice_script', 'Voice script'),
-        ],
-        // story_category is NOT NULL with no DB default → always provide one
-        // (a mapped CSV value overrides this).
-        defaults: {
-          'destination_id': _ocalaDest,
-          'published': true,
-          'story_category': 'history',
-        },
-      ),
-      const CsvTarget(
-        label: 'Historical Events',
-        table: 'historical_events',
-        note: 'Run migration 0014 once to create this table.',
-        columns: [
-          CsvCol('title', 'Title', required: true),
-          CsvCol('year', 'Year', number: true),
-          CsvCol('description', 'Description'),
-        ],
-        defaults: {'destination_id': _ocalaDest},
-      ),
-      const CsvTarget(
-        label: 'Campgrounds',
-        table: 'campgrounds',
-        note: 'Run migration 0014 once to create this table.',
-        columns: [
-          CsvCol('name', 'Name', required: true),
-          CsvCol('sites', 'Number of sites', number: true),
-          CsvCol('latitude', 'Latitude', number: true),
-          CsvCol('longitude', 'Longitude', number: true),
-          CsvCol('description', 'Description'),
-        ],
-        defaults: {'destination_id': _ocalaDest},
-      ),
-      const CsvTarget(
-        label: 'Songs (metadata only)',
-        table: 'songs',
-        columns: [
-          CsvCol('title', 'Title', required: true),
-          CsvCol('artist', 'Artist'),
-          CsvCol('album', 'Album'),
-          CsvCol('genre', 'Genre'),
-          CsvCol('station', 'Station'),
-          CsvCol('park_code', 'Park code'),
-          CsvCol('audio_url', 'Audio URL'),
-          CsvCol('cover_image', 'Cover image URL'),
-          CsvCol('duration', 'Duration (seconds)', number: true),
-        ],
-        defaults: {'category': 'music', 'is_active': true},
-      ),
-    ];
+  _species('Wildlife', 'animals'),
+  _species('Birds', 'birds'),
+  _species('Plants', 'plants'),
+  _species('Trees', 'trees'),
+  _species('Wildflowers', 'wildflowers'),
+  const CsvTarget(
+    label: 'Master Locations',
+    table: 'locations',
+    note:
+        'The single, county-agnostic locations table (migration 0031 + '
+        '0038). Provide category as a type id (e.g. "spring", "museum", '
+        '"restaurant"). id is generated automatically. Scalar fields only — '
+        'images/audio/tags are managed in the editor.',
+    columns: [
+      CsvCol('name', 'Name', required: true),
+      CsvCol('category', 'Category (type id)'),
+      CsvCol('state', 'State'),
+      CsvCol('county', 'County'),
+      CsvCol('city', 'City'),
+      CsvCol('community', 'Community'),
+      CsvCol('latitude', 'Latitude', number: true),
+      CsvCol('longitude', 'Longitude', number: true),
+      CsvCol('trigger_radius', 'GPS trigger radius (m)', number: true),
+      CsvCol('address', 'Street address'),
+      CsvCol('short_description', 'Short description'),
+      CsvCol('long_description', 'Long description'),
+      CsvCol('description', 'Description (fallback)'),
+      CsvCol('narration_script', 'Narration script'),
+      CsvCol('external_website', 'External website'),
+      CsvCol('hours', 'Hours'),
+      CsvCol('admission', 'Admission / fees'),
+      CsvCol('parking_info', 'Parking info'),
+      CsvCol('restrooms', 'Restrooms'),
+      CsvCol('difficulty', 'Difficulty'),
+      CsvCol('priority', 'Priority', number: true),
+    ],
+    defaults: {'active': true, 'source': 'csv'},
+  ),
+  const CsvTarget(
+    label: 'Destinations',
+    table: 'destinations',
+    passthrough: true,
+    upsertKey: 'destination_code',
+    autoUuidColumn: 'destination_id',
+    autoSlugAndCode: true,
+    note:
+        'Direct import: every column maps straight to the destinations '
+        'table by name (values sent as-is, e.g. "USA", "State Park"). '
+        'destination_id is OPTIONAL — a UUID is generated automatically when '
+        'blank. Rows are matched by destination_code: existing codes update '
+        '(keeping their destination_id), new codes insert.',
+    columns: [],
+  ),
+  const CsvTarget(
+    label: 'Trails',
+    table: 'trails',
+    note: 'Run migration 0014 once to create this table.',
+    columns: [
+      CsvCol('name', 'Name', required: true),
+      CsvCol('difficulty', 'Difficulty'),
+      CsvCol('distance_miles', 'Distance (miles)', number: true),
+      CsvCol('description', 'Description'),
+    ],
+    defaults: {'destination_id': _ocalaDest},
+  ),
+  const CsvTarget(
+    label: 'Points of Interest',
+    table: 'map_locations',
+    note: 'Run migration 0014 (or 0009) once to create this table.',
+    columns: [
+      CsvCol('name', 'Name', required: true),
+      CsvCol('category', 'Category'),
+      CsvCol('latitude', 'Latitude', number: true),
+      CsvCol('longitude', 'Longitude', number: true),
+      CsvCol('description', 'Description'),
+      CsvCol('trigger_radius_m', 'Trigger radius (m)', number: true),
+    ],
+    defaults: {'park_code': 'ocala'},
+  ),
+  const CsvTarget(
+    label: 'Stories',
+    table: 'stories',
+    generatedIdColumn: 'story_id',
+    columns: [
+      CsvCol('title', 'Title', required: true),
+      CsvCol('story_category', 'Category'),
+      CsvCol('short_summary', 'Short summary'),
+      CsvCol('full_story', 'Full story'),
+      CsvCol('voice_script', 'Voice script'),
+    ],
+    // story_category is NOT NULL with no DB default → always provide one
+    // (a mapped CSV value overrides this).
+    defaults: {
+      'destination_id': _ocalaDest,
+      'published': true,
+      'story_category': 'history',
+    },
+  ),
+  const CsvTarget(
+    label: 'Historical Events',
+    table: 'historical_events',
+    note: 'Run migration 0014 once to create this table.',
+    columns: [
+      CsvCol('title', 'Title', required: true),
+      CsvCol('year', 'Year', number: true),
+      CsvCol('description', 'Description'),
+    ],
+    defaults: {'destination_id': _ocalaDest},
+  ),
+  const CsvTarget(
+    label: 'Campgrounds',
+    table: 'campgrounds',
+    note: 'Run migration 0014 once to create this table.',
+    columns: [
+      CsvCol('name', 'Name', required: true),
+      CsvCol('sites', 'Number of sites', number: true),
+      CsvCol('latitude', 'Latitude', number: true),
+      CsvCol('longitude', 'Longitude', number: true),
+      CsvCol('description', 'Description'),
+    ],
+    defaults: {'destination_id': _ocalaDest},
+  ),
+  const CsvTarget(
+    label: 'Songs (metadata only)',
+    table: 'songs',
+    columns: [
+      CsvCol('title', 'Title', required: true),
+      CsvCol('artist', 'Artist'),
+      CsvCol('album', 'Album'),
+      CsvCol('genre', 'Genre'),
+      CsvCol('station', 'Station'),
+      CsvCol('park_code', 'Park code'),
+      CsvCol('audio_url', 'Audio URL'),
+      CsvCol('cover_image', 'Cover image URL'),
+      CsvCol('duration', 'Duration (seconds)', number: true),
+    ],
+    defaults: {'category': 'music', 'is_active': true},
+  ),
+];
 
 /// Random v4 UUID for tables whose PK lacks a default (e.g. stories.story_id).
 String uuidV4() {
@@ -255,19 +293,57 @@ String slugifyName(String name) => name
 /// 2-letter USPS abbreviation for a state (fallback: first 2 letters).
 String stateAbbrev(String? state) {
   const m = {
-    'alabama': 'AL', 'alaska': 'AK', 'arizona': 'AZ', 'arkansas': 'AR',
-    'california': 'CA', 'colorado': 'CO', 'connecticut': 'CT', 'delaware': 'DE',
-    'florida': 'FL', 'georgia': 'GA', 'hawaii': 'HI', 'idaho': 'ID',
-    'illinois': 'IL', 'indiana': 'IN', 'iowa': 'IA', 'kansas': 'KS',
-    'kentucky': 'KY', 'louisiana': 'LA', 'maine': 'ME', 'maryland': 'MD',
-    'massachusetts': 'MA', 'michigan': 'MI', 'minnesota': 'MN', 'mississippi': 'MS',
-    'missouri': 'MO', 'montana': 'MT', 'nebraska': 'NE', 'nevada': 'NV',
-    'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
-    'north carolina': 'NC', 'north dakota': 'ND', 'ohio': 'OH', 'oklahoma': 'OK',
-    'oregon': 'OR', 'pennsylvania': 'PA', 'rhode island': 'RI', 'south carolina': 'SC',
-    'south dakota': 'SD', 'tennessee': 'TN', 'texas': 'TX', 'utah': 'UT',
-    'vermont': 'VT', 'virginia': 'VA', 'washington': 'WA', 'west virginia': 'WV',
-    'wisconsin': 'WI', 'wyoming': 'WY', 'district of columbia': 'DC',
+    'alabama': 'AL',
+    'alaska': 'AK',
+    'arizona': 'AZ',
+    'arkansas': 'AR',
+    'california': 'CA',
+    'colorado': 'CO',
+    'connecticut': 'CT',
+    'delaware': 'DE',
+    'florida': 'FL',
+    'georgia': 'GA',
+    'hawaii': 'HI',
+    'idaho': 'ID',
+    'illinois': 'IL',
+    'indiana': 'IN',
+    'iowa': 'IA',
+    'kansas': 'KS',
+    'kentucky': 'KY',
+    'louisiana': 'LA',
+    'maine': 'ME',
+    'maryland': 'MD',
+    'massachusetts': 'MA',
+    'michigan': 'MI',
+    'minnesota': 'MN',
+    'mississippi': 'MS',
+    'missouri': 'MO',
+    'montana': 'MT',
+    'nebraska': 'NE',
+    'nevada': 'NV',
+    'new hampshire': 'NH',
+    'new jersey': 'NJ',
+    'new mexico': 'NM',
+    'new york': 'NY',
+    'north carolina': 'NC',
+    'north dakota': 'ND',
+    'ohio': 'OH',
+    'oklahoma': 'OK',
+    'oregon': 'OR',
+    'pennsylvania': 'PA',
+    'rhode island': 'RI',
+    'south carolina': 'SC',
+    'south dakota': 'SD',
+    'tennessee': 'TN',
+    'texas': 'TX',
+    'utah': 'UT',
+    'vermont': 'VT',
+    'virginia': 'VA',
+    'washington': 'WA',
+    'west virginia': 'WV',
+    'wisconsin': 'WI',
+    'wyoming': 'WY',
+    'district of columbia': 'DC',
   };
   final s = (state ?? '').toLowerCase().trim();
   if (m.containsKey(s)) return m[s]!;
@@ -386,8 +462,10 @@ Map<String, dynamic>? buildRecord(
         if (_blank(rec['slug'])) rec['slug'] = slugifyName(name);
         if (_blank(rec['destination_code'])) {
           rec['destination_code'] = generateDestinationCode(
-              name, rec['destination_type']?.toString(),
-              rec['state_province']?.toString());
+            name,
+            rec['destination_type']?.toString(),
+            rec['state_province']?.toString(),
+          );
         }
       }
     }

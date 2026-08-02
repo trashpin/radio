@@ -74,8 +74,11 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
         .where((l) => l.active && !l.hidden && l.images.isEmpty)
         .toList();
     if (missing.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Every visible location already has a hero image.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Every visible location already has a hero image.'),
+        ),
+      );
       return;
     }
     setState(() => _wikimedia = true);
@@ -84,13 +87,17 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
           .read(locationRepositoryProvider)
           .enqueueWikimediaImport(missing);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Queued Wikimedia hero import for $n location(s).')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Queued Wikimedia hero import for $n location(s).'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not queue: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not queue: $e')));
       }
     } finally {
       if (mounted) setState(() => _wikimedia = false);
@@ -113,8 +120,7 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
     var matched = 0, unassigned = 0, failed = 0;
     // Track per-location image edits so multiple files stack correctly.
     final edits = <String, List<String>>{};
-    List<String> current(MasterLocation l) =>
-        edits[l.id] ??= [...l.images];
+    List<String> current(MasterLocation l) => edits[l.id] ??= [...l.images];
     try {
       for (final f in res.files) {
         if (f.bytes == null) {
@@ -151,10 +157,15 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
       }
       ref.read(locationRefreshProvider.notifier).bump();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Imported $matched photo(s) to '
-                '${edits.length} location(s) · $unassigned unassigned'
-                '${failed > 0 ? ' · $failed failed' : ''}')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported $matched photo(s) to '
+              '${edits.length} location(s) · $unassigned unassigned'
+              '${failed > 0 ? ' · $failed failed' : ''}',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -162,11 +173,13 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
   }
 
   Future<void> _generateMissingAudio(List<MasterLocation> all) async {
-    final pending =
-        all.where((l) => l.status == LocationStatus.pending).toList();
+    final pending = all
+        .where((l) => l.status == LocationStatus.pending)
+        .toList();
     if (pending.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No pending locations — all narrated.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No pending locations — all narrated.')),
+      );
       return;
     }
     setState(() => _generating = true);
@@ -175,13 +188,17 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
           .read(locationRepositoryProvider)
           .enqueueMissingAudio(pending);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Queued audio generation for $n location(s).')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Queued audio generation for $n location(s).'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Could not queue jobs: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not queue jobs: $e')));
       }
     } finally {
       if (mounted) setState(() => _generating = false);
@@ -202,10 +219,25 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
       ..sort((a, b) => b.value.compareTo(a.value));
 
     Widget stat(String label, int value, IconData icon, {Color? tint}) =>
-        Expanded(child: AdminStatCard(
-            label: label, value: '$value', icon: icon, tint: tint));
+        Expanded(
+          child: AdminStatCard(
+            label: label,
+            value: '$value',
+            icon: icon,
+            tint: tint,
+          ),
+        );
 
-    return _body(context, theme, all, health, showPending, byType, sorted, stat);
+    return _body(
+      context,
+      theme,
+      all,
+      health,
+      showPending,
+      byType,
+      sorted,
+      stat,
+    );
   }
 
   Widget _pill(String label, int value, ThemeData theme, {Color? tint}) {
@@ -216,13 +248,21 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
         color: c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$value',
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$value',
             style: TextStyle(
-                color: c, fontSize: 16, fontWeight: FontWeight.w800)),
-        const Gap.h(AppSpacing.xs),
-        Text(label, style: theme.textTheme.bodySmall),
-      ]),
+              color: c,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const Gap.h(AppSpacing.xs),
+          Text(label, style: theme.textTheme.bodySmall),
+        ],
+      ),
     );
   }
 
@@ -236,7 +276,6 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
     List<MapEntry<LocationType, int>> sorted,
     Widget Function(String, int, IconData, {Color? tint}) stat,
   ) {
-
     return ListView(
       padding: const EdgeInsets.all(AppSpacing.xl),
       children: [
@@ -250,8 +289,11 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
               onPressed: _wikimedia ? null : () => _importFromWikimedia(all),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _wikimedia
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.image_search_rounded, size: 18),
               label: Text(_wikimedia ? 'Queuing…' : 'Import from Wikimedia'),
             ),
@@ -260,8 +302,11 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
               onPressed: _importing ? null : () => _bulkPhotoImport(all),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _importing
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.add_photo_alternate_rounded, size: 18),
               label: Text(_importing ? 'Importing…' : 'Bulk Photo Import'),
             ),
@@ -270,8 +315,11 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
               onPressed: _generating ? null : () => _generateMissingAudio(all),
               style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _generating
-                  ? const SizedBox(width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.graphic_eq_rounded, size: 18),
               label: Text(_generating ? 'Queuing…' : 'Generate Missing Audio'),
             ),
@@ -280,84 +328,186 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
         const Gap.v(AppSpacing.lg),
         // Narration progress.
         AdminSectionCard(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Text('Narration progress', style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-              const Spacer(),
-              Text('${(health.readyProgress * 100).toStringAsFixed(0)}% ready',
-                  style: TextStyle(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Narration progress',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${(health.readyProgress * 100).toStringAsFixed(0)}% ready',
+                    style: TextStyle(
                       color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w700)),
-            ]),
-            const Gap.v(AppSpacing.sm),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                  value: health.readyProgress, minHeight: 10),
-            ),
-            const Gap.v(AppSpacing.xs),
-            Text([
-              '${health.ready} ready',
-              '${health.pending} need narration',
-              if (health.lastGenerated != null)
-                'last generated ${_fmtDate(health.lastGenerated!)}',
-            ].join(' · '), style: theme.textTheme.bodySmall),
-          ]),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: health.readyProgress,
+                  minHeight: 10,
+                ),
+              ),
+              const Gap.v(AppSpacing.xs),
+              Text(
+                [
+                  '${health.ready} ready',
+                  '${health.pending} need narration',
+                  if (health.lastGenerated != null)
+                    'last generated ${_fmtDate(health.lastGenerated!)}',
+                ].join(' · '),
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
         const Gap.v(AppSpacing.md),
-        Row(children: [
-          stat('Total', health.total, Icons.public_rounded),
-          const Gap.h(AppSpacing.md),
-          stat('Ready', health.ready, Icons.check_circle_rounded,
-              tint: const Color(0xFF2E7D32)),
-          const Gap.h(AppSpacing.md),
-          stat('Needs narration', health.pending, Icons.mic_off_rounded,
-              tint: const Color(0xFF8A6D00)),
-        ]),
+        Row(
+          children: [
+            stat('Total', health.total, Icons.public_rounded),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Ready',
+              health.ready,
+              Icons.check_circle_rounded,
+              tint: const Color(0xFF2E7D32),
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Needs narration',
+              health.pending,
+              Icons.mic_off_rounded,
+              tint: const Color(0xFF8A6D00),
+            ),
+          ],
+        ),
         const Gap.v(AppSpacing.md),
-        Row(children: [
-          stat('Missing audio', health.missingAudio, Icons.volume_off_rounded,
-              tint: const Color(0xFFC0392B)),
-          const Gap.h(AppSpacing.md),
-          stat('Missing images', health.missingImages, Icons.image_not_supported_rounded),
-          const Gap.h(AppSpacing.md),
-          stat('Missing coords', health.missingCoordinates, Icons.wrong_location_rounded),
-        ]),
+        Row(
+          children: [
+            stat(
+              'Missing audio',
+              health.missingAudio,
+              Icons.volume_off_rounded,
+              tint: const Color(0xFFC0392B),
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Missing images',
+              health.missingImages,
+              Icons.image_not_supported_rounded,
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Missing coords',
+              health.missingCoordinates,
+              Icons.wrong_location_rounded,
+            ),
+          ],
+        ),
         const Gap.v(AppSpacing.md),
-        Row(children: [
-          stat('Broken audio', health.brokenAudio, Icons.link_off_rounded,
-              tint: const Color(0xFFC0392B)),
-          const Gap.h(AppSpacing.md),
-          stat('Hidden / disabled', health.hidden, Icons.visibility_off_rounded),
-          const Gap.h(AppSpacing.md),
-          stat('Types in use', byType.length, Icons.category_rounded),
-        ]),
+        Row(
+          children: [
+            stat(
+              'Missing description',
+              health.missingDescription,
+              Icons.notes_rounded,
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Missing narration',
+              health.missingNarration,
+              Icons.record_voice_over_rounded,
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Broken audio',
+              health.brokenAudio,
+              Icons.link_off_rounded,
+              tint: const Color(0xFFC0392B),
+            ),
+          ],
+        ),
+        const Gap.v(AppSpacing.md),
+        Row(
+          children: [
+            stat(
+              'Broken audio',
+              health.brokenAudio,
+              Icons.link_off_rounded,
+              tint: const Color(0xFFC0392B),
+            ),
+            const Gap.h(AppSpacing.md),
+            stat(
+              'Hidden / disabled',
+              health.hidden,
+              Icons.visibility_off_rounded,
+            ),
+            const Gap.h(AppSpacing.md),
+            stat('Types in use', byType.length, Icons.category_rounded),
+          ],
+        ),
         const Gap.v(AppSpacing.lg),
-        Builder(builder: (_) {
-          final img = computeImageHealth(all);
-          return AdminSectionCard(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Image health', style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
-              const Gap.v(AppSpacing.sm),
-              Wrap(spacing: AppSpacing.md, runSpacing: AppSpacing.sm, children: [
-                _pill('Total images', img.totalImages, theme),
-                _pill('With hero', img.withHero, theme,
-                    tint: const Color(0xFF2E7D32)),
-                _pill('Missing / unassigned', img.missingHero, theme,
-                    tint: const Color(0xFFC0392B)),
-                _pill('Missing gallery', img.missingGallery, theme),
-                _pill('Broken links', img.brokenImageLinks, theme,
-                    tint: const Color(0xFFC0392B)),
-                _pill('Duplicates', img.duplicateImages, theme),
-                _pill('100% complete', img.locationsComplete, theme,
-                    tint: const Color(0xFF2E7D32)),
-              ]),
-            ]),
-          );
-        }),
+        Builder(
+          builder: (_) {
+            final img = computeImageHealth(all);
+            return AdminSectionCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Image health',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Gap.v(AppSpacing.sm),
+                  Wrap(
+                    spacing: AppSpacing.md,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      _pill('Total images', img.totalImages, theme),
+                      _pill(
+                        'With hero',
+                        img.withHero,
+                        theme,
+                        tint: const Color(0xFF2E7D32),
+                      ),
+                      _pill(
+                        'Missing / unassigned',
+                        img.missingHero,
+                        theme,
+                        tint: const Color(0xFFC0392B),
+                      ),
+                      _pill('Missing gallery', img.missingGallery, theme),
+                      _pill(
+                        'Broken links',
+                        img.brokenImageLinks,
+                        theme,
+                        tint: const Color(0xFFC0392B),
+                      ),
+                      _pill('Duplicates', img.duplicateImages, theme),
+                      _pill(
+                        '100% complete',
+                        img.locationsComplete,
+                        theme,
+                        tint: const Color(0xFF2E7D32),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
         const Gap.v(AppSpacing.lg),
         AdminSectionCard(
           child: SwitchListTile(
@@ -367,7 +517,8 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
                 ref.read(showPendingLocationsProvider.notifier).set(v),
             title: const Text('Show pending locations on the map'),
             subtitle: const Text(
-                'Off by default — users only see narrated (Ready) locations.'),
+              'Off by default — users only see narrated (Ready) locations.',
+            ),
           ),
         ),
         const Gap.v(AppSpacing.lg),
@@ -375,23 +526,40 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('By type', style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                'By type',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const Gap.v(AppSpacing.md),
-              Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
-                for (final e in sorted)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text('${e.key.label} · ${e.value}',
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.sm,
+                children: [
+                  for (final e in sorted)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${e.key.label} · ${e.value}',
                         style: TextStyle(
-                            color: theme.colorScheme.primary,
-                            fontSize: 12, fontWeight: FontWeight.w600)),
-                  ),
-              ]),
+                          color: theme.colorScheme.primary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
@@ -409,6 +577,8 @@ class _ListTab extends ConsumerStatefulWidget {
 class _ListTabState extends ConsumerState<_ListTab> {
   final _search = TextEditingController();
   LocationType? _type;
+  MissingContent? _missing;
+  String? _county;
   bool _busy = false;
 
   @override
@@ -428,15 +598,23 @@ class _ListTabState extends ConsumerState<_ListTab> {
       for (final l in items) {
         final links = resolveNarrationLinks(l, content);
         if (links.isEmpty) continue;
-        await repo.attachNarration(l.id,
-            narrationIds: links.narrationIds, audioFiles: links.audioFiles);
+        await repo.attachNarration(
+          l.id,
+          narrationIds: links.narrationIds,
+          audioFiles: links.audioFiles,
+        );
         linked++;
       }
       ref.read(locationRefreshProvider.notifier).bump();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Attached narration to $linked of ${items.length} '
-                'location(s) from Location Content.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Attached narration to $linked of ${items.length} '
+              'location(s) from Location Content.',
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -447,12 +625,26 @@ class _ListTabState extends ConsumerState<_ListTab> {
     final q = _search.text.trim().toLowerCase();
     return all.where((l) {
       if (_type != null && l.type != _type) return false;
+      if (_county != null && (l.county ?? '') != _county) return false;
+      if (_missing != null && !locationIsMissing(l, _missing!)) return false;
       if (q.isEmpty) return true;
       return l.name.toLowerCase().contains(q) ||
           (l.county ?? '').toLowerCase().contains(q) ||
           (l.city ?? '').toLowerCase().contains(q) ||
+          l.tags.any((t) => t.toLowerCase().contains(q)) ||
           l.type.label.toLowerCase().contains(q);
     }).toList();
+  }
+
+  /// Distinct, sorted county names present in the dataset (for the filter).
+  List<String> _counties(List<MasterLocation> all) {
+    final set = <String>{};
+    for (final l in all) {
+      final c = (l.county ?? '').trim();
+      if (c.isNotEmpty) set.add(c);
+    }
+    final list = set.toList()..sort();
+    return list;
   }
 
   @override
@@ -466,7 +658,8 @@ class _ListTabState extends ConsumerState<_ListTab> {
       children: [
         AdminPageHeader(
           title: 'Locations',
-          subtitle: 'Create, edit, move, merge, upload media, attach narration, '
+          subtitle:
+              'Create, edit, move, merge, upload media, attach narration, '
               'toggle map/radio visibility.',
           actions: [
             OutlinedButton.icon(
@@ -474,8 +667,10 @@ class _ListTabState extends ConsumerState<_ListTab> {
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _busy
                   ? const SizedBox(
-                      width: 16, height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2))
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
                   : const Icon(Icons.link_rounded, size: 18),
               label: Text(_busy ? 'Attaching…' : 'Attach narration'),
             ),
@@ -490,39 +685,99 @@ class _ListTabState extends ConsumerState<_ListTab> {
         ),
         const Gap.v(AppSpacing.lg),
         AdminSectionCard(
-          child: Column(children: [
-            TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
+          child: Column(
+            children: [
+              TextField(
+                controller: _search,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
                   labelText: 'Search locations',
                   prefixIcon: Icon(Icons.search_rounded),
-                  isDense: true, border: OutlineInputBorder()),
-            ),
-            const Gap.v(AppSpacing.md),
-            DropdownButtonFormField<LocationType?>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Type', isDense: true, border: OutlineInputBorder()),
-              items: [
-                const DropdownMenuItem(value: null, child: Text('All types')),
-                for (final t in LocationType.values)
-                  DropdownMenuItem(value: t, child: Text(t.label)),
-              ],
-              onChanged: (t) => setState(() => _type = t),
-            ),
-          ]),
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const Gap.v(AppSpacing.md),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<LocationType?>(
+                      initialValue: _type,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Type',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('All types'),
+                        ),
+                        for (final t in LocationType.values)
+                          DropdownMenuItem(value: t, child: Text(t.label)),
+                      ],
+                      onChanged: (t) => setState(() => _type = t),
+                    ),
+                  ),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(
+                    child: DropdownButtonFormField<String?>(
+                      initialValue: _county,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'County',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('All counties'),
+                        ),
+                        for (final c in _counties(async.value ?? const []))
+                          DropdownMenuItem(value: c, child: Text(c)),
+                      ],
+                      onChanged: (c) => setState(() => _county = c),
+                    ),
+                  ),
+                ],
+              ),
+              const Gap.v(AppSpacing.md),
+              DropdownButtonFormField<MissingContent?>(
+                initialValue: _missing,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Missing content',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  const DropdownMenuItem(
+                    value: null,
+                    child: Text('Any (no filter)'),
+                  ),
+                  for (final m in MissingContent.values)
+                    DropdownMenuItem(value: m, child: Text(m.label)),
+                ],
+                onChanged: (m) => setState(() => _missing = m),
+              ),
+            ],
+          ),
         ),
         const Gap.v(AppSpacing.md),
         if (async.isLoading)
-          const Padding(padding: EdgeInsets.all(AppSpacing.xl),
-              child: Center(child: CircularProgressIndicator()))
+          const Padding(
+            padding: EdgeInsets.all(AppSpacing.xl),
+            child: Center(child: CircularProgressIndicator()),
+          )
         else if (items.isEmpty)
           const AdminEmptyState(
-              message: 'No locations. Tap New, or run migration 0031 to import '
-                  'existing POIs/destinations.',
-              icon: Icons.wrong_location_rounded)
+            message:
+                'No locations. Tap New, or run migration 0031 to import '
+                'existing POIs/destinations.',
+            icon: Icons.wrong_location_rounded,
+          )
         else ...[
           Text('${items.length} location(s)', style: theme.textTheme.bodySmall),
           const Gap.v(AppSpacing.sm),
@@ -541,7 +796,9 @@ class _ListTabState extends ConsumerState<_ListTab> {
 
   Future<void> _openEditor(BuildContext context, {MasterLocation? item}) async {
     final saved = await showDialog<bool>(
-      context: context, builder: (_) => _EditorDialog(item: item));
+      context: context,
+      builder: (_) => _EditorDialog(item: item),
+    );
     if (saved == true) ref.read(locationRefreshProvider.notifier).bump();
   }
 }
@@ -558,18 +815,29 @@ class _Row extends ConsumerWidget {
     final links = resolveNarrationLinks(item, content);
     if (links.isEmpty) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('No matching Location Content narration nearby.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No matching Location Content narration nearby.'),
+          ),
+        );
       }
       return;
     }
-    await repo.attachNarration(item.id,
-        narrationIds: links.narrationIds, audioFiles: links.audioFiles);
+    await repo.attachNarration(
+      item.id,
+      narrationIds: links.narrationIds,
+      audioFiles: links.audioFiles,
+    );
     ref.read(locationRefreshProvider.notifier).bump();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Attached ${links.narrationIds.length} narration(s), '
-              '${links.audioFiles.length} audio file(s).')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Attached ${links.narrationIds.length} narration(s), '
+            '${links.audioFiles.length} audio file(s).',
+          ),
+        ),
+      );
     }
   }
 
@@ -582,8 +850,9 @@ class _Row extends ConsumerWidget {
     await ref.read(locationRepositoryProvider).merge(target, item);
     ref.read(locationRefreshProvider.notifier).bump();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Merged "${item.name}" into "${target.name}".')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Merged "${item.name}" into "${target.name}".')),
+      );
     }
   }
 
@@ -594,119 +863,186 @@ class _Row extends ConsumerWidget {
     void refresh() => ref.read(locationRefreshProvider.notifier).bump();
 
     return AdminSectionCard(
-      child: Row(children: [
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.primary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20)),
-                child: Text(item.type.label, style: TextStyle(
-                    color: theme.colorScheme.primary, fontSize: 11,
-                    fontWeight: FontWeight.w600)),
-              ),
-              const Gap.h(AppSpacing.sm),
-              switch (item.status) {
-                LocationStatus.ready =>
-                  const StatusBadge(BadgeStatus.published, label: 'Ready'),
-                LocationStatus.pending =>
-                  const StatusBadge(BadgeStatus.review, label: 'Needs Narration'),
-                LocationStatus.disabled =>
-                  const StatusBadge(BadgeStatus.draft, label: 'Disabled'),
-              },
-              if (item.featured) ...[
-                const Gap.h(AppSpacing.xs),
-                const Icon(Icons.star_rounded, size: 16, color: Color(0xFFE0A458)),
-              ],
-            ]),
-            const Gap.v(AppSpacing.xs),
-            Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-            Text([
-              item.placeLine,
-              if (item.hasCoordinates)
-                '${item.latitude!.toStringAsFixed(3)}, ${item.longitude!.toStringAsFixed(3)}'
-              else 'no coordinates',
-              if ((item.source ?? '').isNotEmpty) 'from ${item.source}',
-            ].whereType<String>().join(' · '), style: theme.textTheme.bodySmall),
-            const Gap.v(AppSpacing.xs),
-            Builder(builder: (_) {
-              final c = completionFor(item);
-              Widget chk(String l, bool ok) => Text(
-                    '${ok ? '✓' : '✗'} $l',
-                    style: TextStyle(
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary.withValues(
+                          alpha: 0.12,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        item.type.label,
+                        style: TextStyle(
+                          color: theme.colorScheme.primary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const Gap.h(AppSpacing.sm),
+                    switch (item.status) {
+                      LocationStatus.ready => const StatusBadge(
+                        BadgeStatus.published,
+                        label: 'Ready',
+                      ),
+                      LocationStatus.pending => const StatusBadge(
+                        BadgeStatus.review,
+                        label: 'Needs Narration',
+                      ),
+                      LocationStatus.disabled => const StatusBadge(
+                        BadgeStatus.draft,
+                        label: 'Disabled',
+                      ),
+                    },
+                    if (item.featured) ...[
+                      const Gap.h(AppSpacing.xs),
+                      const Icon(
+                        Icons.star_rounded,
+                        size: 16,
+                        color: Color(0xFFE0A458),
+                      ),
+                    ],
+                  ],
+                ),
+                const Gap.v(AppSpacing.xs),
+                Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  [
+                    item.placeLine,
+                    if (item.hasCoordinates)
+                      '${item.latitude!.toStringAsFixed(3)}, ${item.longitude!.toStringAsFixed(3)}'
+                    else
+                      'no coordinates',
+                    if ((item.source ?? '').isNotEmpty) 'from ${item.source}',
+                  ].whereType<String>().join(' · '),
+                  style: theme.textTheme.bodySmall,
+                ),
+                const Gap.v(AppSpacing.xs),
+                Builder(
+                  builder: (_) {
+                    final c = completionFor(item);
+                    Widget chk(String l, bool ok) => Text(
+                      '${ok ? '✓' : '✗'} $l',
+                      style: TextStyle(
                         fontSize: 11,
                         color: ok
                             ? const Color(0xFF2E7D32)
-                            : theme.colorScheme.error),
-                  );
-              return Wrap(spacing: 10, runSpacing: 2, children: [
-                Text('${c.percent}%',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: c.complete
-                            ? const Color(0xFF2E7D32)
-                            : theme.colorScheme.primary)),
-                chk('Hero', c.hero),
-                chk('Gallery', c.gallery),
-                chk('Narration', c.narration),
-                chk('GPS', c.gps),
-                chk('Map', c.map),
-              ]);
-            }),
-          ]),
-        ),
-        IconButton(
-          tooltip: 'Find & save a photo',
-          icon: Icon(
-            item.images.isEmpty
-                ? Icons.add_a_photo_rounded
-                : Icons.image_search_rounded,
-            color: item.images.isEmpty
-                ? theme.colorScheme.error
-                : theme.colorScheme.primary,
+                            : theme.colorScheme.error,
+                      ),
+                    );
+                    return Wrap(
+                      spacing: 10,
+                      runSpacing: 2,
+                      children: [
+                        Text(
+                          '${c.percent}%',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: c.complete
+                                ? const Color(0xFF2E7D32)
+                                : theme.colorScheme.primary,
+                          ),
+                        ),
+                        chk('Hero', c.hero),
+                        chk('Gallery', c.gallery),
+                        chk('Narration', c.narration),
+                        chk('GPS', c.gps),
+                        chk('Map', c.map),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
-          onPressed: () => showLocationImagePicker(context, item),
-        ),
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert_rounded),
-          onSelected: (v) async {
-            switch (v) {
-              case 'edit': onEdit();
-              case 'photo': await showLocationImagePicker(context, item);
-              case 'attach': await _attach(context, ref);
-              case 'merge': await _merge(context, ref);
-              case 'active':
-                await repo.update(item.id, {'active': !item.active}); refresh();
-              case 'featured':
-                await repo.update(item.id, {'featured': !item.featured}); refresh();
-              case 'hidden':
-                await repo.update(item.id, {'hidden': !item.hidden}); refresh();
-              case 'delete':
-                await repo.delete(item.id); refresh();
-            }
-          },
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit / upload media')),
-            const PopupMenuItem(
-                value: 'photo', child: Text('Find & save a photo')),
-            const PopupMenuItem(
-                value: 'attach', child: Text('Attach narration')),
-            const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
-            PopupMenuItem(value: 'active',
-                child: Text(item.active ? 'Disable' : 'Enable')),
-            PopupMenuItem(value: 'featured',
-                child: Text(item.featured ? 'Unfeature' : 'Feature')),
-            PopupMenuItem(value: 'hidden',
-                child: Text(item.hidden ? 'Show on map' : 'Hide from map')),
-            const PopupMenuDivider(),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-        ),
-      ]),
+          IconButton(
+            tooltip: 'Find & save a photo',
+            icon: Icon(
+              item.images.isEmpty
+                  ? Icons.add_a_photo_rounded
+                  : Icons.image_search_rounded,
+              color: item.images.isEmpty
+                  ? theme.colorScheme.error
+                  : theme.colorScheme.primary,
+            ),
+            onPressed: () => showLocationImagePicker(context, item),
+          ),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert_rounded),
+            onSelected: (v) async {
+              switch (v) {
+                case 'edit':
+                  onEdit();
+                case 'photo':
+                  await showLocationImagePicker(context, item);
+                case 'attach':
+                  await _attach(context, ref);
+                case 'merge':
+                  await _merge(context, ref);
+                case 'active':
+                  await repo.update(item.id, {'active': !item.active});
+                  refresh();
+                case 'featured':
+                  await repo.update(item.id, {'featured': !item.featured});
+                  refresh();
+                case 'hidden':
+                  await repo.update(item.id, {'hidden': !item.hidden});
+                  refresh();
+                case 'delete':
+                  await repo.delete(item.id);
+                  refresh();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Text('Edit / upload media'),
+              ),
+              const PopupMenuItem(
+                value: 'photo',
+                child: Text('Find & save a photo'),
+              ),
+              const PopupMenuItem(
+                value: 'attach',
+                child: Text('Attach narration'),
+              ),
+              const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
+              PopupMenuItem(
+                value: 'active',
+                child: Text(item.active ? 'Disable' : 'Enable'),
+              ),
+              PopupMenuItem(
+                value: 'featured',
+                child: Text(item.featured ? 'Unfeature' : 'Feature'),
+              ),
+              PopupMenuItem(
+                value: 'hidden',
+                child: Text(item.hidden ? 'Show on map' : 'Hide from map'),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -734,44 +1070,54 @@ class _MergePickerState extends State<_MergePicker> {
       content: SizedBox(
         width: 460,
         height: 420,
-        child: Column(children: [
-          const Text('The selected location keeps its record; this one\'s '
+        child: Column(
+          children: [
+            const Text(
+              'The selected location keeps its record; this one\'s '
               'media + narration move onto it, then it is deleted.',
-              style: TextStyle(fontSize: 12)),
-          const Gap.v(AppSpacing.sm),
-          TextField(
-            autofocus: true,
-            onChanged: (v) => setState(() => _q = v),
-            decoration: const InputDecoration(
-                labelText: 'Search target', isDense: true,
+              style: TextStyle(fontSize: 12),
+            ),
+            const Gap.v(AppSpacing.sm),
+            TextField(
+              autofocus: true,
+              onChanged: (v) => setState(() => _q = v),
+              decoration: const InputDecoration(
+                labelText: 'Search target',
+                isDense: true,
                 prefixIcon: Icon(Icons.search_rounded),
-                border: OutlineInputBorder()),
-          ),
-          const Gap.v(AppSpacing.sm),
-          Expanded(
-            child: candidates.isEmpty
-                ? const Center(child: Text('No matches'))
-                : ListView.builder(
-                    itemCount: candidates.length,
-                    itemBuilder: (_, i) {
-                      final l = candidates[i];
-                      return ListTile(
-                        dense: true,
-                        title: Text(l.name),
-                        subtitle: Text([l.type.label, l.placeLine]
-                            .whereType<String>()
-                            .join(' · ')),
-                        onTap: () => Navigator.pop(context, l),
-                      );
-                    },
-                  ),
-          ),
-        ]),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const Gap.v(AppSpacing.sm),
+            Expanded(
+              child: candidates.isEmpty
+                  ? const Center(child: Text('No matches'))
+                  : ListView.builder(
+                      itemCount: candidates.length,
+                      itemBuilder: (_, i) {
+                        final l = candidates[i];
+                        return ListTile(
+                          dense: true,
+                          title: Text(l.name),
+                          subtitle: Text(
+                            [
+                              l.type.label,
+                              l.placeLine,
+                            ].whereType<String>().join(' · '),
+                          ),
+                          onTap: () => Navigator.pop(context, l),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
       ],
     );
   }
@@ -788,17 +1134,61 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late final _name = TextEditingController(text: widget.item?.name ?? '');
   late final _county = TextEditingController(text: widget.item?.county ?? '');
   late final _city = TextEditingController(text: widget.item?.city ?? '');
-  late final _community = TextEditingController(text: widget.item?.community ?? '');
-  late final _desc = TextEditingController(text: widget.item?.description ?? '');
-  late final _lat = TextEditingController(text: widget.item?.latitude?.toString() ?? '');
-  late final _lng = TextEditingController(text: widget.item?.longitude?.toString() ?? '');
-  late final _priority = TextEditingController(text: '${widget.item?.priority ?? 0}');
+  late final _community = TextEditingController(
+    text: widget.item?.community ?? '',
+  );
+  late final _desc = TextEditingController(
+    text: widget.item?.description ?? '',
+  );
+  late final _lat = TextEditingController(
+    text: widget.item?.latitude?.toString() ?? '',
+  );
+  late final _lng = TextEditingController(
+    text: widget.item?.longitude?.toString() ?? '',
+  );
+  late final _priority = TextEditingController(
+    text: '${widget.item?.priority ?? 0}',
+  );
   late final _trigger = TextEditingController(
-      text: widget.item?.triggerRadius?.toString() ?? '');
+    text: widget.item?.triggerRadius?.toString() ?? '',
+  );
+  late final _state = TextEditingController(text: widget.item?.state ?? '');
+  late final _address = TextEditingController(text: widget.item?.address ?? '');
+  late final _short = TextEditingController(
+    text: widget.item?.shortDescription ?? '',
+  );
+  late final _long = TextEditingController(
+    text: widget.item?.longDescription ?? '',
+  );
+  late final _script = TextEditingController(
+    text: widget.item?.narrationScript ?? '',
+  );
+  late final _website = TextEditingController(
+    text: widget.item?.externalWebsite ?? '',
+  );
+  late final _hours = TextEditingController(text: widget.item?.hours ?? '');
+  late final _admission = TextEditingController(
+    text: widget.item?.admission ?? '',
+  );
+  late final _parking = TextEditingController(
+    text: widget.item?.parkingInfo ?? '',
+  );
+  late final _restrooms = TextEditingController(
+    text: widget.item?.restrooms ?? '',
+  );
+  late final _difficulty = TextEditingController(
+    text: widget.item?.difficulty ?? '',
+  );
+  late final _tags = TextEditingController(
+    text: (widget.item?.tags ?? const []).join(', '),
+  );
   late LocationType _type = widget.item?.type ?? LocationType.pointOfInterest;
   late bool _active = widget.item?.active ?? true;
   late bool _featured = widget.item?.featured ?? false;
   late bool _hidden = widget.item?.hidden ?? false;
+  late bool _familyFriendly = widget.item?.familyFriendly ?? false;
+  late bool _petFriendly = widget.item?.petFriendly ?? false;
+  late bool _wheelchair = widget.item?.wheelchairAccessible ?? false;
   late final List<String> _images = [...?widget.item?.images];
   late final List<String> _audio = [...?widget.item?.audioFiles];
   bool _saving = false;
@@ -806,12 +1196,37 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
 
   @override
   void dispose() {
-    for (final c in [_name, _county, _city, _community, _desc, _lat, _lng,
-        _priority, _trigger]) {
+    for (final c in [
+      _name,
+      _county,
+      _city,
+      _community,
+      _desc,
+      _lat,
+      _lng,
+      _priority,
+      _trigger,
+      _state,
+      _address,
+      _short,
+      _long,
+      _script,
+      _website,
+      _hours,
+      _admission,
+      _parking,
+      _restrooms,
+      _difficulty,
+      _tags,
+    ]) {
       c.dispose();
     }
     super.dispose();
   }
+
+  String? _nn(String s) => s.trim().isEmpty ? null : s.trim();
+  List<String> _parseTags(String s) =>
+      s.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -823,7 +1238,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'longitude': double.tryParse(_lng.text.trim()),
       'county': _county.text.trim().isEmpty ? null : _county.text.trim(),
       'city': _city.text.trim().isEmpty ? null : _city.text.trim(),
-      'community': _community.text.trim().isEmpty ? null : _community.text.trim(),
+      'community': _community.text.trim().isEmpty
+          ? null
+          : _community.text.trim(),
       'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
       'priority': int.tryParse(_priority.text.trim()) ?? 0,
       'trigger_radius': double.tryParse(_trigger.text.trim()),
@@ -832,6 +1249,22 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'hidden': _hidden,
       'images': _images,
       'audio_files': _audio,
+      // Richer PoI fields (dropped automatically if migration 0038 isn't applied).
+      'state': _nn(_state.text),
+      'address': _nn(_address.text),
+      'short_description': _nn(_short.text),
+      'long_description': _nn(_long.text),
+      'narration_script': _nn(_script.text),
+      'external_website': _nn(_website.text),
+      'hours': _nn(_hours.text),
+      'admission': _nn(_admission.text),
+      'parking_info': _nn(_parking.text),
+      'restrooms': _nn(_restrooms.text),
+      'difficulty': _nn(_difficulty.text),
+      'tags': _parseTags(_tags.text),
+      'family_friendly': _familyFriendly,
+      'pet_friendly': _petFriendly,
+      'wheelchair_accessible': _wheelchair,
     };
     try {
       if (widget.item == null) {
@@ -843,8 +1276,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Save failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     }
   }
@@ -856,58 +1290,147 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       content: SizedBox(
         width: 560,
         child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            _f(_name, 'Name'),
-            const Gap.v(AppSpacing.sm),
-            DropdownButtonFormField<LocationType>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                  labelText: 'Type', isDense: true, border: OutlineInputBorder()),
-              items: [
-                for (final t in LocationType.values)
-                  DropdownMenuItem(value: t, child: Text(t.label)),
-              ],
-              onChanged: (t) => setState(() => _type = t ?? _type),
-            ),
-            const Gap.v(AppSpacing.sm),
-            Row(children: [
-              Expanded(child: _f(_lat, 'Latitude')),
-              const Gap.h(AppSpacing.sm),
-              Expanded(child: _f(_lng, 'Longitude')),
-              const Gap.h(AppSpacing.sm),
-              SizedBox(width: 90, child: _f(_priority, 'Priority')),
-            ]),
-            const Gap.v(AppSpacing.sm),
-            Row(children: [
-              Expanded(child: _f(_county, 'County')),
-              const Gap.h(AppSpacing.sm),
-              Expanded(child: _f(_city, 'City')),
-              const Gap.h(AppSpacing.sm),
-              Expanded(child: _f(_community, 'Community')),
-            ]),
-            const Gap.v(AppSpacing.sm),
-            _f(_trigger, 'Trigger radius (meters)'),
-            const Gap.v(AppSpacing.sm),
-            _f(_desc, 'Description', maxLines: 3),
-            const Divider(height: AppSpacing.lg),
-            _mediaSection(),
-            const Divider(height: AppSpacing.lg),
-            Row(children: [
-              _toggle('Active', _active, (v) => setState(() => _active = v)),
-              _toggle('Featured', _featured, (v) => setState(() => _featured = v)),
-              _toggle('Hidden', _hidden, (v) => setState(() => _hidden = v)),
-            ]),
-          ]),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _f(_name, 'Name'),
+              const Gap.v(AppSpacing.sm),
+              DropdownButtonFormField<LocationType>(
+                initialValue: _type,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Type',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final t in LocationType.values)
+                    DropdownMenuItem(value: t, child: Text(t.label)),
+                ],
+                onChanged: (t) => setState(() => _type = t ?? _type),
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(child: _f(_lat, 'Latitude')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_lng, 'Longitude')),
+                  const Gap.h(AppSpacing.sm),
+                  SizedBox(width: 90, child: _f(_priority, 'Priority')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(child: _f(_state, 'State')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_county, 'County')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(child: _f(_city, 'City')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_community, 'Community')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              _f(_address, 'Street address'),
+              const Gap.v(AppSpacing.sm),
+              _f(_trigger, 'GPS trigger radius (meters)'),
+              const Divider(height: AppSpacing.lg),
+              _f(_short, 'Short description', maxLines: 2),
+              const Gap.v(AppSpacing.sm),
+              _f(_long, 'Long description', maxLines: 4),
+              const Gap.v(AppSpacing.sm),
+              _f(_desc, 'Description (legacy / fallback)', maxLines: 2),
+              const Gap.v(AppSpacing.sm),
+              _f(_script, 'Narration script (spoken)', maxLines: 4),
+              const Divider(height: AppSpacing.lg),
+              _mediaSection(),
+              const Divider(height: AppSpacing.lg),
+              // Visitor logistics
+              _f(_website, 'External website'),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(child: _f(_hours, 'Hours')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_admission, 'Admission / fees')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(child: _f(_parking, 'Parking info')),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_restrooms, 'Restrooms')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: _f(_difficulty, 'Difficulty (if applicable)'),
+                  ),
+                  const Gap.h(AppSpacing.sm),
+                  Expanded(child: _f(_tags, 'Tags (comma-separated)')),
+                ],
+              ),
+              const Gap.v(AppSpacing.sm),
+              Row(
+                children: [
+                  _toggle(
+                    'Family',
+                    _familyFriendly,
+                    (v) => setState(() => _familyFriendly = v),
+                  ),
+                  _toggle(
+                    'Pets',
+                    _petFriendly,
+                    (v) => setState(() => _petFriendly = v),
+                  ),
+                  _toggle(
+                    'Wheelchair',
+                    _wheelchair,
+                    (v) => setState(() => _wheelchair = v),
+                  ),
+                ],
+              ),
+              const Divider(height: AppSpacing.lg),
+              Row(
+                children: [
+                  _toggle(
+                    'Active',
+                    _active,
+                    (v) => setState(() => _active = v),
+                  ),
+                  _toggle(
+                    'Featured',
+                    _featured,
+                    (v) => setState(() => _featured = v),
+                  ),
+                  _toggle(
+                    'Hidden',
+                    _hidden,
+                    (v) => setState(() => _hidden = v),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
         TextButton(
-            onPressed: _saving ? null : () => Navigator.pop(context, false),
-            child: const Text('Cancel')),
+          onPressed: _saving ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
-            onPressed: _saving ? null : _save,
-            child: Text(_saving ? 'Saving…' : 'Save')),
+          onPressed: _saving ? null : _save,
+          child: Text(_saving ? 'Saving…' : 'Save'),
+        ),
       ],
     );
   }
@@ -922,7 +1445,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
     if (file.bytes == null) return;
     setState(() => _uploading = true);
     try {
-      final url = await ref.read(mediaManagerRepositoryProvider).upload(
+      final url = await ref
+          .read(mediaManagerRepositoryProvider)
+          .upload(
             folder: image ? 'locations' : 'locations/audio',
             filename: '${DateTime.now().millisecondsSinceEpoch}_${file.name}',
             bytes: file.bytes!,
@@ -931,8 +1456,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       setState(() => (image ? _images : _audio).add(url));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -949,15 +1475,19 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
           controller: ctrl,
           autofocus: true,
           decoration: const InputDecoration(
-              hintText: 'https://…', border: OutlineInputBorder()),
+            hintText: 'https://…',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Add')),
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Add'),
+          ),
         ],
       ),
     );
@@ -977,60 +1507,80 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
     );
   }
 
-  Widget _mediaRow(String label, IconData icon, List<String> urls,
-      {required bool image}) {
+  Widget _mediaRow(
+    String label,
+    IconData icon,
+    List<String> urls, {
+    required bool image,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [
-          Icon(icon, size: 18),
-          const Gap.h(AppSpacing.xs),
-          Text('$label (${urls.length})',
-              style: const TextStyle(fontWeight: FontWeight.w600)),
-          const Spacer(),
-          TextButton.icon(
-            onPressed: _uploading ? null : () => _uploadMedia(image: image),
-            icon: const Icon(Icons.upload_rounded, size: 16),
-            label: const Text('Upload'),
-          ),
-          TextButton.icon(
-            onPressed: () => _addByUrl(image: image),
-            icon: const Icon(Icons.link_rounded, size: 16),
-            label: const Text('URL'),
-          ),
-        ]),
+        Row(
+          children: [
+            Icon(icon, size: 18),
+            const Gap.h(AppSpacing.xs),
+            Text(
+              '$label (${urls.length})',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: _uploading ? null : () => _uploadMedia(image: image),
+              icon: const Icon(Icons.upload_rounded, size: 16),
+              label: const Text('Upload'),
+            ),
+            TextButton.icon(
+              onPressed: () => _addByUrl(image: image),
+              icon: const Icon(Icons.link_rounded, size: 16),
+              label: const Text('URL'),
+            ),
+          ],
+        ),
         for (final u in urls)
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: Row(children: [
-              Expanded(
-                child: Text(u,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    u,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11)),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                iconSize: 16,
-                icon: const Icon(Icons.close_rounded),
-                onPressed: () => setState(() => urls.remove(u)),
-              ),
-            ]),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => setState(() => urls.remove(u)),
+                ),
+              ],
+            ),
           ),
       ],
     );
   }
 
-  Widget _f(TextEditingController c, String label, {int maxLines = 1}) => TextField(
-      controller: c, maxLines: maxLines,
-      decoration: InputDecoration(
-          labelText: label, isDense: true, border: const OutlineInputBorder()));
+  Widget _f(TextEditingController c, String label, {int maxLines = 1}) =>
+      TextField(
+        controller: c,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          border: const OutlineInputBorder(),
+        ),
+      );
 
   Widget _toggle(String label, bool value, ValueChanged<bool> onChanged) =>
       Expanded(
-        child: Row(children: [
-          Switch(value: value, onChanged: onChanged),
-          Flexible(child: Text(label, style: const TextStyle(fontSize: 12))),
-        ]),
+        child: Row(
+          children: [
+            Switch(value: value, onChanged: onChanged),
+            Flexible(child: Text(label, style: const TextStyle(fontSize: 12))),
+          ],
+        ),
       );
 }
