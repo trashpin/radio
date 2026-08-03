@@ -1,0 +1,69 @@
+name: Build Android APK
+
+# Builds a debug-signed release APK you can download directly from GitHub —
+# no Cursor, no local Flutter install, no local Android SDK required.
+#
+# ONE-TIME SETUP: add these repository secrets under
+# Settings → Secrets and variables → Actions → New repository secret:
+#   SUPABASE_URL           (Supabase Dashboard → Project Settings → API)
+#   SUPABASE_ANON_KEY       (same page — the anon/publishable key)
+#   GOOGLE_MAPS_API_KEY     (Google Cloud Console → Credentials)
+#
+# HOW TO RUN IT:
+#   1. Go to the "Actions" tab on GitHub
+#   2. Click "Build Android APK" in the left sidebar
+#   3. Click "Run workflow", pick the branch (e.g. discover-area), click the
+#      green "Run workflow" button
+#   4. Wait for it to finish (a few minutes) — a green checkmark means success
+#   5. Click into the finished run, scroll to "Artifacts" at the bottom, and
+#      download "app-release-apk" — that's a zip containing the APK
+#   6. Unzip it, transfer the .apk to your phone, and install it (you may
+#      need to allow "install unknown apps" for whatever app you use to open
+#      it — Files, a browser, etc.)
+#
+# This also runs automatically on every push to `main` and `discover-area`,
+# so a fresh APK is always waiting in the Actions tab without you having to
+# remember to trigger it.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+      - discover-area
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Write .env
+        run: |
+          cat > .env << EOF
+          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
