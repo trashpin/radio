@@ -48,12 +48,38 @@ jobs:
           channel: stable
 
       - name: Write .env
+        # NOT a heredoc on purpose: GitHub Actions' YAML block-literal
+        # indentation gets preserved as real leading whitespace on every
+        # heredoc body line, producing a .env with lines like
+        # "    SUPABASE_URL=..." instead of "SUPABASE_URL=...". flutter_dotenv
+        # doesn't trim that, so every value silently reads as unset — the app
+        # still boots (by design, for a missing-backend case) but every
+        # Supabase call fails with a generic error. Plain `echo` lines have no
+        # indentation-preservation trap.
         run: |
-          cat > .env << EOF
-          SUPABASE_URL=${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
-          GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
-          EOF
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
+          echo "GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}" >> .env
+
+      - name: Verify required secrets
+        run: |
+          missing=0
+          for k in SUPABASE_URL SUPABASE_ANON_KEY GOOGLE_MAPS_API_KEY; do
+            if [ -z "${!k}" ]; then
+              echo "ERROR: $k is not set (add it under Settings > Secrets and variables > Actions)"
+              missing=1
+            else
+              echo "$k is set"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo 'One or more required secrets are missing. Aborting.'
+            exit 1
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
 
       - name: Install dependencies
         run: flutter pub get
