@@ -47,5 +47,10 @@ String friendlyAuthError(Object error) {
   if (msg.contains('rate limit') || msg.contains('too many')) {
     return 'Too many attempts. Please wait a moment and try again.';
   }
+  // Errors we deliberately throw with an already-clear, actionable message
+  // (e.g. AuthController when Supabase isn't configured) — show them as-is
+  // instead of masking them with the generic fallback below, which used to
+  // silently discard this exact information.
+  if (error is StateError) return error.message;
   return 'Something went wrong. Please try again.';
 }
