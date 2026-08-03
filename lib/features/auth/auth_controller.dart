@@ -61,7 +61,15 @@ class AuthController extends ChangeNotifier {
   }
 
   Future<void> signIn(String email, String password) async {
-    await _auth!.signInWithPassword(email: email.trim(), password: password);
+    final auth = _auth;
+    if (auth == null) {
+      throw StateError(
+        "This app isn't connected to its backend (Supabase configuration "
+        'missing). This is a setup problem, not an issue with your account '
+        'or password — please contact support.',
+      );
+    }
+    await auth.signInWithPassword(email: email.trim(), password: password);
     _guest = false;
     notifyListeners();
   }
@@ -74,7 +82,15 @@ class AuthController extends ChangeNotifier {
     String? firstName,
     String? lastName,
   }) async {
-    final res = await _auth!.signUp(
+    final auth = _auth;
+    if (auth == null) {
+      throw StateError(
+        "This app isn't connected to its backend (Supabase configuration "
+        'missing). This is a setup problem, not an issue with your account '
+        '— please contact support.',
+      );
+    }
+    final res = await auth.signUp(
       email: email.trim(),
       password: password,
       data: {
