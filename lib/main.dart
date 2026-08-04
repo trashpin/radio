@@ -6,27 +6,41 @@ import 'package:explorer_os_mobile/app/app.dart';
 import 'package:explorer_os_mobile/core/config/env_config.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/auth/auth_controller.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_providers.dart';
+import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
+import 'package:explorer_os_mobile/features/gps/repositories/park_boundary_repository.dart';
 
-/// Application entry point for ExplorerOS.
-///
-/// Kept deliberately small:
-///   1. Ensure Flutter bindings are ready before async work.
-///   2. Load the `.env` file (optional) so backend config is available.
-///   3. Initialize Supabase (no-ops safely if config is missing).
-///   4. Wrap the app in a Riverpod `ProviderScope` (root of state management).
-///   5. Launch the root `ExplorerApp`.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // `isOptional: true` → a missing `.env` won't crash the app; features simply
-  // report the backend isn't configured.
   await dotenv.load(fileName: EnvConfig.fileName, isOptional: true);
-
   await SupabaseService.initialize();
 
-  // Resolve the restored session (keeps users logged in across restarts) and
-  // start listening for auth changes so the router's auth gate reacts.
+  final container = ProviderContainer();
+  await _seedGpsEngine(container);
+  await _startGpsTracking(container);
+
   authController.start();
 
-  runApp(const ProviderScope(child: ExplorerApp()));
+  runApp(ProviderScope(container: container, child: const ExplorerApp()));
+}
+
+Future<void> _seedGpsEngine(ProviderContainer container) async {
+  if (!SupabaseService.isConfigured) return;
+  try {
+    final parkBoundaries =
+        await container.read(parkBoundaryRepositoryProvider).getAll();
+    container.read(gpsServiceProvider).configure(parks: parkBoundaries);
+  } catch (error, stackTrace) {
+    debugPrint('GPS engine seed failed: $error');
+    debugPrint('$stackTrace');
+  }
+}
+
+Future<void> _startGpsTracking(ProviderContainer container) async {
+  try {
+    await container.read(gpsStatusProvider.notifier).requestAndStart();
+  } catch (error, stackTrace) {
+    debugPrint('GPS start failed: $error');
+    debugPrint('$stackTrace');
+  }
 }
