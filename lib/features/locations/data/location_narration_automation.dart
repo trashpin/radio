@@ -10,6 +10,11 @@ enum NarrationAutomationStage {
   generating,
   done,
   failed,
+  /// The job is still running after we stopped watching — NOT a failure.
+  /// The full pipeline (script generation + text-to-speech + upload) is
+  /// three sequential network calls and routinely takes longer than a
+  /// short poll window; this just means "still working, check back."
+  stillPending,
 }
 
 /// One progress update from [LocationNarrationAutomation.run]. [message] is
@@ -23,10 +28,15 @@ class NarrationAutomationResult {
   bool get isTerminal =>
       stage == NarrationAutomationStage.skipped ||
       stage == NarrationAutomationStage.done ||
-      stage == NarrationAutomationStage.failed;
+      stage == NarrationAutomationStage.failed ||
+      stage == NarrationAutomationStage.stillPending;
   bool get isSuccess =>
       stage == NarrationAutomationStage.skipped ||
       stage == NarrationAutomationStage.done;
+
+  /// True only for [NarrationAutomationStage.failed] — [stillPending] is
+  /// deliberately excluded, since nothing actually went wrong there.
+  bool get isGenuineFailure => stage == NarrationAutomationStage.failed;
 }
 
 /// Drives the fully-automated location narration pipeline: enqueue an audio
@@ -48,7 +58,13 @@ class LocationNarrationAutomation {
     required this.triggerWorker,
     required this.checkStatus,
     this.pollInterval = const Duration(seconds: 2),
-    this.maxAttempts = 20, // ~40s at the default interval
+    // ~80s at the default interval. The pipeline this watches
+    // (doLocationAudio) makes three sequential network calls — OpenAI
+    // script generation, ElevenLabs text-to-speech, then a Supabase
+    // Storage upload — which routinely takes 15-40+ seconds even when
+    // everything is healthy. The previous 40s budget made a normally-slow
+    // job look identical to a broken one.
+    this.maxAttempts = 40,
   });
 
   /// Queues the audio job for [location]; returns the new job id, or null if
@@ -106,9 +122,13 @@ class LocationNarrationAutomation {
       'Generating narration script and voice…',
     );
     // Best-effort nudge; a false result just means the scheduled worker will
-    // pick this job up on its own — not a reason to stop here.
+    // pick this job up on its own — not a reason to stop here, but worth
+    // remembering for the timeout message below, since it's the single
+    // biggest cause of "why does this always take forever" — if the nudge
+    // silently fails, every job falls back to the slow periodic cycle.
+    var triggered = false;
     try {
-      await triggerWorker();
+      triggered = await triggerWorker();
     } catch (_) {}
 
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
@@ -142,10 +162,18 @@ class LocationNarrationAutomation {
       }
     }
 
-    yield const NarrationAutomationResult(
-      NarrationAutomationStage.failed,
-      "Still processing — it's taking longer than expected. It will finish "
-      'in the background; check back on this location shortly.',
+    yield NarrationAutomationResult(
+      NarrationAutomationStage.stillPending,
+      triggered
+          ? "Still generating — narration audio can take up to a minute or "
+              "two (it's a real AI voice, not instant). It'll finish in the "
+              'background; check back on this location shortly.'
+          : "Still generating — and the request to run it immediately "
+              "didn't go through, so this is waiting on its next scheduled "
+              'run instead of running right now. It will still finish on '
+              'its own; check back shortly. If this keeps happening, the '
+              'narration worker may not be reachable — worth checking its '
+              'deployment.',
     );
   }
 }
