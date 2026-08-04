@@ -34,12 +34,13 @@ const _engine = LocationEngine();
 
 void main() {
   group('LocationType', () {
-    test('covers all 29 types and maps free-form categories', () {
-      expect(LocationType.values.length, 29);
+    test('covers all types and maps free-form categories', () {
+      expect(LocationType.values.length, 50);
       expect(LocationType.fromId('state_park'), LocationType.statePark);
       expect(LocationType.fromId('Silver Springs'), LocationType.spring);
       expect(LocationType.fromId('Ocklawaha River'), LocationType.river);
-      expect(LocationType.fromId('Ocala National Forest'), LocationType.forest);
+      expect(LocationType.fromId('Ocala National Forest'),
+          LocationType.nationalForest);
       expect(LocationType.fromId('Historic Fort'), LocationType.historicSite);
       expect(LocationType.fromId('mystery'), LocationType.pointOfInterest);
     });
