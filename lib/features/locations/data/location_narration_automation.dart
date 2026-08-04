@@ -1,110 +1,179 @@
-import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
-import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
+import 'dart:async';
+
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
-/// Narration resolved for a master location — audio if we have it, otherwise a
-/// composed script for on-device TTS.
-class LocationNarration {
-  const LocationNarration({
-    required this.title,
-    required this.text,
-    this.audioUrl,
-    this.sourceContentId,
+/// Stages of the automated "generate narration on save" flow — surfaced to
+/// the admin UI so progress is never a silent spinner.
+enum NarrationAutomationStage {
+  skipped, // already had audio — nothing to do
+  enqueuing,
+  generating,
+  done,
+  failed,
+  /// The job is still running after we stopped watching — NOT a failure.
+  /// The full pipeline (script generation + text-to-speech + upload) is
+  /// three sequential network calls and routinely takes longer than a
+  /// short poll window; this just means "still working, check back."
+  stillPending,
+}
+
+/// One progress update from [LocationNarrationAutomation.run]. [message] is
+/// always meant to be shown to the admin as-is — no separate "translate this
+/// error" step needed.
+class NarrationAutomationResult {
+  const NarrationAutomationResult(this.stage, this.message);
+  final NarrationAutomationStage stage;
+  final String message;
+
+  bool get isTerminal =>
+      stage == NarrationAutomationStage.skipped ||
+      stage == NarrationAutomationStage.done ||
+      stage == NarrationAutomationStage.failed ||
+      stage == NarrationAutomationStage.stillPending;
+  bool get isSuccess =>
+      stage == NarrationAutomationStage.skipped ||
+      stage == NarrationAutomationStage.done;
+
+  /// True only for [NarrationAutomationStage.failed] — [stillPending] is
+  /// deliberately excluded, since nothing actually went wrong there.
+  bool get isGenuineFailure => stage == NarrationAutomationStage.failed;
+}
+
+/// Drives the fully-automated location narration pipeline: enqueue an audio
+/// job → nudge the narration worker to run it now → poll until it completes
+/// or fails, emitting a [NarrationAutomationResult] at every stage.
+///
+/// WHY THIS EXISTS: the admin location editor shouldn't have to know about
+/// `generation_jobs`, Edge Functions, or polling — it just listens to [run]'s
+/// stream and shows whatever text comes through. The actual script + TTS
+/// generation happens server-side in the `narration-worker` Edge Function
+/// (`doLocationAudio`); this class only orchestrates and reports on it.
+///
+/// Every dependency is injected (not a real Supabase call) so this is fully
+/// unit-testable — see [LocationRepository] for the real implementations used
+/// in the app.
+class LocationNarrationAutomation {
+  LocationNarrationAutomation({
+    required this.enqueue,
+    required this.triggerWorker,
+    required this.checkStatus,
+    this.pollInterval = const Duration(seconds: 2),
+    // ~80s at the default interval. The pipeline this watches
+    // (doLocationAudio) makes three sequential network calls — OpenAI
+    // script generation, ElevenLabs text-to-speech, then a Supabase
+    // Storage upload — which routinely takes 15-40+ seconds even when
+    // everything is healthy. The previous 40s budget made a normally-slow
+    // job look identical to a broken one.
+    this.maxAttempts = 40,
   });
 
-  final String title;
-  final String text;
-  final String? audioUrl;
+  /// Queues the audio job for [location]; returns the new job id, or null if
+  /// it couldn't be queued (e.g. Supabase not configured).
+  final Future<String?> Function(MasterLocation location) enqueue;
 
-  /// The `location_content` row this narration came from, when matched.
-  final String? sourceContentId;
+  /// Best-effort "run the worker now" call. A false/failed result isn't
+  /// treated as fatal — the scheduled worker will pick the job up eventually.
+  final Future<bool> Function() triggerWorker;
 
-  bool get hasAudio => audioUrl != null && audioUrl!.trim().isNotEmpty;
-}
+  /// Returns `{'status': ..., 'message': ...}` for a job id, or null if it
+  /// can't be found (yet, or at all).
+  final Future<Map<String, dynamic>?> Function(String jobId) checkStatus;
 
-/// The `location_content` categories that are relevant to a master
-/// [LocationType] — used to attach existing narration to a master location.
-Set<ContentCategory> relevantCategories(LocationType t) {
-  switch (t) {
-    case LocationType.county:
-      return {
-        ContentCategory.countyWelcome,
-        ContentCategory.countyHistory,
-        ContentCategory.countyFunFacts,
-        ContentCategory.countyNature,
-        ContentCategory.countyAgriculture,
-        ContentCategory.countyEconomy,
-        ContentCategory.countyHiddenGems,
-      };
-    case LocationType.city:
-      return {
-        ContentCategory.cityWelcome,
-        ContentCategory.cityHistory,
-        ContentCategory.cityFunFacts,
-        ContentCategory.cityIntro,
-      };
-    case LocationType.community:
-      return {ContentCategory.communityStory};
-    case LocationType.spring:
-      return {ContentCategory.water};
-    case LocationType.river:
-      return {ContentCategory.riverStory, ContentCategory.water};
-    case LocationType.lake:
-      return {ContentCategory.lakeStory, ContentCategory.water};
-    case LocationType.forest:
-      return {ContentCategory.forestStory, ContentCategory.park};
-    case LocationType.statePark:
-    case LocationType.nationalPark:
-    case LocationType.countyPark:
-      return {
-        ContentCategory.park,
-        ContentCategory.parkStory,
-        ContentCategory.arrival,
-        ContentCategory.wildlife,
-        ContentCategory.plants,
-      };
-    case LocationType.historicSite:
-    case LocationType.historicDistrict:
-      return {ContentCategory.history, ContentCategory.historicLandmark};
-    case LocationType.scenicRoad:
-      return {
-        ContentCategory.scenicDrive,
-        ContentCategory.scenicRoad,
-        ContentCategory.historicHighway,
-      };
-    case LocationType.trail:
-    case LocationType.trailhead:
-      return {ContentCategory.trails};
-    case LocationType.scenicOverlook:
-      return {ContentCategory.scenicOverlook};
-    case LocationType.museum:
-      return {ContentCategory.museum};
-    case LocationType.restaurant:
-      return {ContentCategory.restaurant};
-    case LocationType.hiddenGem:
-      return {ContentCategory.hiddenGem};
-    case LocationType.wildlifeViewing:
-      return {ContentCategory.wildlife, ContentCategory.birds};
-    default:
-      return {ContentCategory.attraction, ContentCategory.history};
+  final Duration pollInterval;
+  final int maxAttempts;
+
+  /// Runs the full flow for [location]. Emits progress updates and always
+  /// ends with exactly one terminal result (skipped/done/failed) — never
+  /// throws, so the UI never needs a try/catch around consuming this stream.
+  Stream<NarrationAutomationResult> run(MasterLocation location) async* {
+    if (location.hasAudio) {
+      yield const NarrationAutomationResult(
+        NarrationAutomationStage.skipped,
+        'This location already has narration audio — nothing to generate.',
+      );
+      return;
+    }
+
+    yield const NarrationAutomationResult(
+      NarrationAutomationStage.enqueuing,
+      'Queuing narration job…',
+    );
+
+    String? jobId;
+    try {
+      jobId = await enqueue(location);
+    } catch (e) {
+      yield NarrationAutomationResult(
+        NarrationAutomationStage.failed,
+        'Could not queue the narration job: $e',
+      );
+      return;
+    }
+    if (jobId == null) {
+      yield const NarrationAutomationResult(
+        NarrationAutomationStage.failed,
+        'Could not queue the narration job — Supabase is not configured.',
+      );
+      return;
+    }
+
+    yield const NarrationAutomationResult(
+      NarrationAutomationStage.generating,
+      'Generating narration script and voice…',
+    );
+    // Best-effort nudge; a false result just means the scheduled worker will
+    // pick this job up on its own — not a reason to stop here, but worth
+    // remembering for the timeout message below, since it's the single
+    // biggest cause of "why does this always take forever" — if the nudge
+    // silently fails, every job falls back to the slow periodic cycle.
+    var triggered = false;
+    try {
+      triggered = await triggerWorker();
+    } catch (_) {}
+
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      await Future<void>.delayed(pollInterval);
+      Map<String, dynamic>? job;
+      try {
+        job = await checkStatus(jobId);
+      } catch (_) {
+        job = null;
+      }
+      final status = (job?['status'] as String?) ?? '';
+      switch (status) {
+        case 'completed':
+          yield const NarrationAutomationResult(
+            NarrationAutomationStage.done,
+            'Narration generated and attached.',
+          );
+          return;
+        case 'failed':
+          final reason = (job?['message'] as String?)?.trim();
+          yield NarrationAutomationResult(
+            NarrationAutomationStage.failed,
+            (reason == null || reason.isEmpty)
+                ? 'Narration generation failed.'
+                : 'Narration generation failed: $reason',
+          );
+          return;
+        default:
+          // pending / running / not found yet — keep polling.
+          continue;
+      }
+    }
+
+    yield NarrationAutomationResult(
+      NarrationAutomationStage.stillPending,
+      triggered
+          ? "Still generating — narration audio can take up to a minute or "
+              "two (it's a real AI voice, not instant). It'll finish in the "
+              'background; check back on this location shortly.'
+          : "Still generating — and the request to run it immediately "
+              "didn't go through, so this is waiting on its next scheduled "
+              'run instead of running right now. It will still finish on '
+              'its own; check back shortly. If this keeps happening, the '
+              'narration worker may not be reachable — worth checking its '
+              'deployment.',
+    );
   }
 }
-
-/// The persistable narration link for a master location: the matching
-/// `location_content` ids (best-first) and their audio files.
-class LocationNarrationLinks {
-  const LocationNarrationLinks(this.narrationIds, this.audioFiles);
-  final List<String> narrationIds;
-  final List<String> audioFiles;
-  bool get isEmpty => narrationIds.isEmpty && audioFiles.isEmpty;
-}
-
-/// Resolves every `location_content` narration that belongs to [loc] within
-/// [radiusMeters] (best-first by name/category/audio/proximity), so the link
-/// can be persisted into `locations.narration_ids` / `audio_files`.
-LocationNarrationLinks resolveNarrationLinks(
-  MasterLocation loc,
-  List<ContentItem> content, {
-  double radiusMeters = 1609.344,
-}) {
-  if (!loc.hasCoordinates) return const
