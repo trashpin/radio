@@ -72,6 +72,7 @@ class _OverviewTab extends ConsumerStatefulWidget {
 
 class _OverviewTabState extends ConsumerState<_OverviewTab> {
   bool _generating = false;
+  bool _generatingContent = false;
   bool _importing = false;
   bool _wikimedia = false;
 
@@ -213,6 +214,43 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
     }
   }
 
+  Future<void> _generateMissingContent(List<MasterLocation> all) async {
+    // Locations that have a name + type but no written description yet — the
+    // bare imports (OpenStreetMap etc.). Exclude disabled rows.
+    final needy = all
+        .where((l) =>
+            l.status != LocationStatus.disabled &&
+            locationIsMissing(l, MissingContent.description))
+        .toList();
+    if (needy.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No locations missing written content.')),
+      );
+      return;
+    }
+    setState(() => _generatingContent = true);
+    try {
+      final repo = ref.read(locationRepositoryProvider);
+      final n = await repo.enqueueMissingContent(needy);
+      await repo.triggerNarrationWorker();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Queued AI content for $n location(s). They stay '
+                'hidden drafts until you review & publish.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not queue jobs: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _generatingContent = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -330,6 +368,22 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
                     )
                   : const Icon(Icons.graphic_eq_rounded, size: 18),
               label: Text(_generating ? 'Queuing…' : 'Generate Missing Audio'),
+            ),
+            const Gap.h(AppSpacing.sm),
+            FilledButton.icon(
+              onPressed: _generatingContent
+                  ? null
+                  : () => _generateMissingContent(all),
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _generatingContent
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: Text(
+                  _generatingContent ? 'Queuing…' : 'Generate Missing Content'),
             ),
           ],
         ),
@@ -1036,6 +1090,14 @@ class _Row extends ConsumerWidget {
                 case 'unpublish':
                   await repo.update(item.id, {'content_status': 'draft'});
                   refresh();
+                case 'gencontent':
+                  await repo.enqueueContentJob(item);
+                  await repo.triggerNarrationWorker();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Queued AI content — refresh in a '
+                            'moment to see the generated copy.')));
+                  }
                 case 'delete':
                   await repo.delete(item.id);
                   refresh();
@@ -1053,6 +1115,10 @@ class _Row extends ConsumerWidget {
               const PopupMenuItem(
                 value: 'attach',
                 child: Text('Attach narration'),
+              ),
+              const PopupMenuItem(
+                value: 'gencontent',
+                child: Text('Generate AI content'),
               ),
               const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
               PopupMenuItem(
