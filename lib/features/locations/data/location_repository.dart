@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration_automation.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
@@ -312,10 +313,13 @@ final nearbyLocationsProvider = Provider<List<NearbyLocation>>((ref) {
     debugPrint('[nearbyLocations] no center yet (GPS pending) → 0 results');
     return const [];
   }
-  final all = ref.watch(masterLocationsProvider).value ?? const [];
+  // Only the active tiers (county/city/park/state park/spring) are eligible
+  // for Nearby/Radio right now — see active_location_types.dart.
+  final all = onlyActiveTypes(
+      ref.watch(masterLocationsProvider).value ?? const []);
   debugPrint('[nearbyLocations] querying LocationEngine.nearby at '
       '(${center.latitude}, ${center.longitude}) over ${all.length} '
-      'master locations');
+      'active-type locations');
   final result = ref
       .watch(locationEngineProvider)
       .nearby(center.latitude, center.longitude, all);
