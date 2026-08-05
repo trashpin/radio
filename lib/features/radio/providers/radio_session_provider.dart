@@ -384,6 +384,7 @@ void _attachCommunityWelcome(Ref ref) {
         continue;
       }
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.isPublishBlocked) continue;
       out.add(
         CommunityPlace(
           id: l.id,
@@ -487,6 +488,7 @@ void _attachLocationTriggers(Ref ref) {
         continue; // owned by the county/community welcome directors
       }
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.isPublishBlocked) continue;
       if (l.triggerRadius == null) continue;
       out.add(
         TriggerableLocation(

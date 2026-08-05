@@ -39,6 +39,7 @@ List<AttractionMatch> nearbyAttractions(
     if (l.id == area.id) continue;
     if (!_attractionTypes.contains(l.type)) continue;
     if (!l.active || l.hidden || !l.hasCoordinates) continue;
+    if (l.isPublishBlocked) continue;
     final distance = GeoMath.distanceMeters(
       area.latitude!,
       area.longitude!,

@@ -331,6 +331,7 @@ class MasterLocation {
     bool? featured,
     bool? active,
     bool? hidden,
+    ContentStatus? contentStatus,
   }) => MasterLocation(
     id: id,
     name: name,
@@ -357,6 +358,32 @@ class MasterLocation {
     sourceId: sourceId,
     destinationCode: destinationCode,
     updatedAt: updatedAt,
+    // Preserve everything else so copyWith never silently drops fields.
+    createdAt: createdAt,
+    state: state,
+    shortDescription: shortDescription,
+    longDescription: longDescription,
+    narrationScript: narrationScript,
+    hours: hours,
+    admission: admission,
+    externalWebsite: externalWebsite,
+    parkingInfo: parkingInfo,
+    restrooms: restrooms,
+    difficulty: difficulty,
+    tags: tags,
+    familyFriendly: familyFriendly,
+    petFriendly: petFriendly,
+    wheelchairAccessible: wheelchairAccessible,
+    arrivalTrigger: arrivalTrigger,
+    departureTrigger: departureTrigger,
+    playOnce: playOnce,
+    cooldownSeconds: cooldownSeconds,
+    contentStatus: contentStatus ?? this.contentStatus,
+    estimatedListeningMinutes: estimatedListeningMinutes,
+    parentLocationId: parentLocationId,
+    phone: phone,
+    discoverable: discoverable,
+    backgroundDetection: backgroundDetection,
   );
 
   bool get hasCoordinates =>
@@ -378,6 +405,25 @@ class MasterLocation {
 
   bool get isReady => status == LocationStatus.ready;
   bool get isPending => status == LocationStatus.pending;
+
+  /// Editorial publish gate for END USERS. Content that carries an explicit
+  /// [ContentStatus.draft] or [ContentStatus.archived] must never reach the
+  /// map/radio/search/GPS until an admin publishes it — this is what keeps raw
+  /// bulk imports (e.g. OpenStreetMap, which land as `draft`) out of the user
+  /// experience while they're reviewed.
+  ///
+  /// Legacy rows with NO `content_status` (null) are grandfathered as allowed,
+  /// so this gate only ever HIDES freshly-imported/archived content and never
+  /// silently removes the existing catalog. Admin surfaces read the full list
+  /// and are unaffected.
+  bool get isPublishBlocked =>
+      contentStatus == ContentStatus.draft ||
+      contentStatus == ContentStatus.archived;
+
+  /// True when this location may be shown to end users: readiness gates
+  /// ([status] not disabled, has coordinates) AND it isn't editorially blocked.
+  bool get isUserVisible =>
+      status != LocationStatus.disabled && hasCoordinates && !isPublishBlocked;
 
   /// The editorial workflow status to show/filter by: the explicit
   /// [contentStatus] if an admin has set one, otherwise a computed default so
