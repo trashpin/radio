@@ -15,6 +15,7 @@ import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart'
 import 'package:explorer_os_mobile/features/gps/services/location_trigger_engine.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
+import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/community_welcome_director.dart';
@@ -61,6 +62,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Wire the GPS-aware DJ Banter library so the DJ references the surroundings
   // between songs (defensive no-op when there's no library / GPS yet).
   _attachGpsBanter(ref, engine);
+
+  // Wire the Radio Banter Engine: mix short LOCAL narration (park > city >
+  // county, e.g. Marion) between songs, reusing each location's own AI content.
+  _attachLocationBanter(ref, engine);
 
   // Keep a live forecast cached so banter + the county welcome are weather-aware.
   _attachWeather(ref);
@@ -306,6 +311,41 @@ void _attachWeather(Ref ref) {
 /// current weather and plays a spoken Station ID → Welcome → Weather →
 /// Recommendation report through the radio's interrupt→resume path (music
 /// resumes at the exact spot). Once per county per session.
+/// Configures the Radio Banter Engine with the live position + master
+/// locations, and a resolver that reuses each location's EXISTING content for
+/// the clip (recorded audio → AI narration script → composed narration). The
+/// engine (park > city > county priority + cooldown + county fallback) then
+/// decides which one speaks between songs.
+void _attachLocationBanter(Ref ref, RadioEngineService engine) {
+  final scheduler = engine.locationBanter;
+  if (scheduler == null) return;
+  scheduler.configure(context: () {
+    final center = ref.read(mapCenterProvider);
+    if (center == null) return null;
+    final all = ref.read(masterLocationsProvider).value ?? const [];
+    if (all.isEmpty) return null;
+    final county = ref.read(locationContextProvider).county;
+    final content = ref.read(locationContentItemsProvider);
+    return BanterRuntime(
+      lat: center.latitude,
+      lng: center.longitude,
+      county: county,
+      locations: all,
+      resolve: (loc) {
+        if (loc.audioFiles.any((u) => u.trim().isNotEmpty)) {
+          return BanterClip(audioUrl: loc.audioFiles.first);
+        }
+        final script = (loc.narrationScript ?? '').trim();
+        if (script.isNotEmpty) return BanterClip(text: script);
+        final n = resolveLocationNarration(loc, content);
+        return n.hasAudio
+            ? BanterClip(audioUrl: n.audioUrl, text: n.text)
+            : BanterClip(text: n.text);
+      },
+    );
+  });
+}
+
 void _attachCountyWelcome(Ref ref) {
   final director = CountyWelcomeDirector();
   final weather = ref.read(weatherClientProvider);
