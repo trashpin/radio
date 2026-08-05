@@ -7,7 +7,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/categories/category_repository.dart';
 import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
 import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/geofence_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/import/osm_import_dialog.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
@@ -670,6 +670,13 @@ class _ListTabState extends ConsumerState<_ListTab> {
               'Create, edit, move, merge, upload media, attach narration, '
               'toggle map/radio visibility.',
           actions: [
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => showOsmImportDialog(context),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: const Icon(Icons.public_rounded, size: 18),
+              label: const Text('Import (OSM)'),
+            ),
+            const Gap.h(AppSpacing.sm),
             OutlinedButton.icon(
               onPressed: _busy ? null : () => _attachAll(items),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
@@ -1402,23 +1409,6 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                   )),
                   icon: const Icon(Icons.menu_book_rounded),
                   label: const Text('Manage Discovery Content (History, Nature, Geology...)'),
-                ),
-              ],
-              if (widget.item != null) ...[
-                const Gap.v(AppSpacing.sm),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => GeofenceManagerPage(
-                      locationId: widget.item!.id,
-                      locationName: _name.text.trim().isEmpty
-                          ? widget.item!.name
-                          : _name.text.trim(),
-                      defaultLat: widget.item!.latitude,
-                      defaultLng: widget.item!.longitude,
-                    ),
-                  )),
-                  icon: const Icon(Icons.public_rounded),
-                  label: const Text('Manage Geofences (hierarchy, priority)'),
                 ),
               ],
               const Gap.v(AppSpacing.sm),

@@ -21,7 +21,9 @@ Future<void> main() async {
 
   authController.start();
 
-  runApp(ProviderScope(container: container, child: const ExplorerApp()));
+  runApp(
+    UncontrolledProviderScope(container: container, child: const ExplorerApp()),
+  );
 }
 
 Future<void> _seedGpsEngine(ProviderContainer container) async {
