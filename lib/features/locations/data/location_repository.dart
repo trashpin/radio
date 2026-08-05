@@ -148,6 +148,52 @@ class LocationRepository {
     return inserted['id']?.toString();
   }
 
+  /// Enqueues AI text-content generation (short/long description + narration
+  /// script) for each location that's missing copy — drained by the same
+  /// narration worker (`master_location:content` note → `doLocationContent`).
+  /// Imported/bare drafts get real, type-appropriate text to review; the
+  /// worker fills only empty fields and never publishes. Returns how many were
+  /// queued.
+  Future<int> enqueueMissingContent(List<MasterLocation> locations) async {
+    if (!SupabaseService.isConfigured || locations.isEmpty) return 0;
+    final rows = [
+      for (final l in locations)
+        {
+          'destination': l.name,
+          'job_type': 'audio',
+          'status': 'pending',
+          'latitude': l.latitude,
+          'longitude': l.longitude,
+          'county': l.county,
+          'progress': 0,
+          'notes': 'master_location:content;id=${l.id}',
+        },
+    ];
+    await SupabaseService.client.from('generation_jobs').insert(rows);
+    return rows.length;
+  }
+
+  /// Enqueues a single content-generation job for [location], returning the new
+  /// job id (for polling) — the text twin of [enqueueAudioJob].
+  Future<String?> enqueueContentJob(MasterLocation location) async {
+    if (!SupabaseService.isConfigured) return null;
+    final inserted = await SupabaseService.client
+        .from('generation_jobs')
+        .insert({
+          'destination': location.name,
+          'job_type': 'audio',
+          'status': 'pending',
+          'latitude': location.latitude,
+          'longitude': location.longitude,
+          'county': location.county,
+          'progress': 0,
+          'notes': 'master_location:content;id=${location.id}',
+        })
+        .select('id')
+        .single();
+    return inserted['id']?.toString();
+  }
+
   /// Asks the narration worker to drain the queue NOW, so a just-enqueued job
   /// runs immediately instead of waiting for the scheduled worker. Returns
   /// false if the `narration-worker` Edge Function isn't deployed/reachable
