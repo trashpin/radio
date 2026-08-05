@@ -71,6 +71,7 @@ class LocationImportService {
     String? county,
     bool onlyMissing = false,
     bool updateExisting = true,
+    bool generateContent = true,
     void Function(String)? onLog,
   }) async {
     if (!SupabaseService.isConfigured) {
@@ -123,13 +124,30 @@ class LocationImportService {
           failed++;
         }
       }
+      // Auto-generate copy for the fresh imports: they land as bare drafts
+      // (name + type + place, no description), so queue AI content for every
+      // imported row that's still missing a description. They stay hidden
+      // drafts until an admin reviews + publishes.
+      var contentQueued = 0;
+      if (generateContent && (inserted > 0 || updated > 0)) {
+        onLog?.call('Queuing AI content for new imports…');
+        contentQueued = await _enqueueContentForImported(ids);
+        if (contentQueued > 0) {
+          await _repo.triggerNarrationWorker();
+          onLog?.call('Queued AI content for $contentQueued location(s).');
+        }
+      }
+
       final summary = ImportSummary(
         found: parsed.length,
         inserted: inserted,
         updated: updated,
         skipped: skipped,
         failed: failed,
-        message: 'Done.',
+        message: contentQueued > 0
+            ? 'Done — AI content queued for $contentQueued (hidden drafts '
+                'until you publish).'
+            : 'Done.',
       );
       onLog?.call(summary.toString());
       return summary;
@@ -147,6 +165,31 @@ class LocationImportService {
         'source': l.source,
         'source_id': l.sourceId,
       };
+
+  /// Queues AI content generation for imported osm rows that still have no
+  /// description (i.e. the fresh, bare imports). Returns how many were queued.
+  Future<int> _enqueueContentForImported(List<String> sourceIds) async {
+    final needy = <MasterLocation>[];
+    const chunk = 150;
+    for (var i = 0; i < sourceIds.length; i += chunk) {
+      final slice = sourceIds.sublist(i, (i + chunk).clamp(0, sourceIds.length));
+      try {
+        final rows = await SupabaseService.client
+            .from('locations')
+            .select()
+            .eq('source', OsmOverpass.source)
+            .inFilter('source_id', slice) as List;
+        for (final r in rows.cast<Map<String, dynamic>>()) {
+          final loc = MasterLocation.fromJson(r);
+          if (loc.bestDescription == null) needy.add(loc);
+        }
+      } catch (_) {
+        // Best-effort — content can also be queued later from the admin.
+      }
+    }
+    if (needy.isEmpty) return 0;
+    return _repo.enqueueMissingContent(needy);
+  }
 
   /// Map of source_id → existing location id, for source='osm'. Chunks the
   /// `in` filter so a large area doesn't blow the URL length.
