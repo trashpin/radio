@@ -13,6 +13,7 @@ import 'package:explorer_os_mobile/features/radio/services/queue_manager_service
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_preference_service.dart';
 import 'package:explorer_os_mobile/features/radio/services/station_identification_service.dart';
+import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/station_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/story_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/user_preference_manager.dart';
@@ -79,6 +80,7 @@ final radioEngineServiceProvider = Provider<RadioEngineService>((ref) {
     audioFocus: ref.watch(audioFocusManagerProvider),
     offline: ref.watch(offlinePlaybackServiceProvider),
     stationIds: ref.watch(stationIdentificationServiceProvider),
+    locationBanter: LocationBanterScheduler(),
   );
   ref.onDispose(engine.dispose);
   return engine;
