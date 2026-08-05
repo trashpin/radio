@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
 /// OpenStreetMap / Overpass API adapter — the first import source for the
@@ -22,17 +23,14 @@ class OsmOverpass {
     int timeoutSeconds = 60,
   }) {
     final bbox = '($south,$west,$north,$east)';
-    // Tag selectors that map to our taxonomy. `nwr` = nodes+ways+relations.
+    // Scoped to the FIVE active tiers only (see active_location_types.dart):
+    // cities/communities, city parks, and springs. (County + Florida State
+    // Parks are curated from trusted government sources, not this importer;
+    // businesses/POIs are intentionally excluded.) `nwr` = nodes+ways+relations.
     const selectors = [
-      'tourism~"museum|attraction|artwork|gallery|viewpoint|camp_site|information"',
-      'historic',
-      'leisure~"park|nature_reserve|garden"',
-      'natural~"waterfall|beach|cave_entrance|spring|peak"',
-      'waterway~"waterfall"',
-      'man_made~"lighthouse|bridge"',
-      'amenity~"restaurant|cafe|fast_food|theatre|arts_centre"',
-      'boundary~"national_park|protected_area"',
       'place~"city|town|village|hamlet|suburb|neighbourhood"',
+      'leisure~"park|garden"',
+      'natural~"spring"',
     ];
     final body = selectors.map((s) => 'nwr[$s]$bbox;').join('\n  ');
     return '[out:json][timeout:$timeoutSeconds];\n(\n  $body\n);\nout center tags;';
@@ -55,7 +53,7 @@ class OsmOverpass {
       if (name == null || name.isEmpty) continue;
 
       final type = _typeForTags(tags);
-      if (type == null) continue;
+      if (type == null || !isActiveLocationType(type)) continue;
 
       final coord = _coord(e);
       if (coord == null) continue;

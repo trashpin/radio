@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 
@@ -82,9 +83,10 @@ final masterNearbyItemsProvider = Provider<List<NearbyItem>>((ref) {
   final showPending = ref.watch(showPendingLocationsProvider);
   return [
     for (final l in all)
-      // Editorially blocked (draft/archived, e.g. raw imports) never plot —
-      // not even in the admin "show pending" preview — until published.
-      if (l.hasCoordinates &&
+      // Only the active tiers (county/city/park/state park/spring) plot today;
+      // editorially blocked (draft/archived) rows never plot until published.
+      if (isActiveLocationType(l.type) &&
+          l.hasCoordinates &&
           !l.isPublishBlocked &&
           (l.status == LocationStatus.ready ||
               (showPending && l.status == LocationStatus.pending)))

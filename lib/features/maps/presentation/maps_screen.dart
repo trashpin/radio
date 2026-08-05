@@ -12,6 +12,7 @@ import 'package:explorer_os_mobile/features/destinations/providers/destinations_
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
 import 'package:explorer_os_mobile/features/maps/marker_style.dart';
@@ -1641,7 +1642,9 @@ class _LocationSearchSheetState extends ConsumerState<_LocationSearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final all = ref.watch(masterLocationsProvider).value ?? const [];
+    // Search only the active tiers (county/city/park/state park/spring).
+    final all = onlyActiveTypes(
+        ref.watch(masterLocationsProvider).value ?? const []);
     final results = _q.trim().isEmpty
         ? const <MasterLocation>[]
         : ref.read(locationEngineProvider).search(_q, all, limit: 30);

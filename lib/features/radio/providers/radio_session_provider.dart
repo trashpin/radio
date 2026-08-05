@@ -14,6 +14,7 @@ import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_trigger_engine.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -522,9 +523,16 @@ void _attachLocationTriggers(Ref ref) {
     final all = ref.read(masterLocationsProvider).value ?? const [];
     final out = <TriggerableLocation>[];
     for (final l in all) {
+      // Only the active tiers may trigger narration today; of those, the
+      // county/city/community tiers are owned by the welcome directors, so POI
+      // triggers cover just parks / state parks / springs.
+      if (!isActiveLocationType(l.type)) continue;
       if (l.type == LocationType.county ||
           l.type == LocationType.city ||
-          l.type == LocationType.community) {
+          l.type == LocationType.town ||
+          l.type == LocationType.village ||
+          l.type == LocationType.community ||
+          l.type == LocationType.neighborhood) {
         continue; // owned by the county/community welcome directors
       }
       if (!l.active || l.hidden || !l.hasCoordinates) continue;

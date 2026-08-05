@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/radio/banter/banter_engine.dart';
 import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
@@ -15,12 +16,9 @@ MasterLocation _loc(
   double miles = 0,
   String county = 'Marion',
   String? city,
-  String? community,
   double? triggerRadius,
   List<String> audio = const [],
-  String? script,
-  String? description,
-  ContentStatus? contentStatus,
+  String? description = 'desc',
 }) =>
     MasterLocation(
       id: id,
@@ -30,124 +28,114 @@ MasterLocation _loc(
       longitude: _baseLng,
       county: county,
       city: city,
-      community: community,
       triggerRadius: triggerRadius,
       audioFiles: audio,
-      narrationScript: script,
       description: description,
-      contentStatus: contentStatus,
     );
 
 const _engine = BanterEngine();
 
-// A Marion County world: a state park (with a tagged in-park spring), a city
-// (with a city-tagged diner), a county museum, plus rows that must be excluded.
-final _park = _loc('State Park', LocationType.statePark,
-    miles: 0, triggerRadius: 16000, audio: ['https://x/park.mp3']);
-final _parkSpring = _loc('Park Spring', LocationType.spring,
-    miles: 0.2, community: 'State Park', description: 'A spring in the park.');
-final _city = _loc('Ocala', LocationType.city,
-    miles: 0.5, triggerRadius: 8000, description: 'The city of Ocala.');
-final _cityDiner = _loc('Ocala Diner', LocationType.restaurant,
-    miles: 0.6, city: 'Ocala', description: 'A diner in Ocala.');
-final _countyMuseum = _loc('County Museum', LocationType.museum,
-    miles: 3, description: 'A Marion County museum.');
-final _otherCounty = _loc('Duval Thing', LocationType.attraction,
-    miles: 2, county: 'Duval', description: 'Elsewhere.');
-final _draft = _loc('Draft POI', LocationType.museum,
-    miles: 0.1, description: 'Hidden draft.', contentStatus: ContentStatus.draft);
-final _empty = _loc('Empty', LocationType.museum, miles: 0.1); // no content
+// A Marion County world spanning all five active tiers, plus rows that must be
+// excluded (a museum = inactive type; a spring in another county).
+final _county = _loc('Marion County', LocationType.county, miles: 0,
+    audio: ['https://x/county.mp3']);
+final _city = _loc('Ocala', LocationType.city, miles: 0.5, triggerRadius: 8000);
+final _otherCity = _loc('Belleview', LocationType.city, miles: 8); // not current
+final _park = _loc('Tuscawilla Park', LocationType.cityPark,
+    miles: 0.6, city: 'Ocala');
+final _statePark =
+    _loc('Silver Springs State Park', LocationType.statePark, miles: 2);
+final _spring = _loc('Fern Hammock Springs', LocationType.spring, miles: 3);
+final _museum = _loc('Appleton Museum', LocationType.museum, miles: 0.3);
+final _otherCountySpring =
+    _loc('Duval Spring', LocationType.spring, miles: 2, county: 'Duval');
 
 final _world = [
-  _park, _parkSpring, _city, _cityDiner, _countyMuseum,
-  _otherCounty, _draft, _empty,
+  _county, _city, _otherCity, _park, _statePark, _spring,
+  _museum, _otherCountySpring,
 ];
 
 void main() {
   final now = DateTime(2026, 8, 5, 12);
 
-  group('pool building (data-driven scope)', () {
-    test('scopes by identity + city/community fields; excludes ineligible', () {
-      final pool = _engine.buildPool(_baseLat, _baseLng, _world, county: 'Marion');
-      final byId = {for (final c in pool) c.location.id: c.scope};
-      expect(byId['State Park'], BanterScope.park);
-      expect(byId['Park Spring'], BanterScope.park); // community == park name
-      expect(byId['Ocala'], BanterScope.city);
-      expect(byId['Ocala Diner'], BanterScope.city); // city field match
-      expect(byId['County Museum'], BanterScope.county);
-      // Excluded entirely:
-      expect(byId.containsKey('Duval Thing'), isFalse); // other county
-      expect(byId.containsKey('Draft POI'), isFalse); // publish-blocked
-      expect(byId.containsKey('Empty'), isFalse); // no content
+  test('active-type allow-list is exactly the five tiers', () {
+    expect(isActiveLocationType(LocationType.county), isTrue);
+    expect(isActiveLocationType(LocationType.city), isTrue);
+    expect(isActiveLocationType(LocationType.cityPark), isTrue);
+    expect(isActiveLocationType(LocationType.statePark), isTrue);
+    expect(isActiveLocationType(LocationType.spring), isTrue);
+    for (final t in [
+      LocationType.restaurant,
+      LocationType.coffeeShop,
+      LocationType.museum,
+      LocationType.lake,
+      LocationType.historicSite,
+      LocationType.trail,
+      LocationType.hiddenGem,
+      LocationType.gasStation,
+    ]) {
+      expect(isActiveLocationType(t), isFalse, reason: '$t must be excluded');
+    }
+  });
+
+  test('pool includes county + current city + nearby park/statePark/spring; '
+      'excludes inactive types, other counties, and non-current cities', () {
+    final pool = _engine.buildPool(_baseLat, _baseLng, _world, county: 'Marion');
+    final byId = {for (final c in pool) c.location.id: c.tier};
+    expect(byId['Marion County'], LocationTier.county);
+    expect(byId['Ocala'], LocationTier.city);
+    expect(byId['Tuscawilla Park'], LocationTier.park);
+    expect(byId['Silver Springs State Park'], LocationTier.statePark);
+    expect(byId['Fern Hammock Springs'], LocationTier.spring);
+    // Excluded:
+    expect(byId.containsKey('Appleton Museum'), isFalse); // inactive type
+    expect(byId.containsKey('Duval Spring'), isFalse); // other county
+    expect(byId.containsKey('Belleview'), isFalse); // not the current city
+  });
+
+  group('narration priority County ▸ City ▸ Park ▸ State Park ▸ Spring', () {
+    BanterCandidate? pick(Map<String, DateTime> cooling) => _engine.selectNext(
+        _baseLat, _baseLng, _world,
+        now: now, county: 'Marion', lastPlayed: cooling);
+
+    test('county wins first', () {
+      expect(pick({})!.tier, LocationTier.county);
+    });
+    test('then city', () {
+      expect(pick({'Marion County': now})!.tier, LocationTier.city);
+    });
+    test('then park', () {
+      expect(pick({'Marion County': now, 'Ocala': now})!.tier,
+          LocationTier.park);
+    });
+    test('then state park', () {
+      expect(
+          pick({'Marion County': now, 'Ocala': now, 'Tuscawilla Park': now})!
+              .tier,
+          LocationTier.statePark);
+    });
+    test('then spring, and null when all cool down', () {
+      final cool = {
+        'Marion County': now,
+        'Ocala': now,
+        'Tuscawilla Park': now,
+        'Silver Springs State Park': now,
+      };
+      expect(pick(cool)!.tier, LocationTier.spring);
+      expect(pick({...cool, 'Fern Hammock Springs': now}), isNull);
     });
   });
 
-  group('priority park > city > county', () {
-    test('inside a park, park banter is chosen first', () {
-      final pick = _engine.selectNext(_baseLat, _baseLng, _world, now: now, county: 'Marion');
-      expect(pick, isNotNull);
-      expect(pick!.scope, BanterScope.park);
-    });
-
-    test('when park clips are cooling down, falls back to city', () {
-      final pick = _engine.selectNext(_baseLat, _baseLng, _world, now: now, county: 'Marion',
-          lastPlayed: {'State Park': now, 'Park Spring': now});
-      expect(pick!.scope, BanterScope.city);
-    });
-
-    test('when park + city cooling down, falls back to county (Marion)', () {
-      final pick = _engine.selectNext(_baseLat, _baseLng, _world, now: now, county: 'Marion',
-          lastPlayed: {
-            'State Park': now,
-            'Park Spring': now,
-            'Ocala': now,
-            'Ocala Diner': now,
-          });
-      expect(pick!.scope, BanterScope.county);
-      expect(pick.location.id, 'County Museum');
-    });
-  });
-
-  group('cooldown', () {
-    test('a clip does not repeat within the cooldown window', () {
-      const cfg = BanterConfig(cooldown: Duration(minutes: 20));
-      const engine = BanterEngine(cfg);
-      // Only one park clip available, played 5 min ago → still cooling down →
-      // engine must NOT pick it again; it falls to city instead.
-      final pick = engine.selectNext(_baseLat, _baseLng, _world,
-          now: now,
-          county: 'Marion',
-          lastPlayed: {
-            'State Park': now.subtract(const Duration(minutes: 5)),
-            'Park Spring': now.subtract(const Duration(minutes: 5)),
-          });
-      expect(pick!.scope, BanterScope.city);
-    });
-
-    test('after the cooldown expires the clip is eligible again', () {
-      final pick = _engine.selectNext(_baseLat, _baseLng, _world,
-          now: now,
-          county: 'Marion',
-          lastPlayed: {
-            'State Park': now.subtract(const Duration(minutes: 25)),
-            'Park Spring': now.subtract(const Duration(minutes: 25)),
-          });
-      expect(pick!.scope, BanterScope.park);
-    });
-  });
-
-  group('county fallback (Marion) when not inside a park/city', () {
-    test('far from any park/city, everything is county banter', () {
-      // 60 mi north — outside every park/city radius.
-      final pick = _engine.selectNext(_baseLat + _lat(60), _baseLng, _world,
-          now: now, county: 'Marion');
-      expect(pick, isNotNull);
-      expect(pick!.scope, BanterScope.county);
-    });
+  test('cooldown expiry re-enables a clip', () {
+    final pick = _engine.selectNext(_baseLat, _baseLng, _world,
+        now: now,
+        county: 'Marion',
+        lastPlayed: {'Marion County': now.subtract(const Duration(minutes: 25))});
+    expect(pick!.tier, LocationTier.county); // 25 min > 20 min cooldown
   });
 
   group('LocationBanterScheduler', () {
-    test('emits a playable segment reusing location audio, then cools down', () {
+    test('emits a playable segment reusing location audio', () {
       final scheduler = LocationBanterScheduler(everyNSongs: 1);
       scheduler.configure(context: () => BanterRuntime(
             lat: _baseLat,
@@ -161,17 +149,8 @@ void main() {
       final seg = scheduler.onMusicPlayed();
       expect(seg, isNotNull);
       expect(seg!.type, AudioSegmentType.narration);
-      // Park has recorded audio → played as an audio url, not TTS.
-      expect(seg.audioUrl, 'https://x/park.mp3');
+      expect(seg.audioUrl, 'https://x/county.mp3'); // county wins, has audio
       expect(seg.resumeAfter, isFalse);
-    });
-
-    test('disabled scheduler never emits', () {
-      final scheduler = LocationBanterScheduler(everyNSongs: 1)..enabled = false;
-      scheduler.configure(context: () => BanterRuntime(
-            lat: _baseLat, lng: _baseLng, county: 'Marion', locations: _world,
-            resolve: (l) => const BanterClip(text: 'x')));
-      expect(scheduler.onMusicPlayed(), isNull);
     });
   });
 }

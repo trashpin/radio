@@ -91,7 +91,7 @@ class LocationBanterScheduler {
     _lastPlayed[pick.location.id] = now;
 
     return AudioSegment(
-      id: 'banter:${pick.scope.name}:${pick.location.id}:'
+      id: 'banter:${pick.tier.name}:${pick.location.id}:'
           '${now.microsecondsSinceEpoch}',
       title: pick.location.name,
       artist: 'Local',
