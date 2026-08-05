@@ -7,7 +7,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/categories/category_repository.dart';
 import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
 import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/geofence_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/import/osm_import_dialog.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
@@ -671,6 +671,13 @@ class _ListTabState extends ConsumerState<_ListTab> {
               'toggle map/radio visibility.',
           actions: [
             OutlinedButton.icon(
+              onPressed: _busy ? null : () => showOsmImportDialog(context),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: const Icon(Icons.public_rounded, size: 18),
+              label: const Text('Import (OSM)'),
+            ),
+            const Gap.h(AppSpacing.sm),
+            OutlinedButton.icon(
               onPressed: _busy ? null : () => _attachAll(items),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _busy
@@ -914,6 +921,15 @@ class _Row extends ConsumerWidget {
                         label: 'Disabled',
                       ),
                     },
+                    if (item.isPublishBlocked) ...[
+                      const Gap.h(AppSpacing.xs),
+                      StatusBadge(
+                        BadgeStatus.draft,
+                        label: item.contentStatus == ContentStatus.archived
+                            ? 'Archived'
+                            : 'Draft — hidden',
+                      ),
+                    ],
                     if (item.featured) ...[
                       const Gap.h(AppSpacing.xs),
                       const Icon(
@@ -1014,6 +1030,12 @@ class _Row extends ConsumerWidget {
                 case 'hidden':
                   await repo.update(item.id, {'hidden': !item.hidden});
                   refresh();
+                case 'publish':
+                  await repo.update(item.id, {'content_status': 'published'});
+                  refresh();
+                case 'unpublish':
+                  await repo.update(item.id, {'content_status': 'draft'});
+                  refresh();
                 case 'delete':
                   await repo.delete(item.id);
                   refresh();
@@ -1045,6 +1067,16 @@ class _Row extends ConsumerWidget {
                 value: 'hidden',
                 child: Text(item.hidden ? 'Show on map' : 'Hide from map'),
               ),
+              if (item.isPublishBlocked)
+                const PopupMenuItem(
+                  value: 'publish',
+                  child: Text('Publish (make visible to users)'),
+                )
+              else
+                const PopupMenuItem(
+                  value: 'unpublish',
+                  child: Text('Unpublish (hide as Draft)'),
+                ),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'delete', child: Text('Delete')),
             ],
@@ -1194,6 +1226,7 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late bool _active = widget.item?.active ?? true;
   late bool _featured = widget.item?.featured ?? false;
   late bool _hidden = widget.item?.hidden ?? false;
+  late ContentStatus? _contentStatus = widget.item?.contentStatus;
   late bool _familyFriendly = widget.item?.familyFriendly ?? false;
   late bool _petFriendly = widget.item?.petFriendly ?? false;
   late bool _wheelchair = widget.item?.wheelchairAccessible ?? false;
@@ -1260,6 +1293,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'active': _active,
       'featured': _featured,
       'hidden': _hidden,
+      // Editorial publish status. null = leave as the computed default
+      // (grandfathered visible); 'draft'/'archived' hide from users.
+      'content_status': _contentStatus?.id,
       'images': _images,
       'audio_files': _audio,
       // Richer PoI fields (dropped automatically if migration 0038 isn't applied).
@@ -1404,23 +1440,6 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                   label: const Text('Manage Discovery Content (History, Nature, Geology...)'),
                 ),
               ],
-              if (widget.item != null) ...[
-                const Gap.v(AppSpacing.sm),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => GeofenceManagerPage(
-                      locationId: widget.item!.id,
-                      locationName: _name.text.trim().isEmpty
-                          ? widget.item!.name
-                          : _name.text.trim(),
-                      defaultLat: widget.item!.latitude,
-                      defaultLng: widget.item!.longitude,
-                    ),
-                  )),
-                  icon: const Icon(Icons.public_rounded),
-                  label: const Text('Manage Geofences (hierarchy, priority)'),
-                ),
-              ],
               const Gap.v(AppSpacing.sm),
               Row(
                 children: [
@@ -1529,6 +1548,35 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                     (v) => setState(() => _hidden = v),
                   ),
                 ],
+              ),
+              const Gap.v(AppSpacing.md),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Publish status',
+                  helperText:
+                      'Draft & Archived stay hidden from users until published '
+                      '(imported places arrive as Draft).',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<ContentStatus?>(
+                    isExpanded: true,
+                    value: _contentStatus,
+                    items: [
+                      const DropdownMenuItem<ContentStatus?>(
+                        value: null,
+                        child: Text('Auto (use readiness default)'),
+                      ),
+                      for (final s in ContentStatus.values)
+                        DropdownMenuItem<ContentStatus?>(
+                          value: s,
+                          child: Text(s.label),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => _contentStatus = v),
+                  ),
+                ),
               ),
               if (_narrationResult != null) ...[
                 const Gap.v(AppSpacing.md),

@@ -40,6 +40,7 @@ class LocationEngine {
   }) {
     return all.where((l) {
       if (!l.active || l.hidden || !l.hasCoordinates) return false;
+      if (l.isPublishBlocked) return false;
       if (types != null && types.isNotEmpty && !types.contains(l.type)) {
         return false;
       }
@@ -69,6 +70,7 @@ class LocationEngine {
     final out = <NearbyLocation>[];
     for (final l in all) {
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.isPublishBlocked) continue;
       if (requireAudio && !l.hasAudio) continue;
       if (exclude.contains(l.id)) continue;
       if (types != null && types.isNotEmpty && !types.contains(l.type)) continue;
@@ -126,7 +128,9 @@ class LocationEngine {
 
     final scored = all
         .where((l) =>
-            l.status != LocationStatus.disabled && rank(l) < 99)
+            l.status != LocationStatus.disabled &&
+            !l.isPublishBlocked &&
+            rank(l) < 99)
         .map((l) => (l, rank(l)))
         .toList()
       ..sort((a, b) {

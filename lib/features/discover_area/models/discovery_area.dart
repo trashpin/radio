@@ -65,7 +65,11 @@ DiscoveryArea? detectCurrentArea(
   double nearbyFallbackMeters = 3000,
 }) {
   final areas = allLocations.where(
-    (l) => l.type == LocationType.area && l.active && !l.hidden && l.hasCoordinates,
+    (l) => l.type == LocationType.area &&
+        l.active &&
+        !l.hidden &&
+        l.hasCoordinates &&
+        !l.isPublishBlocked,
   );
   if (areas.isEmpty) return null;
 

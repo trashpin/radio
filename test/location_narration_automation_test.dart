@@ -113,7 +113,9 @@ void main() {
         maxAttempts: 3,
       );
       final results = await automation.run(_loc()).toList();
-      expect(results.last.stage, NarrationAutomationStage.failed);
+      // Timing out on a slow-but-healthy pipeline is deliberately NOT a
+      // failure — it's the non-alarming "still working, check back" stage.
+      expect(results.last.stage, NarrationAutomationStage.stillPending);
       expect(results.last.message, contains('background'));
     });
 

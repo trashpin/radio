@@ -29,7 +29,29 @@ enum LocationType {
   safetyAlert('safety_alert', 'Safety Alert'),
   hiddenGem('hidden_gem', 'Hidden Gem'),
   pointOfInterest('point_of_interest', 'Point of Interest'),
-  area('area', 'Area / District');
+  area('area', 'Area / District'),
+  // Nationwide import taxonomy (Phase 1) — hierarchy + additional US features.
+  country('country', 'Country'),
+  state('state', 'State'),
+  town('town', 'Town'),
+  village('village', 'Village'),
+  neighborhood('neighborhood', 'Neighborhood'),
+  cityPark('city_park', 'City Park'),
+  nationalForest('national_forest', 'National Forest'),
+  stateForest('state_forest', 'State Forest'),
+  wildlifeManagementArea('wildlife_management_area', 'Wildlife Management Area'),
+  waterfall('waterfall', 'Waterfall'),
+  beach('beach', 'Beach'),
+  monument('monument', 'Monument'),
+  memorial('memorial', 'Memorial'),
+  lighthouse('lighthouse', 'Lighthouse'),
+  bridge('bridge', 'Bridge'),
+  cave('cave', 'Cave'),
+  business('business', 'Business'),
+  coffeeShop('coffee_shop', 'Coffee Shop'),
+  festivalGrounds('festival_grounds', 'Festival Grounds'),
+  eventVenue('event_venue', 'Event Venue'),
+  localAttraction('local_attraction', 'Local Attraction');
 
   const LocationType(this.id, this.label);
   final String id;
@@ -42,6 +64,30 @@ enum LocationType {
     }
     // Loose keyword fallback for free-form sources.
     bool has(String s) => n.contains(s);
+    // Newer, more-specific US types first (so they win over generic checks).
+    if (has('national forest')) return LocationType.nationalForest;
+    if (has('state forest')) return LocationType.stateForest;
+    if (has('wildlife management')) return LocationType.wildlifeManagementArea;
+    if (has('city park')) return LocationType.cityPark;
+    if (has('waterfall') || has('falls')) return LocationType.waterfall;
+    if (has('beach')) return LocationType.beach;
+    if (has('monument')) return LocationType.monument;
+    if (has('memorial')) return LocationType.memorial;
+    if (has('lighthouse')) return LocationType.lighthouse;
+    if (has('bridge')) return LocationType.bridge;
+    if (has('cave') || has('cavern')) return LocationType.cave;
+    if (has('coffee') || has('cafe') || has('café')) {
+      return LocationType.coffeeShop;
+    }
+    if (has('festival')) return LocationType.festivalGrounds;
+    if (has('venue') || has('theater') || has('theatre') || has('amphitheat')) {
+      return LocationType.eventVenue;
+    }
+    if (has('village')) return LocationType.village;
+    if (has('neighborhood') || has('neighbourhood') || has('suburb')) {
+      return LocationType.neighborhood;
+    }
+    if (has('town')) return LocationType.town;
     if (has('county')) return LocationType.county;
     if (has('community') || has('unincorporated')) {
       return LocationType.community;
@@ -175,6 +221,10 @@ class MasterLocation {
     this.cooldownSeconds,
     this.contentStatus,
     this.estimatedListeningMinutes,
+    this.parentLocationId,
+    this.phone,
+    this.discoverable = true,
+    this.backgroundDetection = true,
   });
 
   final String id;
@@ -203,6 +253,17 @@ class MasterLocation {
   final String? destinationCode;
   final DateTime? updatedAt;
   final DateTime? createdAt;
+
+  /// Parent in the location hierarchy (Country → State → County → City → Park →
+  /// POI …), unlimited depth. Null for roots.
+  final String? parentLocationId;
+  final String? phone;
+
+  /// Whether this location shows up in discovery (Discover This Area / nearby).
+  final bool discoverable;
+
+  /// Whether the GPS engine watches for it while driving in the background.
+  final bool backgroundDetection;
 
   // ── Richer PoI fields (county-agnostic; all optional) ──
   final String? state;
@@ -270,6 +331,7 @@ class MasterLocation {
     bool? featured,
     bool? active,
     bool? hidden,
+    ContentStatus? contentStatus,
   }) => MasterLocation(
     id: id,
     name: name,
@@ -296,6 +358,32 @@ class MasterLocation {
     sourceId: sourceId,
     destinationCode: destinationCode,
     updatedAt: updatedAt,
+    // Preserve everything else so copyWith never silently drops fields.
+    createdAt: createdAt,
+    state: state,
+    shortDescription: shortDescription,
+    longDescription: longDescription,
+    narrationScript: narrationScript,
+    hours: hours,
+    admission: admission,
+    externalWebsite: externalWebsite,
+    parkingInfo: parkingInfo,
+    restrooms: restrooms,
+    difficulty: difficulty,
+    tags: tags,
+    familyFriendly: familyFriendly,
+    petFriendly: petFriendly,
+    wheelchairAccessible: wheelchairAccessible,
+    arrivalTrigger: arrivalTrigger,
+    departureTrigger: departureTrigger,
+    playOnce: playOnce,
+    cooldownSeconds: cooldownSeconds,
+    contentStatus: contentStatus ?? this.contentStatus,
+    estimatedListeningMinutes: estimatedListeningMinutes,
+    parentLocationId: parentLocationId,
+    phone: phone,
+    discoverable: discoverable,
+    backgroundDetection: backgroundDetection,
   );
 
   bool get hasCoordinates =>
@@ -317,6 +405,25 @@ class MasterLocation {
 
   bool get isReady => status == LocationStatus.ready;
   bool get isPending => status == LocationStatus.pending;
+
+  /// Editorial publish gate for END USERS. Content that carries an explicit
+  /// [ContentStatus.draft] or [ContentStatus.archived] must never reach the
+  /// map/radio/search/GPS until an admin publishes it — this is what keeps raw
+  /// bulk imports (e.g. OpenStreetMap, which land as `draft`) out of the user
+  /// experience while they're reviewed.
+  ///
+  /// Legacy rows with NO `content_status` (null) are grandfathered as allowed,
+  /// so this gate only ever HIDES freshly-imported/archived content and never
+  /// silently removes the existing catalog. Admin surfaces read the full list
+  /// and are unaffected.
+  bool get isPublishBlocked =>
+      contentStatus == ContentStatus.draft ||
+      contentStatus == ContentStatus.archived;
+
+  /// True when this location may be shown to end users: readiness gates
+  /// ([status] not disabled, has coordinates) AND it isn't editorially blocked.
+  bool get isUserVisible =>
+      status != LocationStatus.disabled && hasCoordinates && !isPublishBlocked;
 
   /// The editorial workflow status to show/filter by: the explicit
   /// [contentStatus] if an admin has set one, otherwise a computed default so
@@ -395,6 +502,10 @@ class MasterLocation {
     contentStatus: ContentStatus.fromId(j['content_status'] as String?),
     estimatedListeningMinutes:
         (j['estimated_listening_minutes'] as num?)?.toInt(),
+    parentLocationId: j['parent_location_id']?.toString(),
+    phone: j['phone'] as String?,
+    discoverable: (j['discoverable'] ?? true) as bool,
+    backgroundDetection: (j['background_detection'] ?? true) as bool,
   );
 
   /// Column map for insert/update (id/timestamps/provenance managed elsewhere).
@@ -439,5 +550,9 @@ class MasterLocation {
     'cooldown_seconds': cooldownSeconds,
     'content_status': contentStatus?.id,
     'estimated_listening_minutes': estimatedListeningMinutes,
+    'parent_location_id': parentLocationId,
+    'phone': phone,
+    'discoverable': discoverable,
+    'background_detection': backgroundDetection,
   };
 }

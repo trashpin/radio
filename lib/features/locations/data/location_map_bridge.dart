@@ -82,7 +82,10 @@ final masterNearbyItemsProvider = Provider<List<NearbyItem>>((ref) {
   final showPending = ref.watch(showPendingLocationsProvider);
   return [
     for (final l in all)
+      // Editorially blocked (draft/archived, e.g. raw imports) never plot —
+      // not even in the admin "show pending" preview — until published.
       if (l.hasCoordinates &&
+          !l.isPublishBlocked &&
           (l.status == LocationStatus.ready ||
               (showPending && l.status == LocationStatus.pending)))
         masterToNearby(l),
