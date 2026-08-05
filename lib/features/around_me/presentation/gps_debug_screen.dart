@@ -41,6 +41,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   bool _lost = false;
   Timer? _timer;
   Timer? _clock;
+  late final _latField = TextEditingController(text: _lat.toStringAsFixed(6));
+  late final _lngField = TextEditingController(text: _lng.toStringAsFixed(6));
 
   @override
   void initState() {
@@ -61,7 +63,23 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
   void dispose() {
     _timer?.cancel();
     _clock?.cancel();
+    _latField.dispose();
+    _lngField.dispose();
     super.dispose();
+  }
+
+  /// Set the simulated position from the typed lat/lng and drive the whole
+  /// pipeline (GPS engine → map center → nearby/radio/discover) via [_jumpTo].
+  void _setFromFields() {
+    final lat = double.tryParse(_latField.text.trim());
+    final lng = double.tryParse(_lngField.text.trim());
+    if (lat == null || lng == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Enter a valid latitude and longitude.')));
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    _jumpTo(lat, lng);
   }
 
   void _push() {
@@ -116,6 +134,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
       _lat = lat;
       _lng = lng;
       _lost = false;
+      _latField.text = lat.toStringAsFixed(6);
+      _lngField.text = lng.toStringAsFixed(6);
     });
     _push();
   }
@@ -413,6 +433,8 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
               style: theme.textTheme.titleSmall
                   ?.copyWith(fontWeight: FontWeight.w800)),
           const Gap.v(AppSpacing.sm),
+          _coordEntry(theme),
+          const Gap.v(AppSpacing.md),
           _destinationJump(theme),
           const Gap.v(AppSpacing.md),
           Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
@@ -456,6 +478,47 @@ class _GpsDebugScreenState extends ConsumerState<GpsDebugScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Type an exact GPS coordinate and drive the whole pipeline from it.
+  Widget _coordEntry(ThemeData theme) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _latField,
+            keyboardType: const TextInputType.numberWithOptions(
+                signed: true, decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Latitude',
+                isDense: true,
+                border: OutlineInputBorder()),
+            onSubmitted: (_) => _setFromFields(),
+          ),
+        ),
+        const Gap.h(AppSpacing.sm),
+        Expanded(
+          child: TextField(
+            controller: _lngField,
+            keyboardType: const TextInputType.numberWithOptions(
+                signed: true, decimal: true),
+            decoration: const InputDecoration(
+                labelText: 'Longitude',
+                isDense: true,
+                border: OutlineInputBorder()),
+            onSubmitted: (_) => _setFromFields(),
+          ),
+        ),
+        const Gap.h(AppSpacing.sm),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+          onPressed: _setFromFields,
+          icon: const Icon(Icons.my_location_rounded, size: 18),
+          label: const Text('Set'),
+        ),
+      ],
     );
   }
 

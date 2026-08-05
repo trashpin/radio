@@ -107,6 +107,14 @@ enum AdminModule {
           'curated (name, badge, images, GPS, narration, active). No Google '
           'Places / third-party import.',
       table: 'nearby_gems'),
+  locationTester('Location Tester', Icons.wrong_location_rounded,
+      AdminGroup.content,
+      ready: true,
+      description: 'Enter any GPS coordinate + radius and see exactly what a '
+          'user would get there: every master location with its live distance '
+          'and the precise accept/reject reason from the Location Engine — no '
+          'device or driving required.',
+      table: 'locations'),
 
   musicLibrary('Music Library', Icons.library_music_rounded, AdminGroup.audio,
       ready: true,
