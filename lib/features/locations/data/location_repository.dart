@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
@@ -261,9 +262,19 @@ final masterLocationsProvider = FutureProvider<List<MasterLocation>>((ref) {
 /// shared [LocationEngine]. This is what Radio / GPS / Nearby Explorer read.
 final nearbyLocationsProvider = Provider<List<NearbyLocation>>((ref) {
   final center = ref.watch(mapCenterProvider);
-  if (center == null) return const [];
+  if (center == null) {
+    debugPrint('[nearbyLocations] no center yet (GPS pending) → 0 results');
+    return const [];
+  }
   final all = ref.watch(masterLocationsProvider).value ?? const [];
-  return ref
+  debugPrint('[nearbyLocations] querying LocationEngine.nearby at '
+      '(${center.latitude}, ${center.longitude}) over ${all.length} '
+      'master locations');
+  final result = ref
       .watch(locationEngineProvider)
       .nearby(center.latitude, center.longitude, all);
+  debugPrint('[nearbyLocations] engine returned ${result.length} '
+      '${result.isEmpty ? '' : '(nearest: "${result.first.location.name}" '
+          '${(result.first.distanceMeters / 1609.344).toStringAsFixed(2)}mi)'}');
+  return result;
 });
