@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -86,11 +87,20 @@ class MapCenter extends Notifier<LatLng?> {
   LatLng? build() {
     ref.listen<TravelContext>(gpsControllerProvider, (_, ctx) {
       final loc = ctx.location;
-      if (loc == null || !_following) return;
+      if (loc == null || !_following) {
+        // AUDIT: center did NOT move (no fix, or user recently panned).
+        debugPrint('[mapCenter] ignore GPS update '
+            '(loc=${loc == null ? 'null' : '(${loc.latitude},${loc.longitude})'} '
+            'following=$_following)');
+        return;
+      }
+      debugPrint('[mapCenter] follow GPS → (${loc.latitude}, ${loc.longitude})');
       state = LatLng(loc.latitude, loc.longitude);
     });
     // Catch a fix that already arrived before this provider was first read.
     final loc = ref.read(gpsControllerProvider).location;
+    debugPrint('[mapCenter] build() initial center = '
+        '${loc == null ? 'null (no GPS yet)' : '(${loc.latitude}, ${loc.longitude})'}');
     return loc == null ? null : LatLng(loc.latitude, loc.longitude);
   }
 
@@ -134,15 +144,28 @@ double _haversineMeters(LatLng a, LatLng b) => GeoMath.distanceMeters(
 /// Records within the selected radius of the user, sorted nearest-first.
 final nearbyItemsProvider = Provider<List<NearbyHit>>((ref) {
   final center = ref.watch(mapCenterProvider);
-  final radius = ref.watch(searchRadiusProvider).meters;
+  final radiusEnum = ref.watch(searchRadiusProvider);
+  final radius = radiusEnum.meters;
   final all = ref.watch(mapLocationsProvider).value ?? const [];
-  if (center == null) return const [];
+  if (center == null) {
+    debugPrint('[AroundMe] no center yet (GPS pending) → 0 results');
+    return const [];
+  }
+  debugPrint('[AroundMe] center=(${center.latitude}, ${center.longitude}) '
+      'radius=${radiusEnum.label} (${radius}m) candidates=${all.length} '
+      '(source: map-visible/READY locations)');
   final hits = <NearbyHit>[];
   for (final item in all) {
     final m = _haversineMeters(center, LatLng(item.latitude, item.longitude));
-    if (m <= radius) hits.add((item: item, meters: m));
+    if (m <= radius) {
+      hits.add((item: item, meters: m));
+    } else {
+      debugPrint('[AroundMe] REJECT "${item.name}": '
+          '${(m / 1609.344).toStringAsFixed(2)}mi > radius ${radiusEnum.label}');
+    }
   }
   hits.sort((a, b) => a.meters.compareTo(b.meters));
+  debugPrint('[AroundMe] kept=${hits.length}/${all.length} within ${radiusEnum.label}');
   return hits;
 });
 
