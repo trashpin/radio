@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/categories/category_repository.dart';
 import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
 import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/geofence_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/import/osm_import_dialog.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
@@ -181,14 +182,40 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
     }
   }
 
+  /// Prompts for a county (case-insensitive match, blank = every county —
+  /// the original all-at-once behavior is still there, just opt-in now
+  /// instead of the only option) before queuing missing-audio jobs, so a
+  /// backlog spanning many counties doesn't drown out the one you actually
+  /// want processed first — the queue is shared and only drains a few items
+  /// every 15 minutes, so scoping it matters.
   Future<void> _generateMissingAudio(List<MasterLocation> all) async {
-    final pending = all
-        .where((l) => l.status == LocationStatus.pending)
-        .toList();
+    final county = await showDialog<String>(
+      context: context,
+      builder: (_) => _CountyScopeDialog(
+        counties: all
+            .map((l) => l.county)
+            .whereType<String>()
+            .where((c) => c.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+      ),
+    );
+    if (county == null) return; // cancelled
+
+    var pending =
+        all.where((l) => l.status == LocationStatus.pending).toList();
+    if (county.isNotEmpty) {
+      pending = pending
+          .where((l) => (l.county ?? '').toLowerCase() == county.toLowerCase())
+          .toList();
+    }
     if (pending.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pending locations — all narrated.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(county.isEmpty
+            ? 'No pending locations — all narrated.'
+            : 'No pending locations in $county.'),
+      ));
       return;
     }
     setState(() => _generating = true);
@@ -199,7 +226,9 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Queued audio generation for $n location(s).'),
+            content: Text(county.isEmpty
+                ? 'Queued audio generation for $n location(s).'
+                : 'Queued audio generation for $n location(s) in $county.'),
           ),
         );
       }
@@ -1506,6 +1535,23 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                   label: const Text('Manage Discovery Content (History, Nature, Geology...)'),
                 ),
               ],
+              if (widget.item != null) ...[
+                const Gap.v(AppSpacing.sm),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => GeofenceManagerPage(
+                      locationId: widget.item!.id,
+                      locationName: _name.text.trim().isEmpty
+                          ? widget.item!.name
+                          : _name.text.trim(),
+                      defaultLat: widget.item!.latitude,
+                      defaultLng: widget.item!.longitude,
+                    ),
+                  )),
+                  icon: const Icon(Icons.public_rounded),
+                  label: const Text('Manage Geofences (hierarchy, priority)'),
+                ),
+              ],
               const Gap.v(AppSpacing.sm),
               Row(
                 children: [
@@ -1870,4 +1916,56 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
           ],
         ),
       );
+}
+
+/// Small picker shown before "Generate Missing Audio" — pick a county to
+/// scope the queue to just that county, or leave blank for every county.
+class _CountyScopeDialog extends StatefulWidget {
+  const _CountyScopeDialog({required this.counties});
+  final List<String> counties;
+
+  @override
+  State<_CountyScopeDialog> createState() => _CountyScopeDialogState();
+}
+
+class _CountyScopeDialogState extends State<_CountyScopeDialog> {
+  String? _selected = 'Marion';
+
+  @override
+  Widget build(BuildContext context) {
+    final options = widget.counties;
+    final initial =
+        options.contains('Marion') ? 'Marion' : (options.isEmpty ? null : null);
+    _selected ??= initial;
+
+    return AlertDialog(
+      title: const Text('Generate missing audio for...'),
+      content: SizedBox(
+        width: 360,
+        child: DropdownButtonFormField<String?>(
+          initialValue: _selected,
+          decoration: const InputDecoration(
+            labelText: 'County',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            const DropdownMenuItem(value: null, child: Text('Every county')),
+            for (final c in options) DropdownMenuItem(value: c, child: Text(c)),
+          ],
+          onChanged: (v) => setState(() => _selected = v),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _selected ?? ''),
+          child: const Text('Queue'),
+        ),
+      ],
+    );
+  }
 }
