@@ -112,4 +112,41 @@ void main() {
     }
     expect(mentioned, isTrue);
   });
+
+  test('DJ banter engine fills a county fact template (Phase B)', () {
+    final e = BanterEngine(rng: Random(1));
+    for (var i = 0; i < 8; i++) {
+      final s = e.generate(
+        DjStation.all,
+        BanterSituation.countyFact,
+        const BanterContext(
+            county: 'Marion', fact: 'It is the Horse Capital of the World.'),
+      );
+      expect(s, isNotNull);
+      expect(s!, contains('It is the Horse Capital of the World.'));
+      expect(s.contains('{'), isFalse);
+    }
+  });
+
+  test('DJ shares an admin county fact when facts are set (Phase B)', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(3))
+      ..setCountyFacts(
+          county: 'Marion',
+          facts: const ['It is the Horse Capital of the World.']);
+    String? found;
+    for (var i = 0; i < 80 && found == null; i++) {
+      final seg = s.onMusicPlayed(song('Song $i'));
+      final t = seg?.spokenText;
+      if (t != null && t.contains('Horse Capital of the World')) found = t;
+    }
+    expect(found, isNotNull, reason: 'a county fact should surface within 80 songs');
+  });
+
+  test('no county facts set → DJ never emits a county-fact segment', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(3));
+    for (var i = 0; i < 20; i++) {
+      final seg = s.onMusicPlayed(song('Song $i'));
+      expect(seg?.id.startsWith('djcounty:') ?? false, isFalse);
+    }
+  });
 }

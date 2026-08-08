@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
@@ -26,10 +27,33 @@ class CountyConfigRepository {
   }
 
   Future<void> create(Map<String, dynamic> row) =>
-      SupabaseService.client.from('counties').insert(row);
+      _resilient(row, (r) => SupabaseService.client.from('counties').insert(r));
 
-  Future<void> update(String id, Map<String, dynamic> fields) =>
-      SupabaseService.client.from('counties').update(fields).eq('id', id);
+  Future<void> update(String id, Map<String, dynamic> fields) => _resilient(
+      fields,
+      (r) => SupabaseService.client.from('counties').update(r).eq('id', id));
+
+  /// Writes [row], and if the DB rejects a column that doesn't exist yet (e.g.
+  /// `music_categories` before migration 0044 is applied), drops that column
+  /// and retries — so newer app code degrades gracefully on an older schema.
+  Future<void> _resilient(
+    Map<String, dynamic> row,
+    Future<void> Function(Map<String, dynamic>) run,
+  ) async {
+    final current = Map<String, dynamic>.from(row);
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        await run(current);
+        return;
+      } on PostgrestException catch (e) {
+        final col = RegExp(r"'([a-zA-Z0-9_]+)' column").firstMatch(e.message)
+            ?.group(1);
+        if (col == null || !current.containsKey(col)) rethrow;
+        current.remove(col);
+      }
+    }
+    await run(current);
+  }
 
   Future<void> delete(String id) =>
       SupabaseService.client.from('counties').delete().eq('id', id);

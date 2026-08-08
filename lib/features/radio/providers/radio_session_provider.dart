@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
@@ -67,6 +68,10 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // Wire the Radio Banter Engine: mix short LOCAL narration (park > city >
   // county, e.g. Marion) between songs, reusing each location's own AI content.
   _attachLocationBanter(ref, engine);
+
+  // Feed the DJ admin-authored county facts (CountyConfig.facts) so it can drop
+  // real local knowledge between songs; refreshes as the county changes.
+  _attachCountyDjFacts(ref, engine);
 
   // Keep a live forecast cached so banter + the county welcome are weather-aware.
   _attachWeather(ref);
@@ -347,6 +352,38 @@ void _attachLocationBanter(Ref ref, RadioEngineService engine) {
   });
 }
 
+/// Keeps the DJ's county fact pool in sync with the current county's
+/// CountyConfig (Admin → County Manager). The DJ then occasionally shares one
+/// of those admin-authored facts between songs — see [DjBanterScheduler].
+void _attachCountyDjFacts(Ref ref, RadioEngineService engine) {
+  void update(String? county) {
+    final configs =
+        ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+    final key = (county ?? '').toLowerCase().trim();
+    CountyConfig? cfg;
+    for (final c in configs) {
+      if (c.key == key) {
+        cfg = c;
+        break;
+      }
+    }
+    engine.djBanter
+        .setCountyFacts(county: cfg?.name ?? county, facts: cfg?.facts ?? const []);
+    // Phase C: bias music selection toward the county's preferred genres.
+    engine.station.setCountyMusicCategories(cfg?.musicCategories ?? const []);
+  }
+
+  update(ref.read(locationContextProvider).county);
+  ref.listen<LocationContext>(locationContextProvider, (prev, next) {
+    if ((prev?.county ?? '').toLowerCase() != (next.county ?? '').toLowerCase()) {
+      update(next.county);
+    }
+  });
+  // Also refresh once the admin county configs finish loading / change.
+  ref.listen(countyConfigsProvider,
+      (_, _) => update(ref.read(locationContextProvider).county));
+}
+
 void _attachCountyWelcome(Ref ref) {
   final director = CountyWelcomeDirector();
   final weather = ref.read(weatherClientProvider);
@@ -368,11 +405,28 @@ void _attachCountyWelcome(Ref ref) {
         w = await weather.fetch(lat, lng);
       }
       final greetings = ref.read(countyGreetingsProvider);
+      // The full CountyConfig for this county is the single source of truth for
+      // its radio personality: whether the weather line / recommendation plays,
+      // and its own recommendation list (blended into the weather pool). Falls
+      // back to the built-in defaults when there's no admin row yet.
+      final configs =
+          ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+      final key = county.toLowerCase().trim();
+      CountyConfig? cfg;
+      for (final c in configs) {
+        if (c.key == key) {
+          cfg = c;
+          break;
+        }
+      }
       final script = director.scriptFor(
         county,
         ctx.state,
         w,
         greetings: greetings,
+        weatherEnabled: cfg?.weatherEnabled ?? true,
+        recommendationsEnabled: cfg?.recommendationsEnabled ?? true,
+        recommendations: cfg?.recommendations ?? const [],
       );
       if (script == null) return;
       ref

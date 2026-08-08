@@ -70,6 +70,20 @@ class DjBanterScheduler {
   GpsBanterContext Function()? _banterContext;
   void Function(String clipId)? _onBanterPlayed;
 
+  // ── County knowledge (from CountyConfig.facts) ────────────────────────────
+  // Admin-authored local facts for the current county. When present, the DJ
+  // occasionally drops one between songs — genuine, editable "local knowledge"
+  // reusing the County Manager content, not a separate store.
+  String? _county;
+  List<String> _countyFacts = const [];
+  int _factRotation = 0;
+
+  /// Sets the current county's name + its fact pool (call on county change).
+  void setCountyFacts({String? county, List<String> facts = const []}) {
+    _county = county;
+    _countyFacts = [for (final f in facts) if (f.trim().isNotEmpty) f.trim()];
+  }
+
   /// Priority of categories to consider between songs (context-relevant teases
   /// first, then general transitions).
   static const List<BanterCategory> _banterPriority = [
@@ -126,6 +140,33 @@ class DjBanterScheduler {
       priority: PlaybackPriority.scheduledAnnouncement,
       audioUrl: hasAudio ? sel.clip.audioUrl : null,
       spokenText: hasAudio ? null : sel.text,
+      interruptible: true,
+      resumeAfter: false,
+    );
+  }
+
+  /// ~1-in-3 of the time (when facts are loaded), returns a spoken county-fact
+  /// segment built from the next rotating [CountyConfig.facts] entry; else null.
+  AudioSegment? _maybeCountyFact() {
+    if (_countyFacts.isEmpty) return null;
+    if (_rng.nextInt(3) != 0) return null;
+    final fact = _countyFacts[_factRotation.abs() % _countyFacts.length];
+    _factRotation++;
+    final ctx = BanterContext(
+      station: brand,
+      park: park,
+      county: _county,
+      fact: fact,
+    );
+    final text = _engine.generate(DjStation.all, BanterSituation.countyFact, ctx);
+    if (text == null || text.trim().isEmpty) return null;
+    return AudioSegment(
+      id: 'djcounty:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'On air',
+      artist: 'DJ',
+      type: AudioSegmentType.announcement,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      spokenText: text,
       interruptible: true,
       resumeAfter: false,
     );
@@ -210,6 +251,11 @@ class DjBanterScheduler {
     // the DJ references the actual surroundings and never repeats in a trip.
     final gps = _gpsBanter();
     if (gps != null) return gps;
+
+    // 3b) Occasionally share an admin-authored county fact (CountyConfig.facts)
+    // — real, editable local knowledge, rotated so it never repeats too soon.
+    final countyFact = _maybeCountyFact();
+    if (countyFact != null) return countyFact;
 
     final station = stationFor(radioStationName);
 

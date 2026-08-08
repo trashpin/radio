@@ -255,4 +255,35 @@ void main() {
     final engine = SmartMusicRotationEngine(random: Random(1));
     expect(engine.pickNext(const [], const RotationContext()), isNull);
   });
+
+  group('county music categories (Phase C)', () {
+    final engine = SmartMusicRotationEngine(random: Random(1));
+
+    test('a song tagged with the county genre scores higher', () {
+      final s = _song('c', tags: const ['country']);
+      final withCounty = engine.scoreSong(
+          s, const RotationContext(countyCategories: ['country', 'americana']));
+      final without = engine.scoreSong(s, const RotationContext());
+      expect(withCounty, greaterThan(without));
+    });
+
+    test('no overlap → no county bonus', () {
+      final s = _song('c', tags: const ['country']);
+      final base = engine.scoreSong(s, const RotationContext());
+      final noMatch = engine.scoreSong(
+          s, const RotationContext(countyCategories: ['jazz']));
+      expect(noMatch, base);
+    });
+
+    test('county bonus is capped', () {
+      final s = _song('c',
+          tags: const ['country', 'americana', 'southern', 'florida', 'blues']);
+      final base = engine.scoreSong(s, const RotationContext());
+      final capped = engine.scoreSong(
+          s,
+          const RotationContext(
+              countyCategories: ['country', 'americana', 'southern', 'florida']));
+      expect(capped - base, closeTo(10.0, 0.001)); // countyCap = 10
+    });
+  });
 }
