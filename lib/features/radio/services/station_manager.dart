@@ -31,6 +31,17 @@ class StationManager {
   Map<String, Song> _byId = const {};
   SmartMusicRotationEngine? _rotation;
 
+  /// Current county's preferred music categories (CountyConfig.musicCategories),
+  /// fed into the rotation scorer. Empty until a county is known.
+  List<String> _countyCategories = const [];
+
+  /// Updates the county music categories used to bias song selection.
+  void setCountyMusicCategories(List<String> categories) =>
+      _countyCategories = [
+        for (final c in categories)
+          if (c.trim().isNotEmpty) c.trim(),
+      ];
+
   RadioStation? get station => _station;
   StationRule? get rule => _rule;
   bool get hasMusic => _playlist.isNotEmpty;
@@ -57,7 +68,10 @@ class StationManager {
   AudioSegment? nextMusicSegment() {
     if (_playlist.isEmpty) return null;
     final engine = _rotation ??= _engineFactory();
-    final ctx = RotationContext.now(park: _station?.destinationId);
+    final ctx = RotationContext.now(
+      park: _station?.destinationId,
+      countyCategories: _countyCategories,
+    );
     final picked = engine.pickNext(_rotationSongs(), ctx);
     final song = picked == null ? null : _byId[picked.id];
     if (song == null) return null;

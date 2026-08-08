@@ -118,6 +118,7 @@ class RotationContext {
   const RotationContext({
     this.park,
     this.nearbyCategories = const [],
+    this.countyCategories = const [],
     this.guideMode,
     this.daypart,
     this.season,
@@ -127,6 +128,11 @@ class RotationContext {
 
   final String? park;
   final List<String> nearbyCategories;
+
+  /// The current county's preferred music genres/categories
+  /// (`CountyConfig.musicCategories`, e.g. country/americana/southern for
+  /// Marion). Songs whose tags overlap these get a county-match bonus.
+  final List<String> countyCategories;
   final String? guideMode;
   final MusicDaypart? daypart;
   final MusicSeason? season;
@@ -137,6 +143,7 @@ class RotationContext {
   factory RotationContext.now({
     String? park,
     List<String> nearbyCategories = const [],
+    List<String> countyCategories = const [],
     String? guideMode,
     String? preferredMood,
     MusicTempo? preferredTempo,
@@ -146,6 +153,7 @@ class RotationContext {
     return RotationContext(
       park: park,
       nearbyCategories: nearbyCategories,
+      countyCategories: countyCategories,
       guideMode: guideMode,
       preferredMood: preferredMood,
       preferredTempo: preferredTempo,
@@ -162,6 +170,8 @@ class RotationWeights {
     this.park = 20,
     this.nearby = 6,
     this.nearbyCap = 12,
+    this.county = 5,
+    this.countyCap = 10,
     this.guide = 10,
     this.timeOfDay = 8,
     this.season = 6,
@@ -177,6 +187,11 @@ class RotationWeights {
   final double park;
   final double nearby;
   final double nearbyCap;
+
+  /// Per-overlapping-tag bonus (and cap) when a song's tags match the current
+  /// county's music categories.
+  final double county;
+  final double countyCap;
   final double guide;
   final double timeOfDay;
   final double season;
@@ -297,6 +312,18 @@ class SmartMusicRotationEngine {
           .length;
       if (overlap > 0) {
         s += min(overlap * weights.nearby, weights.nearbyCap);
+      }
+    }
+
+    // County music categories — favor songs tagged with the current county's
+    // genres (e.g. Marion → country/americana/southern). Additive; contributes
+    // nothing when the county has no configured categories.
+    if (ctx.countyCategories.isNotEmpty && song.tags.isNotEmpty) {
+      final overlap = song.tags
+          .where((t) => ctx.countyCategories.any((c) => _eq(c, t)))
+          .length;
+      if (overlap > 0) {
+        s += min(overlap * weights.county, weights.countyCap);
       }
     }
 

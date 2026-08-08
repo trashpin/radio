@@ -134,13 +134,24 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       TextEditingController(text: widget.config?.weatherVoice ?? '');
   late final _recs = TextEditingController(
       text: (widget.config?.recommendations ?? const []).join('\n'));
+  late final _music = TextEditingController(
+      text: (widget.config?.musicCategories ?? const []).join(', '));
   late bool _weather = widget.config?.weatherEnabled ?? true;
   late bool _recEnabled = widget.config?.recommendationsEnabled ?? true;
   bool _saving = false;
 
   @override
   void dispose() {
-    for (final c in [_name, _state, _welcome, _desc, _theme, _voice, _recs]) {
+    for (final c in [
+      _name,
+      _state,
+      _welcome,
+      _desc,
+      _theme,
+      _voice,
+      _recs,
+      _music,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -160,6 +171,11 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       'recommendations_enabled': _recEnabled,
       'recommendations': _recs.text
           .split('\n')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      'music_categories': _music.text
+          .split(',')
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty)
           .toList(),
@@ -203,6 +219,9 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
             _f(_voice, 'Weather voice'),
             const Gap.v(AppSpacing.sm),
             _f(_recs, 'Recommendations (one per line)', maxLines: 4),
+            const Gap.v(AppSpacing.sm),
+            _f(_music,
+                'Music categories (comma-separated, e.g. country, americana, southern)'),
             const Gap.v(AppSpacing.sm),
             Row(children: [
               Expanded(

@@ -14,6 +14,7 @@ class CountyConfig {
     this.weatherEnabled = true,
     this.recommendationsEnabled = true,
     this.recommendations = const [],
+    this.musicCategories = const [],
     this.sealUrl,
     this.heroImageUrl,
     this.welcomeNarrationUrl,
@@ -38,6 +39,11 @@ class CountyConfig {
   final bool weatherEnabled;
   final bool recommendationsEnabled;
   final List<String> recommendations;
+
+  /// Preferred music genres/categories for this county's radio (matched against
+  /// song tags by the Smart Music Rotation engine). e.g. Marion →
+  /// ['country', 'americana', 'southern', 'florida'].
+  final List<String> musicCategories;
 
   // County Profile.
   final String? sealUrl;
@@ -75,6 +81,7 @@ class CountyConfig {
         weatherEnabled: (j['weather_enabled'] ?? true) as bool,
         recommendationsEnabled: (j['recommendations_enabled'] ?? true) as bool,
         recommendations: _strs(j['recommendations']),
+        musicCategories: _strs(j['music_categories']),
         sealUrl: j['seal_url'] as String?,
         heroImageUrl: j['hero_image_url'] as String?,
         welcomeNarrationUrl: j['welcome_narration_url'] as String?,
@@ -99,6 +106,7 @@ class CountyConfig {
         'weather_enabled': weatherEnabled,
         'recommendations_enabled': recommendationsEnabled,
         'recommendations': recommendations,
+        'music_categories': musicCategories,
         'seal_url': sealUrl,
         'hero_image_url': heroImageUrl,
         'welcome_narration_url': welcomeNarrationUrl,
