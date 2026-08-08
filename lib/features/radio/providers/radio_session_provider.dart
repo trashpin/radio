@@ -17,6 +17,7 @@ import 'package:explorer_os_mobile/features/gps/services/location_trigger_engine
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/announcement_content.dart';
 import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
@@ -101,10 +102,15 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
     final all = [...clips, ...segmentClips];
     if (all.isNotEmpty) engine.djBanter.setClips(all);
 
-    // Rule-driven automation: song-boundary triggers run inside the engine's
-    // between-song hook; time-based triggers run on this periodic tick.
-    final rules = await autoRepo.rules();
-    final segments = await autoRepo.segments();
+    // Rule-driven automation (Scheduler Reconciliation, Step 2): ONE engine now
+    // drives all non-music announcements. It reads the UNIFIED rule set
+    // (radio_schedule_rules + adapted legacy radio_schedule interval rules) and
+    // the UNIFIED content pool (radio_segments + safety/wildlife/story), so the
+    // safety/wildlife/story announcements formerly driven by RadioScheduler's
+    // own timer now run here. Song-boundary triggers run in the between-song
+    // hook; time-based triggers run on this single periodic tick.
+    final rules = await ref.read(unifiedAutomationRulesProvider.future);
+    final segments = await ref.read(unifiedAnnouncementContentProvider.future);
     if (rules.isNotEmpty) {
       engine.djBanter.setAutomation(AutomationEngine(), rules, segments);
       final start = DateTime.now();
@@ -144,7 +150,8 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
         .read(radioEngineServiceProvider)
         .changeStation(selected, songs: songs, autoPlay: false);
     ref.read(radioEngineControllerProvider);
-    _attachScheduler(ref, selected);
+    // Announcements (safety/wildlife/story) are now driven by the unified
+    // automation tick above — no separate RadioScheduler timer (Step 2).
     return selected;
   }
 
@@ -178,7 +185,7 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
 
   // Ensure the controller is alive so it reflects engine events in the UI.
   ref.read(radioEngineControllerProvider);
-  _attachScheduler(ref, station);
+  // Announcements are driven by the unified automation tick above (Step 2).
 
   return station;
 });
@@ -722,17 +729,10 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
   );
 }
 
-/// Starts the programming scheduler for the session: it injects due
-/// announcements (safety/wildlife with audio) into the engine's interruption
-/// path. No-op until `radio_schedule` rules + voiceover audio exist.
-void _attachScheduler(Ref ref, RadioStation station) {
-  final scheduler = ref.read(radioSchedulerProvider);
-  scheduler.start(station: station.name);
-  ref.onDispose(scheduler.stop);
-}
-
-/// The programming scheduler (singleton). Exposed so the radio UI can trigger a
-/// "Test announcement" (fireNow) and so the session can start/stop it.
+/// The programming scheduler (singleton). Retained only for the admin
+/// "Test announcement" (fireNow) button — the periodic driver was removed in
+/// Scheduler Reconciliation Step 2 in favor of the unified automation tick, so
+/// safety/wildlife/story now flow through the single AutomationEngine path.
 final radioSchedulerProvider = Provider<RadioScheduler>((ref) {
   return RadioScheduler(
     client: SupabaseService.isConfigured ? SupabaseService.client : null,

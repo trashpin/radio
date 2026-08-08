@@ -110,6 +110,8 @@ class RadioAutomationRepository {
         return BanterSituation.safetyReminder;
       case SegmentCategory.gpsTransition:
         return BanterSituation.gpsApproaching;
+      case SegmentCategory.story:
+        return null; // stories aren't DJ banter — not played via the clip path
     }
   }
 }

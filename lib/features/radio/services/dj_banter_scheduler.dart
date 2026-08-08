@@ -174,17 +174,56 @@ class DjBanterScheduler {
 
   /// Builds a playable segment from a library [RadioSegment] (its own audio if
   /// voiced, else its script via TTS).
-  AudioSegment _fromSegment(RadioSegment s) => AudioSegment(
-        id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
-        title: s.title.isEmpty ? 'On air' : s.title,
-        artist: s.voice ?? 'DJ',
-        type: AudioSegmentType.announcement,
-        priority: PlaybackPriority.scheduledAnnouncement,
-        audioUrl: s.hasAudio ? s.audioUrl : null,
-        spokenText: s.hasAudio ? null : s.script,
-        interruptible: true,
-        resumeAfter: false,
-      );
+  ///
+  /// Semantics are category-aware so the unified announcement content (safety /
+  /// wildlife / story now flow through here) keeps its original behavior from
+  /// the legacy RadioScheduler: safety can't be interrupted and always resumes
+  /// music; wildlife/story duck + resume; ordinary DJ banter plays in the gap
+  /// between songs (no resume).
+  AudioSegment _fromSegment(RadioSegment s) {
+    final (
+      AudioSegmentType type,
+      PlaybackPriority priority,
+      bool interruptible,
+      bool resumeAfter,
+    ) = switch (s.category) {
+      SegmentCategory.safety => (
+          AudioSegmentType.safetyWarning,
+          PlaybackPriority.safetyWarning,
+          false,
+          true,
+        ),
+      SegmentCategory.wildlifeIntro => (
+          AudioSegmentType.wildlifeAlert,
+          PlaybackPriority.scheduledAnnouncement,
+          false,
+          true,
+        ),
+      SegmentCategory.story => (
+          AudioSegmentType.narration,
+          PlaybackPriority.scheduledAnnouncement,
+          true,
+          true,
+        ),
+      _ => (
+          AudioSegmentType.announcement,
+          PlaybackPriority.scheduledAnnouncement,
+          true,
+          false,
+        ),
+    };
+    return AudioSegment(
+      id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
+      title: s.title.isEmpty ? 'On air' : s.title,
+      artist: s.voice ?? 'DJ',
+      type: type,
+      priority: priority,
+      audioUrl: s.hasAudio ? s.audioUrl : null,
+      spokenText: s.hasAudio ? null : s.script,
+      interruptible: interruptible,
+      resumeAfter: resumeAfter,
+    );
+  }
 
   /// Time-based rule evaluation (called on a periodic tick by the session).
   /// Returns a segment to interrupt with, or null.
