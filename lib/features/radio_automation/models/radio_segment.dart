@@ -10,7 +10,8 @@ enum SegmentCategory {
   weather('WEATHER', 'Weather', Icons.cloud_rounded),
   safety('SAFETY', 'Safety', Icons.health_and_safety_rounded),
   gpsTransition('GPS_TRANSITION', 'GPS Transition', Icons.navigation_rounded),
-  wildlifeIntro('WILDLIFE_INTRO', 'Wildlife Intro', Icons.pets_rounded);
+  wildlifeIntro('WILDLIFE_INTRO', 'Wildlife Intro', Icons.pets_rounded),
+  story('STORY', 'Story', Icons.menu_book_rounded);
 
   const SegmentCategory(this.dbValue, this.label, this.icon);
   final String dbValue;
