@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
@@ -368,11 +369,28 @@ void _attachCountyWelcome(Ref ref) {
         w = await weather.fetch(lat, lng);
       }
       final greetings = ref.read(countyGreetingsProvider);
+      // The full CountyConfig for this county is the single source of truth for
+      // its radio personality: whether the weather line / recommendation plays,
+      // and its own recommendation list (blended into the weather pool). Falls
+      // back to the built-in defaults when there's no admin row yet.
+      final configs =
+          ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+      final key = county.toLowerCase().trim();
+      CountyConfig? cfg;
+      for (final c in configs) {
+        if (c.key == key) {
+          cfg = c;
+          break;
+        }
+      }
       final script = director.scriptFor(
         county,
         ctx.state,
         w,
         greetings: greetings,
+        weatherEnabled: cfg?.weatherEnabled ?? true,
+        recommendationsEnabled: cfg?.recommendationsEnabled ?? true,
+        recommendations: cfg?.recommendations ?? const [],
       );
       if (script == null) return;
       ref
