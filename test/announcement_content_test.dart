@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/announcement_content.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,5 +83,49 @@ void main() {
           SegmentCategory.wildlifeIntro,
           SegmentCategory.story,
         });
+  });
+
+  group('legacy radio_schedule rule adapter (Step 2)', () {
+    test('interval safety rule → everyXMinutes SAFETY rule', () {
+      final r = legacyScheduleRuleToRule({
+        'id': 'r1',
+        'content_type': 'safety',
+        'cadence': 'interval',
+        'interval_minutes': 20,
+        'priority': 9,
+        'active': true,
+      })!;
+      expect(r.id, 'legacy:r1');
+      expect(r.triggerType, TriggerType.everyXMinutes);
+      expect(r.triggerValue, 20);
+      expect(r.category, SegmentCategory.safety.dbValue);
+      expect(r.enabled, isTrue);
+      expect(r.station, 'all');
+      // Legacy priority 9 (high) inverts to a low automation number (higher).
+      expect(r.priority, 91);
+    });
+
+    test('content types map to the right categories', () {
+      expect(
+          legacyScheduleRuleToRule({'id': 'a', 'content_type': 'wildlife'})!
+              .category,
+          SegmentCategory.wildlifeIntro.dbValue);
+      expect(
+          legacyScheduleRuleToRule({'id': 'b', 'content_type': 'story'})!
+              .category,
+          SegmentCategory.story.dbValue);
+    });
+
+    test('non-interval cadences + unknown types are ignored (parity)', () {
+      // RadioScheduler only ever fired interval rules.
+      expect(
+          legacyScheduleRuleToRule(
+              {'id': 'c', 'content_type': 'safety', 'cadence': 'hourly'}),
+          isNull);
+      expect(
+          legacyScheduleRuleToRule(
+              {'id': 'd', 'content_type': 'mystery', 'cadence': 'interval'}),
+          isNull);
+    });
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
 
 /// Scheduler Reconciliation — Step 1 (additive; NOT wired into playback yet).
@@ -83,6 +84,61 @@ List<RadioSegment> combineAnnouncementContent({
       for (final r in wildlife) ?wildlifeAlertToSegment(r),
       for (final r in stories) ?storyToSegment(r),
     ];
+
+/// Adapts a legacy `radio_schedule` row (the table `RadioScheduler` reads) into
+/// an [AutomationEngine] rule, so the single automation engine can honor the
+/// existing interval announcement rules. Returns null for rows the legacy
+/// scheduler itself never fired: non-`interval` cadences (its `_tick` only ran
+/// interval rules) or unknown content types.
+RadioScheduleRule? legacyScheduleRuleToRule(Map<String, dynamic> row) {
+  final cadence = (row['cadence'] ?? 'interval') as String;
+  if (cadence != 'interval') return null;
+  final category = switch ((row['content_type'] ?? 'safety') as String) {
+    'safety' => SegmentCategory.safety,
+    'wildlife' => SegmentCategory.wildlifeIntro,
+    'story' => SegmentCategory.story,
+    'station_id' => SegmentCategory.stationId,
+    _ => null,
+  };
+  if (category == null) return null;
+  final id = (row['id'] ?? '').toString();
+  if (id.isEmpty) return null;
+  final mins = (row['interval_minutes'] as num?)?.toInt() ?? 15;
+  final legacyPriority = (row['priority'] as num?)?.toInt() ?? 5;
+  return RadioScheduleRule(
+    id: 'legacy:$id',
+    name: (row['name'] as String?) ?? '${category.label} (legacy schedule)',
+    station: 'all',
+    triggerType: TriggerType.everyXMinutes,
+    triggerValue: mins <= 0 ? 15 : mins,
+    category: category.dbValue,
+    // Legacy uses higher number = higher priority; automation is the inverse
+    // (lower = higher), so invert to preserve relative ordering.
+    priority: (100 - legacyPriority).clamp(0, 100),
+    enabled: (row['active'] ?? true) as bool,
+  );
+}
+
+/// The unified automation rule set: the modern `radio_schedule_rules` plus the
+/// legacy `radio_schedule` interval rules adapted into the same shape — so ONE
+/// engine ([AutomationEngine]) evaluates every announcement rule.
+final unifiedAutomationRulesProvider =
+    FutureProvider<List<RadioScheduleRule>>((ref) async {
+  final rules = await ref.watch(radioAutomationRepositoryProvider).rules();
+  if (!SupabaseService.isConfigured) return rules;
+  var legacy = const <Map<String, dynamic>>[];
+  try {
+    final rows = await SupabaseService.client
+        .from('radio_schedule')
+        .select()
+        .eq('active', true) as List;
+    legacy = rows.cast<Map<String, dynamic>>();
+  } catch (_) {}
+  return [
+    ...rules,
+    for (final r in legacy) ?legacyScheduleRuleToRule(r),
+  ];
+});
 
 /// The unified announcement pool (automation segments + safety/wildlife/story).
 /// Loads defensively — missing tables / unconfigured Supabase just contribute
