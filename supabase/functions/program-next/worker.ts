@@ -372,16 +372,3 @@ export async function handleProgramNext(body: any): Promise<ProgramNextResponse>
 
   return response;
 }
-```
-
-3) Save the README content at supabase/functions/program-next/README.md (as provided earlier).
-
-4) Run static type check (locally, in your environment):
-
-   deno check supabase/functions/program-next/worker.ts supabase/functions/program-next/index.ts
-
-Notes:
-- This `deno check` is static only and will not connect to Supabase. It verifies TypeScript syntax and types.
-- If `deno check` reports errors, paste the output here and I will fix only the new files and repeat until it passes.
-
-I will now create the two files in the repository and report back. (Creating files...)
