@@ -28,6 +28,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/media_imports_pag
 import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_automation_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_director_settings_page.dart';
+import 'package:explorer_os_mobile/features/radio_scheduler/presentation/rundown_builder_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/song_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/species_admin_page.dart';
@@ -90,6 +91,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const ContentUploaderPage(safetyConfig);
       case AdminModule.programmingSchedule:
         return const ContentUploaderPage(scheduleConfig);
+      case AdminModule.radioScheduler:
+        return const RundownBuilderPage();
       case AdminModule.explorerSightings:
         return const SightingsAdminPage();
       case AdminModule.djStudio:
