@@ -1,8 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/discover_area/data/area_content_repository.dart';
+import 'package:explorer_os_mobile/features/discover_area/models/area_content_block.dart';
+import 'package:explorer_os_mobile/features/gps/data/geofence_repository.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
@@ -91,6 +95,13 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // play_once, and cooldown_seconds (migration 0040). County/city/community
   // stay owned by the directors above so nothing double-fires.
   _attachLocationTriggers(ref);
+
+  // GPS-triggered location radio from the Supabase `geofences` table: on each
+  // GPS update, ask `get_nearby_geofences()` what the traveler is inside, feed
+  // it through the SAME LocationTriggerEngine (enter/exit/cooldown/play-once)
+  // used above, resolve the winning location's existing content, and interrupt
+  // the radio via the existing engine. Wildlife stays area-based (untouched).
+  _attachGeofenceTriggers(ref);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -665,6 +676,252 @@ void _attachLocationTriggers(Ref ref) {
         fire(e);
       }
     } catch (_) {}
+  }
+
+  handle(ref.read(locationContextProvider));
+  ref.listen<LocationContext>(
+    locationContextProvider,
+    (_, next) => handle(next),
+  );
+}
+
+// --- GPS geofence → radio (Supabase `geofences` + get_nearby_geofences) ------
+
+/// Builds [TriggerableLocation]s that feed the reused [LocationTriggerEngine]
+/// the geofence membership decided by `get_nearby_geofences()`. We do NOT
+/// recompute geodesic distance here (the DB already did): an "inside" fence is
+/// anchored at the user's position (distance 0 ≤ radius → inside) and a fence
+/// that was inside last tick but isn't now is anchored ~111 km away (→ outside),
+/// so the engine emits the correct enter/exit transitions and still honors
+/// play-once + cooldown. Pure + testable.
+List<TriggerableLocation> geofenceTriggerCandidates({
+  required Set<String> insideIds,
+  required Set<String> recentIds,
+  required double userLat,
+  required double userLng,
+  int? Function(String locationId)? cooldownForLocation,
+}) {
+  const anchorRadius = 1000.0;
+  final farLat = (userLat + 1.0).clamp(-89.0, 89.0); // ~111 km away → outside
+  final ids = {...insideIds, ...recentIds};
+  return [
+    for (final id in ids)
+      TriggerableLocation(
+        id: id,
+        latitude: insideIds.contains(id) ? userLat : farLat,
+        longitude: userLng,
+        radiusMeters: anchorRadius,
+        arrivalTrigger: true,
+        departureTrigger: false, // geofence ENTER narrates; exit has no content
+        playOnce: false,
+        cooldownSeconds: cooldownForLocation?.call(id),
+      ),
+  ];
+}
+
+/// Picks the single geofence to narrate from the fences the traveler just
+/// ENTERED this tick — highest priority (priority_override) first, then the
+/// closest — so multiple competing location narrations never fire at once.
+NearbyGeofence? selectGeofenceToNarrate(Iterable<NearbyGeofence> entered) {
+  NearbyGeofence? best;
+  for (final g in entered) {
+    if (best == null ||
+        g.priority > best.priority ||
+        (g.priority == best.priority &&
+            g.distanceMeters < best.distanceMeters)) {
+      best = g;
+    }
+  }
+  return best;
+}
+
+/// Resolves a geofence ENTER into a playable [AudioSegment] using EXISTING
+/// content, or null when there's nothing to say (caller logs + skips):
+///   1. the location's own `area_discovery_content` (active, non-wildlife);
+///   2. else [resolveLocationNarration] (the location's audio / matched
+///      `location_content` / a composed TTS script).
+/// Wildlife blocks are intentionally skipped so wildlife stays area-based.
+AudioSegment? geofenceSegmentFor({
+  required String locationId,
+  required String locationName,
+  required List<AreaContentBlock> areaBlocks,
+  MasterLocation? masterLocation,
+  List<ContentItem> contentItems = const [],
+}) {
+  String? title;
+  String? audioUrl;
+  String? script;
+
+  for (final b in areaBlocks) {
+    if (!b.active || !b.hasNarration) continue;
+    if (_isWildlifeToken(b.categoryToken)) continue; // wildlife stays separate
+    title = b.title.trim().isNotEmpty ? b.title.trim() : locationName;
+    if (b.hasAudio) {
+      audioUrl = b.audioUrl;
+    } else {
+      script = b.narrationScript;
+    }
+    break;
+  }
+
+  if (title == null && masterLocation != null) {
+    final n = resolveLocationNarration(masterLocation, contentItems);
+    if (n.hasAudio) {
+      title = n.title;
+      audioUrl = n.audioUrl;
+    } else if (n.text.trim().isNotEmpty) {
+      title = n.title;
+      script = n.text.trim();
+    }
+  }
+
+  if (title == null || (audioUrl == null && (script ?? '').trim().isEmpty)) {
+    return null;
+  }
+
+  return AudioSegment(
+    id: 'geofence:$locationId:${DateTime.now().millisecondsSinceEpoch}',
+    title: title,
+    type: AudioSegmentType.gpsNarration,
+    priority: PlaybackPriority.scheduledAnnouncement,
+    audioUrl: audioUrl,
+    spokenText: audioUrl == null ? script : null,
+    interruptible: true,
+    resumeAfter: true,
+  );
+}
+
+bool _isWildlifeToken(String token) {
+  final t = token.toLowerCase();
+  const keys = [
+    'wildlife', 'animal', 'bird', 'mammal', 'reptile', 'fish',
+    'wildflower', 'native_plant', 'plant', 'tree', 'species',
+  ];
+  return keys.any(t.contains);
+}
+
+/// Carries the "inside last tick" set between [geofenceRadioTick] calls, so the
+/// engine can see a fence go from inside → outside (and fire the exit that
+/// re-arms a later re-entry) without recomputing any geodesic distance.
+class GeofenceTickState {
+  Set<String> insidePrev = <String>{};
+}
+
+/// One geofence-radio tick, pure of Riverpod + audio so it is fully testable:
+///  1. asks [fetchNearby] (→ `get_nearby_geofences`) what fences the traveler
+///     is inside,
+///  2. feeds that membership through the reused [engine] (enter/exit/cooldown),
+///  3. picks the winner (priority → distance),
+///  4. resolves the winner's EXISTING content ([fetchBlocks] →
+///     `area_discovery_content`, else [resolveLocationNarration]),
+/// and RETURNS the [AudioSegment] to interrupt with (or null when there is
+/// nothing to say). Emits the `[GEOFENCE RADIO]` diagnostics. The caller sends
+/// the result through the existing RadioEngineService — this never touches the
+/// audio core.
+Future<AudioSegment?> geofenceRadioTick({
+  required double lat,
+  required double lng,
+  required LocationTriggerEngine engine,
+  required GeofenceTickState state,
+  required Future<List<NearbyGeofence>> Function(double lat, double lng)
+      fetchNearby,
+  required Future<List<AreaContentBlock>> Function(String locationId)
+      fetchBlocks,
+  MasterLocation? Function(String locationId)? locationById,
+  List<ContentItem> contentItems = const [],
+  DateTime? now,
+}) async {
+  debugPrint('[GEOFENCE RADIO] GPS: $lat, $lng');
+  final rows = await fetchNearby(lat, lng);
+  debugPrint('[GEOFENCE RADIO] Nearby geofences: ${rows.length}');
+
+  final insideRows = <String, NearbyGeofence>{
+    for (final r in rows) if (r.inside) r.locationId: r,
+  };
+  final insideIds = insideRows.keys.toSet();
+  final candidates = geofenceTriggerCandidates(
+    insideIds: insideIds,
+    recentIds: state.insidePrev,
+    userLat: lat,
+    userLng: lng,
+    cooldownForLocation: (id) => locationById?.call(id)?.cooldownSeconds,
+  );
+  final fired = engine.evaluate(lat, lng, candidates, now: now);
+  state.insidePrev = insideIds;
+
+  final enteredRows = [
+    for (final e in fired)
+      if (e.kind == LocationTriggerKind.arrival &&
+          insideRows[e.locationId] != null)
+        insideRows[e.locationId]!,
+  ];
+  final winner = selectGeofenceToNarrate(enteredRows);
+  if (winner == null) return null;
+  debugPrint('[GEOFENCE RADIO] Selected location: ${winner.locationName}');
+  debugPrint('[GEOFENCE RADIO] location_id: ${winner.locationId}');
+
+  final blocks = await fetchBlocks(winner.locationId);
+  final seg = geofenceSegmentFor(
+    locationId: winner.locationId,
+    locationName: winner.locationName,
+    areaBlocks: blocks,
+    masterLocation: locationById?.call(winner.locationId),
+    contentItems: contentItems,
+  );
+  if (seg == null) {
+    debugPrint(
+        '[GEOFENCE RADIO] No content for location: ${winner.locationName}');
+    return null;
+  }
+  debugPrint('[GEOFENCE RADIO] Content: ${seg.title}');
+  return seg;
+}
+
+/// Level 4 — Geofence radio. On each GPS update, asks the Supabase
+/// `get_nearby_geofences()` function what the traveler is inside, feeds that
+/// membership through the SAME [LocationTriggerEngine] (enter/exit + play-once
+/// + cooldown) used by the POI directors, resolves the winning location's
+/// existing content, and interrupts the radio through the existing engine —
+/// never touching the audio core, the queue, or wildlife's area-based path.
+void _attachGeofenceTriggers(Ref ref) {
+  final engine = LocationTriggerEngine();
+  final state = GeofenceTickState();
+  var inflight = false;
+
+  MasterLocation? locById(String id) {
+    for (final l in ref.read(masterLocationsProvider).value ?? const []) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
+
+  Future<void> handle(LocationContext ctx) async {
+    if (ctx.latitude == 0 && ctx.longitude == 0) return; // no GPS fix yet
+    if (inflight) return; // keep one RPC in flight at a time
+    inflight = true;
+    try {
+      final seg = await geofenceRadioTick(
+        lat: ctx.latitude,
+        lng: ctx.longitude,
+        engine: engine,
+        state: state,
+        fetchNearby: (a, b) => ref.read(geofenceRepositoryProvider).nearby(a, b),
+        fetchBlocks: (id) =>
+            ref.read(areaContentRepositoryProvider).forLocation(id),
+        locationById: locById,
+        contentItems: ref.read(locationContentItemsProvider),
+      );
+      if (seg == null) return;
+      debugPrint('[GEOFENCE RADIO] Triggering radio interruption');
+      ref
+          .read(radioEngineControllerProvider.notifier)
+          .requestInterruption(seg);
+      debugPrint('[GEOFENCE RADIO] Playback request completed');
+    } catch (_) {
+      // Never let a geofence/network hiccup break the radio session.
+    } finally {
+      inflight = false;
+    }
   }
 
   handle(ref.read(locationContextProvider));
