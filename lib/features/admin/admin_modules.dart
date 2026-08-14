@@ -140,6 +140,13 @@ enum AdminModule {
       ready: true,
       description: 'Rules for what plays when (announcements between songs).',
       table: 'radio_schedule'),
+  radioScheduler('Radio Scheduler', Icons.queue_music_rounded, AdminGroup.audio,
+      ready: true,
+      description: 'Professional rundown builder: create, name, schedule and '
+          'make recurring rundowns; drag content into a timeline; reorder, '
+          'edit, enable/disable, save and publish; then preview through the '
+          'existing radio audio engine with a live now-playing panel.',
+      table: 'rundowns'),
   djStudio('DJ Studio', Icons.headset_mic_rounded, AdminGroup.audio,
       ready: true,
       description: 'DJ personalities, AI/template banter, song-intro '
