@@ -73,14 +73,29 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
 
   // 2/3/4) PARK, SPRING, TOWN — same ranked nearby list "Nearby Stories" and
   // the GPS arrival triggers already read; just narrowed by type here.
+  //
+  // nearbyLocationsProvider's own radius (20 miles) is generous on purpose
+  // for that browse list, but it's too generous for "what's near me right
+  // now" — a state park 15 miles away must not outrank the town the
+  // listener is actually standing in. PARK/SPRING get their own tighter cap
+  // so they only preempt TOWN when genuinely close.
   final nearby = ref.watch(nearbyLocationsProvider);
+  const parkSpringMaxMeters = 5 * 1609.344;
 
-  final park = _firstOfType(nearby, _parkTypes);
+  final park = _firstOfType(
+    nearby,
+    _parkTypes,
+    within: (n) => n.distanceMeters <= parkSpringMaxMeters,
+  );
   if (park != null) {
     return _fromLocation(PlayerLocationKind.park, park);
   }
 
-  final spring = _firstOfType(nearby, {LocationType.spring});
+  final spring = _firstOfType(
+    nearby,
+    {LocationType.spring},
+    within: (n) => n.distanceMeters <= parkSpringMaxMeters,
+  );
   if (spring != null) {
     return _fromLocation(PlayerLocationKind.spring, spring);
   }
