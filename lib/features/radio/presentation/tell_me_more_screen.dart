@@ -4,10 +4,14 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
+
+const String _kNarrationIdPrefix = 'tellmemore:';
 
 /// "Tell Me More" — a temporary excursion away from the radio, not a second
 /// player. The listener taps TELL ME MORE on the Radio screen with whatever
@@ -15,9 +19,18 @@ import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 /// spring/town/county, or a DJ-banter tease — see [TellMeMoreContext]),
 /// lands here on a photo + history + practical-info page
 /// ([tellMeMoreResultProvider] routes to the right content source), and
-/// presses Back to return to the radio exactly where they left off: this
-/// screen pauses playback on the way in and resumes it (only if it was
-/// actually playing before) on the way out.
+/// presses Back to return to the radio exactly where they left off.
+///
+/// State preservation, reusing the existing engine (no second player):
+///  - If recorded narration audio exists, it plays through the same
+///    interrupt/resume mechanism every other spoken moment in the app uses
+///    (requestInterruption — pauses/stashes the song, plays the narration,
+///    auto-resumes when it finishes).
+///  - Either way, pressing Back cancels any of *our* narration still playing
+///    (via the same skip() that already cancels an interruption and resumes
+///    the song at its exact position) and restores playback only if the
+///    radio was actually playing before — never a random resume, never an
+///    accidental skip to the next track.
 class TellMeMoreScreen extends ConsumerStatefulWidget {
   const TellMeMoreScreen({super.key, this.tellMeMoreContext});
 
@@ -33,23 +46,46 @@ class _TellMeMoreScreenState extends ConsumerState<TellMeMoreScreen> {
   @override
   void initState() {
     super.initState();
-    // Capture + pause exactly once, before anything else can change the
-    // engine's state — the existing Play/Pause toggle's own pause(), so
-    // resuming later is the same tested "no restart" behavior.
-    final controller = ref.read(radioEngineControllerProvider.notifier);
+    // Capture once, before anything else can change the engine's state.
     _wasPlaying =
         ref.read(radioEngineControllerProvider).status == PlaybackStatus.playing;
-    if (_wasPlaying) controller.pause();
+    // Only pause up front for the no-recorded-audio case (reading in
+    // silence); when audio narration exists, requestInterruption below
+    // does its own pause/stash the moment it's found.
+    if (_wasPlaying) {
+      ref.read(radioEngineControllerProvider.notifier).pause();
+    }
   }
 
   @override
   void dispose() {
-    // Back (system gesture, AppBar arrow, or any other pop) always runs
-    // this — restore the exact prior state, never a random resume.
-    if (_wasPlaying) {
-      ref.read(radioEngineControllerProvider.notifier).play();
+    final engine = ref.read(radioEngineControllerProvider.notifier);
+    final current = ref.read(radioEngineControllerProvider).current?.segment;
+    if (current != null && current.id.startsWith(_kNarrationIdPrefix)) {
+      // Our narration is still playing — the exact existing mechanism that
+      // cancels an interruption and resumes the song at its exact position.
+      engine.skip();
+    } else if (_wasPlaying) {
+      // No narration was ever played (or it already finished and the song
+      // auto-resumed on its own) — make sure we land back on "playing".
+      engine.play();
     }
     super.dispose();
+  }
+
+  void _onResult(TellMeMoreResult? result) {
+    if (result == null || !result.hasAudio || !_wasPlaying) return;
+    ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+      AudioSegment(
+        id: '$_kNarrationIdPrefix${DateTime.now().millisecondsSinceEpoch}',
+        title: result.title,
+        type: AudioSegmentType.narration,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        audioUrl: result.audioUrl,
+        interruptible: false,
+        resumeAfter: true,
+      ),
+    );
   }
 
   @override
@@ -73,7 +109,7 @@ class _TellMeMoreScreenState extends ConsumerState<TellMeMoreScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: RD.lg),
                     child: ctx == null || !ctx.hasContext
                         ? const _NoContext()
-                        : _ResultLookup(ctx: ctx),
+                        : _ResultLookup(ctx: ctx, onResult: _onResult),
                   ),
                 ),
               ],
@@ -86,12 +122,19 @@ class _TellMeMoreScreenState extends ConsumerState<TellMeMoreScreen> {
 }
 
 class _ResultLookup extends ConsumerWidget {
-  const _ResultLookup({required this.ctx});
+  const _ResultLookup({required this.ctx, required this.onResult});
 
   final TellMeMoreContext ctx;
+  final void Function(TellMeMoreResult?) onResult;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Fires once per lookup (not on every rebuild) — the moment the full
+    // story resolves, not tied to how long the page stays open.
+    ref.listen(tellMeMoreResultProvider(ctx), (previous, next) {
+      onResult(next.value);
+    });
+
     final async = ref.watch(tellMeMoreResultProvider(ctx));
     return async.when(
       loading: () =>
@@ -152,6 +195,14 @@ class _InfoPage extends StatelessWidget {
             const SizedBox(height: RD.xs),
             Text(
               subtitleParts.join(' · '),
+              textAlign: TextAlign.center,
+              style: RD.caption.copyWith(color: RD.green),
+            ),
+          ],
+          if (result.hasAudio) ...[
+            const SizedBox(height: RD.xs),
+            Text(
+              'Now playing on the radio',
               textAlign: TextAlign.center,
               style: RD.caption.copyWith(color: RD.green),
             ),
