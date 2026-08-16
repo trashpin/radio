@@ -17,12 +17,14 @@ class TellMeMoreContext {
     this.banterText,
     this.knowledgeContentId,
     this.location,
+    this.contextKind,
   });
 
   /// What the DJ was talking about, in plain language (e.g. a place name).
   final String? subject;
 
-  /// The `locations` record this moment relates to, if any.
+  /// The `locations` record this moment relates to, if any. Also carries an
+  /// `events` row id when [contextKind] is `'event'`.
   final String? locationId;
 
   /// The destination this banter was scoped to, if any.
@@ -40,6 +42,13 @@ class TellMeMoreContext {
 
   /// Where the listener was when this played.
   final GeoPoint? location;
+
+  /// Which location-aware player tier this came from — `'event'`, `'park'`,
+  /// `'spring'`, `'town'`, or `'county'` — so the narration lookup knows
+  /// which content source to query (an `events`/`locations` row, or the
+  /// current county's profile). Null for the original DJ-banter-category
+  /// path (unchanged).
+  final String? contextKind;
 
   bool get hasContext =>
       (subject ?? banterText ?? destinationId ?? locationId) != null;

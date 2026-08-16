@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
@@ -11,11 +10,12 @@ import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
 /// "Tell Me More" — the listener taps TELL ME MORE on the Radio screen and
-/// lands here with the [tellMeMoreContext] the engine already captured about
-/// what the DJ was just talking about (see [TellMeMoreContext]). This screen
-/// looks up the best published narration for that destination + moment
-/// ([tellMeMoreNarrationProvider]) and shows the full script; when nothing
-/// published fits yet, it falls back to the DJ's one-liner.
+/// lands here with the [tellMeMoreContext] the current player context
+/// carries (see [TellMeMoreContext]) — whether that's a DJ-banter tease, or
+/// the active event/park/spring/town/county tier from the location-aware
+/// player. [tellMeMoreResultProvider] routes to the right content source and
+/// this screen shows the full script; when nothing's published yet, it falls
+/// back to the short teaser that was already on screen.
 class TellMeMoreScreen extends ConsumerWidget {
   const TellMeMoreScreen({super.key, this.tellMeMoreContext});
 
@@ -64,39 +64,41 @@ class _NarrationLookup extends ConsumerWidget {
     // Play the full story through the same audio engine that plays
     // everything else (interrupt → auto-resume), the moment it's found —
     // fires once per lookup, not on every rebuild.
-    ref.listen(tellMeMoreNarrationProvider(ctx), (previous, next) {
-      final narration = next.value;
-      if (narration == null || !narration.hasAudio) return;
+    ref.listen(tellMeMoreResultProvider(ctx), (previous, next) {
+      final result = next.value;
+      if (result == null || !result.hasAudio) return;
       ref.read(radioEngineControllerProvider.notifier).requestInterruption(
         AudioSegment(
-          id: 'tellmemore:${narration.id}:'
+          id: 'tellmemore:${ctx.contextKind ?? 'banter'}:'
               '${DateTime.now().millisecondsSinceEpoch}',
-          title: narration.title ?? narration.type?.label ?? 'The full story',
+          title: result.title,
           type: AudioSegmentType.narration,
           priority: PlaybackPriority.scheduledAnnouncement,
-          audioUrl: narration.audioUrl,
+          audioUrl: result.audioUrl,
           interruptible: false,
           resumeAfter: true,
         ),
       );
     });
 
-    final async = ref.watch(tellMeMoreNarrationProvider(ctx));
+    final async = ref.watch(tellMeMoreResultProvider(ctx));
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(color: RD.green)),
       error: (_, _) => _Fallback(ctx: ctx),
-      data: (narration) =>
-          narration == null ? _Fallback(ctx: ctx) : _FullStory(narration: narration),
+      data: (result) =>
+          result == null || (result.script ?? '').trim().isEmpty
+              ? _Fallback(ctx: ctx)
+              : _FullStory(result: result),
     );
   }
 }
 
-/// A published narration exists — show the full script.
+/// The full story was found — show the full script.
 class _FullStory extends StatelessWidget {
-  const _FullStory({required this.narration});
+  const _FullStory({required this.result});
 
-  final DestinationNarration narration;
+  final TellMeMoreResult result;
 
   @override
   Widget build(BuildContext context) {
@@ -108,11 +110,11 @@ class _FullStory extends StatelessWidget {
           _Badge(icon: Icons.auto_stories_rounded),
           const SizedBox(height: RD.lg),
           Text(
-            narration.title ?? narration.type?.label ?? 'The full story',
+            result.title,
             textAlign: TextAlign.center,
             style: RD.title.copyWith(fontSize: 20),
           ),
-          if (narration.hasAudio) ...[
+          if (result.hasAudio) ...[
             const SizedBox(height: RD.xs),
             Text(
               'Now playing on the radio',
@@ -123,7 +125,7 @@ class _FullStory extends StatelessWidget {
           const SizedBox(height: RD.lg),
           GlassPanel(
             child: Text(
-              narration.script ?? '',
+              result.script ?? '',
               style: RD.body.copyWith(height: 1.5),
             ),
           ),

@@ -23,6 +23,7 @@ import 'package:explorer_os_mobile/features/location_intelligence/models/content
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/weather/county_radio.dart';
 import 'package:explorer_os_mobile/features/weather/current_weather.dart';
@@ -584,7 +585,11 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
 
   final stationName = engine.getCurrentStation()?.name;
   final park = t.currentParkId ?? stationName?.replaceAll(' Radio', '');
+  // The active event/park/spring/town/county tier (same priority + data the
+  // player's visual layer shows) takes precedence so the DJ's short fact
+  // matches whatever's actually on screen.
   final upcoming =
+      ref.read(playerLocationContextProvider)?.title ??
       t.nextAttraction?.name ??
       t.nearestAttraction?.name ??
       (exps.isNotEmpty ? exps.first.name : null);

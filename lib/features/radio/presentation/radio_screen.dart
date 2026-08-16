@@ -22,6 +22,7 @@ import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
+import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/now_playing.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_brand_header.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -200,6 +201,11 @@ class _PlayerState extends ConsumerState<_Player> {
     final weather = ref.watch(currentWeatherProvider);
     final isPlaying = playback.status == PlaybackStatus.playing;
 
+    // EVENT > PARK > SPRING > TOWN > COUNTY — the location-aware player's
+    // visual/info layer. Purely additive: music keeps playing regardless of
+    // what this resolves to; only pressing TELL ME MORE plays anything.
+    final playerCtx = ref.watch(playerLocationContextProvider);
+
     // Refresh weather once a GPS fix flows into the map center.
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRefreshWeather());
 
@@ -238,17 +244,21 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
+    // The location-aware context replaces the normal music artwork (event >
+    // park > spring > town > county) whenever one is active — the music
+    // itself is unaffected, only what's displayed changes.
     final heroImage =
         obs.species?.heroImageUrl ??
-        ((songCover ?? '').isNotEmpty
-            ? songCover
-            : (nearest?.location.images.isNotEmpty ?? false
-                  ? nearest!.location.images.first
-                  : widget.station.imageUrl));
-    final nearbyPlace = nearest?.location.name ?? widget.station.name;
-    final nearbyDistance = nearest == null
-        ? null
-        : _miles(nearest.distanceMeters);
+        ((playerCtx?.imageUrl ?? '').isNotEmpty
+            ? playerCtx!.imageUrl
+            : ((songCover ?? '').isNotEmpty
+                  ? songCover
+                  : (nearest?.location.images.isNotEmpty ?? false
+                        ? nearest!.location.images.first
+                        : widget.station.imageUrl)));
+    final nearbyPlace = playerCtx?.title ?? nearest?.location.name ?? widget.station.name;
+    final nearbyDistance = playerCtx?.distanceLabel ??
+        (nearest == null ? null : _miles(nearest.distanceMeters));
 
     void backToRadio() {
       if (obs.active) ref.read(observationControllerProvider.notifier).clear();
@@ -345,6 +355,10 @@ class _PlayerState extends ConsumerState<_Player> {
                               ? songArtist
                               : 'Hosted by $_stationHost',
                         ),
+                        if ((playerCtx?.teaser ?? '').isNotEmpty) ...[
+                          const SizedBox(height: RD.sm),
+                          _LocationTeaser(text: playerCtx!.teaser!),
+                        ],
                         const SizedBox(height: RD.md),
                         _TransportRow(
                           isPlaying: isPlaying,
@@ -357,19 +371,21 @@ class _PlayerState extends ConsumerState<_Player> {
                         ),
                         const SizedBox(height: RD.xl),
                         // The two primary Radio-screen actions. TELL ME MORE
-                        // is the UI + integration point for the future AI
-                        // narration feature — it hands off whatever
-                        // structured context the current segment carries
-                        // (see AudioSegment.tellMeMoreContext) to
-                        // TellMeMoreScreen; no AI is wired up yet.
+                        // always reads from the SAME context driving the
+                        // hero/teaser above (playerCtx) when one is active —
+                        // never a different one — falling back to whatever
+                        // the DJ banter segment on air carries when no
+                        // event/park/spring/town/county tier qualifies.
                         PrimaryActionCard(
                           icon: Icons.chat_bubble_rounded,
                           title: 'TELL ME MORE',
-                          subtitle:
-                              'Ask about what the DJ is talking about right now',
+                          subtitle: playerCtx != null
+                              ? 'The full story on ${playerCtx.title}'
+                              : 'Ask about what the DJ is talking about right now',
                           onTap: () => context.push(
                             AppRoute.tellMeMore.path,
-                            extra: nowPlaying?.tellMeMoreContext,
+                            extra: playerCtx?.tellMeMoreContext ??
+                                nowPlaying?.tellMeMoreContext,
                           ),
                         ),
                         const SizedBox(height: RD.md),
@@ -653,6 +669,32 @@ class _NowPlayingLine extends StatelessWidget {
           style: RD.caption.copyWith(color: RD.green, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+// ── Location-aware teaser ("Did you know…") ──────────────────────────────────
+
+/// The short curiosity-hook line for the active event/park/spring/town/county
+/// tier — never the full story (that's what TELL ME MORE is for).
+class _LocationTeaser extends StatelessWidget {
+  const _LocationTeaser({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: RD.lg),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: RD.caption.copyWith(
+          color: RD.textSecondary,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
     );
   }
 }

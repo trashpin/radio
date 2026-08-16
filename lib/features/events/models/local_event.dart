@@ -1,0 +1,75 @@
+/// A local event (migration 0043) — the highest-priority tier in the
+/// location-aware player (EVENT > PARK > SPRING > TOWN > COUNTY).
+class LocalEvent {
+  const LocalEvent({
+    required this.id,
+    required this.name,
+    this.description,
+    this.shortDescription,
+    this.imageUrl,
+    this.latitude,
+    this.longitude,
+    this.locationId,
+    this.county,
+    this.city,
+    this.eventDate,
+    this.startTime,
+    this.endTime,
+    this.externalWebsite,
+    this.active = true,
+  });
+
+  final String id;
+  final String name;
+  final String? description;
+  final String? shortDescription;
+  final String? imageUrl;
+  final double? latitude;
+  final double? longitude;
+
+  /// Optional link to the master `locations` row this event is happening at.
+  final String? locationId;
+  final String? county;
+  final String? city;
+  final DateTime? eventDate;
+
+  /// Raw `HH:MM:SS` (Postgres `time`) strings — formatted for display by the UI.
+  final String? startTime;
+  final String? endTime;
+  final String? externalWebsite;
+  final bool active;
+
+  bool get hasCoordinates =>
+      latitude != null && longitude != null && !(latitude == 0 && longitude == 0);
+
+  /// The richest description available (long → short).
+  String? get bestDescription {
+    for (final s in [description, shortDescription]) {
+      if ((s ?? '').trim().isNotEmpty) return s!.trim();
+    }
+    return null;
+  }
+
+  static double? _d(dynamic v) =>
+      v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+
+  factory LocalEvent.fromJson(Map<String, dynamic> j) => LocalEvent(
+        id: (j['id'] ?? '').toString(),
+        name: (j['name'] ?? '') as String,
+        description: j['description'] as String?,
+        shortDescription: j['short_description'] as String?,
+        imageUrl: j['image_url'] as String?,
+        latitude: _d(j['latitude']),
+        longitude: _d(j['longitude']),
+        locationId: j['location_id']?.toString(),
+        county: j['county'] as String?,
+        city: j['city'] as String?,
+        eventDate: j['event_date'] == null
+            ? null
+            : DateTime.tryParse(j['event_date'].toString()),
+        startTime: j['start_time'] as String?,
+        endTime: j['end_time'] as String?,
+        externalWebsite: j['external_website'] as String?,
+        active: (j['active'] ?? true) as bool,
+      );
+}
