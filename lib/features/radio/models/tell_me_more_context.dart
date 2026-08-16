@@ -18,6 +18,7 @@ class TellMeMoreContext {
     this.knowledgeContentId,
     this.location,
     this.contextKind,
+    this.distanceLabel,
   });
 
   /// What the DJ was talking about, in plain language (e.g. a place name).
@@ -49,6 +50,11 @@ class TellMeMoreContext {
   /// current county's profile). Null for the original DJ-banter-category
   /// path (unchanged).
   final String? contextKind;
+
+  /// Distance from the listener when this was captured (already formatted,
+  /// e.g. "2.4 mi") — the same label shown on the player card, so the info
+  /// page never has to recompute or risk disagreeing with it.
+  final String? distanceLabel;
 
   bool get hasContext =>
       (subject ?? banterText ?? destinationId ?? locationId) != null;

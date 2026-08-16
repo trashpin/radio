@@ -1,29 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
-import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
-import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-/// "Tell Me More" — the listener taps TELL ME MORE on the Radio screen and
-/// lands here with the [tellMeMoreContext] the current player context
-/// carries (see [TellMeMoreContext]) — whether that's a DJ-banter tease, or
-/// the active event/park/spring/town/county tier from the location-aware
-/// player. [tellMeMoreResultProvider] routes to the right content source and
-/// this screen shows the full script; when nothing's published yet, it falls
-/// back to the short teaser that was already on screen.
-class TellMeMoreScreen extends ConsumerWidget {
+/// "Tell Me More" — a temporary excursion away from the radio, not a second
+/// player. The listener taps TELL ME MORE on the Radio screen with whatever
+/// [tellMeMoreContext] the current player card was showing (event/park/
+/// spring/town/county, or a DJ-banter tease — see [TellMeMoreContext]),
+/// lands here on a photo + history + practical-info page
+/// ([tellMeMoreResultProvider] routes to the right content source), and
+/// presses Back to return to the radio exactly where they left off: this
+/// screen pauses playback on the way in and resumes it (only if it was
+/// actually playing before) on the way out.
+class TellMeMoreScreen extends ConsumerStatefulWidget {
   const TellMeMoreScreen({super.key, this.tellMeMoreContext});
 
   final TellMeMoreContext? tellMeMoreContext;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ctx = tellMeMoreContext;
+  ConsumerState<TellMeMoreScreen> createState() => _TellMeMoreScreenState();
+}
+
+class _TellMeMoreScreenState extends ConsumerState<TellMeMoreScreen> {
+  bool _wasPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Capture + pause exactly once, before anything else can change the
+    // engine's state — the existing Play/Pause toggle's own pause(), so
+    // resuming later is the same tested "no restart" behavior.
+    final controller = ref.read(radioEngineControllerProvider.notifier);
+    _wasPlaying =
+        ref.read(radioEngineControllerProvider).status == PlaybackStatus.playing;
+    if (_wasPlaying) controller.pause();
+  }
+
+  @override
+  void dispose() {
+    // Back (system gesture, AppBar arrow, or any other pop) always runs
+    // this — restore the exact prior state, never a random resume.
+    if (_wasPlaying) {
+      ref.read(radioEngineControllerProvider.notifier).play();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ctx = widget.tellMeMoreContext;
     return Scaffold(
       backgroundColor: RD.bg,
       body: SafeArea(
@@ -42,7 +73,7 @@ class TellMeMoreScreen extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: RD.lg),
                     child: ctx == null || !ctx.hasContext
                         ? const _NoContext()
-                        : _NarrationLookup(ctx: ctx),
+                        : _ResultLookup(ctx: ctx),
                   ),
                 ),
               ],
@@ -54,70 +85,73 @@ class TellMeMoreScreen extends ConsumerWidget {
   }
 }
 
-class _NarrationLookup extends ConsumerWidget {
-  const _NarrationLookup({required this.ctx});
+class _ResultLookup extends ConsumerWidget {
+  const _ResultLookup({required this.ctx});
 
   final TellMeMoreContext ctx;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Play the full story through the same audio engine that plays
-    // everything else (interrupt → auto-resume), the moment it's found —
-    // fires once per lookup, not on every rebuild.
-    ref.listen(tellMeMoreResultProvider(ctx), (previous, next) {
-      final result = next.value;
-      if (result == null || !result.hasAudio) return;
-      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
-        AudioSegment(
-          id: 'tellmemore:${ctx.contextKind ?? 'banter'}:'
-              '${DateTime.now().millisecondsSinceEpoch}',
-          title: result.title,
-          type: AudioSegmentType.narration,
-          priority: PlaybackPriority.scheduledAnnouncement,
-          audioUrl: result.audioUrl,
-          interruptible: false,
-          resumeAfter: true,
-        ),
-      );
-    });
-
     final async = ref.watch(tellMeMoreResultProvider(ctx));
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(color: RD.green)),
       error: (_, _) => _Fallback(ctx: ctx),
-      data: (result) =>
-          result == null || (result.script ?? '').trim().isEmpty
-              ? _Fallback(ctx: ctx)
-              : _FullStory(result: result),
+      data: (result) => result == null || (result.history ?? '').trim().isEmpty
+          ? _Fallback(ctx: ctx)
+          : _InfoPage(result: result),
     );
   }
 }
 
-/// The full story was found — show the full script.
-class _FullStory extends StatelessWidget {
-  const _FullStory({required this.result});
+/// The full information page — photo, history, and whichever practical
+/// fields the source record actually has. Sections with no data simply
+/// don't render; nothing here is ever invented.
+class _InfoPage extends StatelessWidget {
+  const _InfoPage({required this.result});
 
   final TellMeMoreResult result;
 
+  Future<void> _navigate(BuildContext context) async {
+    final uri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1&query=${result.latitude},${result.longitude}',
+    );
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openWebsite(BuildContext context) async {
+    final uri = Uri.tryParse(result.website ?? '');
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final subtitleParts = [
+      ?result.locationLabel,
+      ?result.eventDateLabel,
+      ?result.eventTimeLabel,
+    ];
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: RD.lg),
-          _Badge(icon: Icons.auto_stories_rounded),
+          if ((result.imageUrl ?? '').isNotEmpty)
+            _Photo(imageUrl: result.imageUrl!)
+          else
+            const Center(child: _Badge(icon: Icons.auto_stories_rounded)),
           const SizedBox(height: RD.lg),
           Text(
             result.title,
             textAlign: TextAlign.center,
             style: RD.title.copyWith(fontSize: 20),
           ),
-          if (result.hasAudio) ...[
+          if (subtitleParts.isNotEmpty) ...[
             const SizedBox(height: RD.xs),
             Text(
-              'Now playing on the radio',
+              subtitleParts.join(' · '),
               textAlign: TextAlign.center,
               style: RD.caption.copyWith(color: RD.green),
             ),
@@ -125,10 +159,62 @@ class _FullStory extends StatelessWidget {
           const SizedBox(height: RD.lg),
           GlassPanel(
             child: Text(
-              result.script ?? '',
+              result.history ?? '',
               style: RD.body.copyWith(height: 1.5),
             ),
           ),
+          if (result.hours != null || result.admission != null) ...[
+            const SizedBox(height: RD.md),
+            _FactRow(
+              icon: Icons.schedule_rounded,
+              label: 'Hours',
+              value: result.hours,
+            ),
+            _FactRow(
+              icon: Icons.local_activity_rounded,
+              label: 'Admission',
+              value: result.admission,
+            ),
+          ],
+          if (result.activities.isNotEmpty) ...[
+            const SizedBox(height: RD.lg),
+            const _SectionLabel('Highlights'),
+            const SizedBox(height: RD.sm),
+            _ChipWrap(items: result.activities),
+          ],
+          if (result.goodToKnow.isNotEmpty) ...[
+            const SizedBox(height: RD.lg),
+            const _SectionLabel('Good to know'),
+            const SizedBox(height: RD.sm),
+            ...result.goodToKnow.map((g) => _BulletLine(text: g)),
+          ],
+          if (result.canNavigate || result.hasWebsite) ...[
+            const SizedBox(height: RD.lg),
+            Row(
+              children: [
+                if (result.canNavigate)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _navigate(context),
+                      icon: const Icon(Icons.directions_rounded, color: RD.green),
+                      label: const Text('Navigate',
+                          style: TextStyle(color: RD.green)),
+                    ),
+                  ),
+                if (result.canNavigate && result.hasWebsite)
+                  const SizedBox(width: RD.sm),
+                if (result.hasWebsite)
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openWebsite(context),
+                      icon: const Icon(Icons.open_in_new_rounded, color: RD.green),
+                      label: const Text('More info',
+                          style: TextStyle(color: RD.green)),
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: RD.lg),
         ],
       ),
@@ -136,7 +222,104 @@ class _FullStory extends StatelessWidget {
   }
 }
 
-/// No published narration fits this moment yet — fall back to the DJ's line.
+class _Photo extends StatelessWidget {
+  const _Photo({required this.imageUrl});
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: RD.brXl,
+      child: AspectRatio(
+        aspectRatio: 16 / 10,
+        child: Image.network(
+          imageUrl,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) =>
+              const Center(child: _Badge(icon: Icons.auto_stories_rounded)),
+        ),
+      ),
+    );
+  }
+}
+
+class _FactRow extends StatelessWidget {
+  const _FactRow({required this.icon, required this.label, this.value});
+  final IconData icon;
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    if ((value ?? '').trim().isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, color: RD.green, size: 18),
+          const SizedBox(width: RD.sm),
+          Text('$label: ', style: RD.caption.copyWith(color: RD.textSecondary)),
+          Expanded(child: Text(value!, style: RD.body)),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Text(text, style: RD.sectionLabel);
+}
+
+class _ChipWrap extends StatelessWidget {
+  const _ChipWrap({required this.items});
+  final List<String> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: RD.sm,
+      runSpacing: RD.sm,
+      children: [
+        for (final item in items)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: 6),
+            decoration: BoxDecoration(
+              color: RD.panel,
+              borderRadius: BorderRadius.circular(RD.rPill),
+              border: Border.all(color: RD.stroke),
+            ),
+            child: Text(item, style: RD.caption.copyWith(color: RD.textPrimary)),
+          ),
+      ],
+    );
+  }
+}
+
+class _BulletLine extends StatelessWidget {
+  const _BulletLine({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('•  ', style: TextStyle(color: RD.green)),
+          Expanded(child: Text(text, style: RD.body)),
+        ],
+      ),
+    );
+  }
+}
+
+/// No published/complete story fits this moment yet — fall back to whatever
+/// short teaser was already on the player card.
 class _Fallback extends StatelessWidget {
   const _Fallback({required this.ctx});
 
@@ -156,8 +339,8 @@ class _Fallback extends StatelessWidget {
         ),
         const SizedBox(height: RD.sm),
         Text(
-          "We know what the DJ was just talking about — the full story "
-          "isn't recorded here yet.",
+          "We know what's on the radio right now — the full story isn't "
+          "recorded here yet.",
           textAlign: TextAlign.center,
           style: RD.body,
         ),
@@ -196,8 +379,8 @@ class _NoContext extends StatelessWidget {
         ),
         SizedBox(height: RD.sm),
         Text(
-          "Tap TELL ME MORE while the DJ is on air to dig deeper into "
-          "what they're talking about.",
+          "Tap TELL ME MORE while the radio is showing something to dig "
+          "deeper into what it's about.",
           textAlign: TextAlign.center,
           style: RD.body,
         ),

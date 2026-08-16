@@ -93,22 +93,76 @@ final tellMeMoreNarrationProvider = FutureProvider.autoDispose
       );
 });
 
-/// What TELL ME MORE actually shows/plays, unified across every source: a
+/// What TELL ME MORE actually shows, unified across every source: a
 /// DJ-banter-linked destination narration, a master-location park/spring/
-/// town, an event, or a county profile. [TellMeMoreScreen] only ever deals
-/// with this one shape.
+/// town, an event, or a county profile. Every field is optional — only what
+/// genuinely exists in the source record is ever populated; nothing here is
+/// invented. [TellMeMoreScreen] only ever deals with this one shape.
 class TellMeMoreResult {
-  const TellMeMoreResult({required this.title, this.script, this.audioUrl});
+  const TellMeMoreResult({
+    required this.title,
+    this.imageUrl,
+    this.history,
+    this.hours,
+    this.admission,
+    this.website,
+    this.latitude,
+    this.longitude,
+    this.activities = const [],
+    this.goodToKnow = const [],
+    this.eventDateLabel,
+    this.eventTimeLabel,
+    this.locationLabel,
+    this.audioUrl,
+  });
+
   final String title;
-  final String? script;
+  final String? imageUrl;
+
+  /// The deep history/background text — never the short player-card teaser.
+  final String? history;
+  final String? hours;
+  final String? admission;
+
+  /// Reservation / official / more-info link, when the source record has one.
+  final String? website;
+  final double? latitude;
+  final double? longitude;
+
+  /// Activities / things to see / county highlights — whatever the source
+  /// record already lists; never fabricated.
+  final List<String> activities;
+
+  /// Short practical bullets (parking, restrooms, difficulty, accessibility,
+  /// population/size/established-year, …) — only the ones present.
+  final List<String> goodToKnow;
+
+  /// Event-only.
+  final String? eventDateLabel;
+  final String? eventTimeLabel;
+  final String? locationLabel;
+
   final String? audioUrl;
+
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
+  bool get canNavigate => latitude != null && longitude != null;
+  bool get hasWebsite => (website ?? '').trim().isNotEmpty;
 }
+
+List<String> _goodToKnowFor(MasterLocation loc) => [
+      if ((loc.parkingInfo ?? '').trim().isNotEmpty) 'Parking: ${loc.parkingInfo}',
+      if ((loc.restrooms ?? '').trim().isNotEmpty) 'Restrooms: ${loc.restrooms}',
+      if ((loc.difficulty ?? '').trim().isNotEmpty) 'Difficulty: ${loc.difficulty}',
+      if (loc.familyFriendly == true) 'Family friendly',
+      if (loc.petFriendly == true) 'Pet friendly',
+      if (loc.wheelchairAccessible == true) 'Wheelchair accessible',
+    ];
 
 /// The full-story lookup for a park/spring/town: the deepest text this master
 /// location has (long description / narration script — deliberately NOT the
-/// short teaser) paired with whatever audio [resolveLocationNarration] (the
-/// same resolver the GPS arrival triggers already use) can find.
+/// short teaser), plus every practical field the record already carries, plus
+/// whatever audio [resolveLocationNarration] (the same resolver the GPS
+/// arrival triggers already use) can find.
 final _locationTellMeMoreProvider = FutureProvider.autoDispose
     .family<TellMeMoreResult?, String>((ref, locationId) async {
   final all = await ref.watch(masterLocationsProvider.future);
@@ -131,7 +185,17 @@ final _locationTellMeMoreProvider = FutureProvider.autoDispose
 
   return TellMeMoreResult(
     title: loc.name,
-    script: fullText,
+    imageUrl: loc.images.isNotEmpty ? loc.images.first : null,
+    history: fullText,
+    hours: (loc.hours ?? '').trim().isNotEmpty ? loc.hours : null,
+    admission: (loc.admission ?? '').trim().isNotEmpty ? loc.admission : null,
+    website: (loc.externalWebsite ?? '').trim().isNotEmpty
+        ? loc.externalWebsite
+        : null,
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    activities: loc.tags,
+    goodToKnow: _goodToKnowFor(loc),
     audioUrl: resolved.hasAudio ? resolved.audioUrl : null,
   );
 });
@@ -140,9 +204,30 @@ final _eventTellMeMoreProvider = FutureProvider.autoDispose
     .family<TellMeMoreResult?, String>((ref, eventId) async {
   final all = await ref.watch(eventsProvider.future);
   for (final e in all) {
-    if (e.id == eventId) {
-      return TellMeMoreResult(title: e.name, script: e.bestDescription);
-    }
+    if (e.id != eventId) continue;
+    final locationLabel = [e.city, e.county]
+        .where((s) => (s ?? '').trim().isNotEmpty)
+        .join(', ');
+    final dateLabel = e.eventDate == null
+        ? null
+        : '${e.eventDate!.month}/${e.eventDate!.day}/${e.eventDate!.year}';
+    final timeParts = [
+      if ((e.startTime ?? '').isNotEmpty) e.startTime,
+      if ((e.endTime ?? '').isNotEmpty) e.endTime,
+    ].whereType<String>();
+    return TellMeMoreResult(
+      title: e.name,
+      imageUrl: e.imageUrl,
+      history: e.bestDescription,
+      website: (e.externalWebsite ?? '').trim().isNotEmpty
+          ? e.externalWebsite
+          : null,
+      latitude: e.latitude,
+      longitude: e.longitude,
+      eventDateLabel: dateLabel,
+      eventTimeLabel: timeParts.isEmpty ? null : timeParts.join(' – '),
+      locationLabel: locationLabel.isEmpty ? null : locationLabel,
+    );
   }
   return null;
 });
@@ -157,15 +242,29 @@ final _countyTellMeMoreProvider = FutureProvider.autoDispose
       break;
     }
   }
-  final text = config == null
-      ? null
-      : ((config.history ?? '').trim().isNotEmpty
-          ? config.history!.trim()
-          : config.overview);
+  if (config == null) return TellMeMoreResult(title: '$county County');
+
+  final text = (config.history ?? '').trim().isNotEmpty
+      ? config.history!.trim()
+      : config.overview;
+  final goodToKnow = [
+    if (config.population != null) 'Population: ${config.population}',
+    if (config.sizeSqMiles != null) '${config.sizeSqMiles} sq mi',
+    if (config.yearEstablished != null) 'Established ${config.yearEstablished}',
+  ];
   return TellMeMoreResult(
     title: '$county County',
-    script: text,
-    audioUrl: config?.welcomeNarrationUrl,
+    imageUrl: config.heroImageUrl,
+    history: text,
+    website: (config.officialWebsite ?? '').trim().isNotEmpty
+        ? config.officialWebsite
+        : null,
+    activities: [
+      ...config.facts,
+      if ((config.tourismInfo ?? '').trim().isNotEmpty) config.tourismInfo!,
+    ],
+    goodToKnow: goodToKnow,
+    audioUrl: config.welcomeNarrationUrl,
   );
 });
 
@@ -196,7 +295,7 @@ final tellMeMoreResultProvider = FutureProvider.autoDispose
       if (narration == null) return null;
       return TellMeMoreResult(
         title: narration.title ?? narration.type?.label ?? 'The full story',
-        script: narration.script,
+        history: narration.script,
         audioUrl: narration.hasAudio ? narration.audioUrl : null,
       );
   }

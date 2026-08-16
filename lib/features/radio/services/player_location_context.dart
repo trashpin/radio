@@ -149,11 +149,12 @@ String? _teaserFor(MasterLocation loc) {
 
 PlayerLocationContext _fromLocation(PlayerLocationKind kind, NearbyLocation n) {
   final loc = n.location;
+  final distanceLabel = formatDistance(n.distanceMeters);
   return PlayerLocationContext(
     kind: kind,
     title: loc.name,
     imageUrl: loc.images.isNotEmpty ? loc.images.first : null,
-    distanceLabel: formatDistance(n.distanceMeters),
+    distanceLabel: distanceLabel,
     teaser: _teaserFor(loc),
     hours: (loc.hours ?? '').trim().isNotEmpty ? loc.hours : null,
     tellMeMoreContext: TellMeMoreContext(
@@ -161,6 +162,7 @@ PlayerLocationContext _fromLocation(PlayerLocationKind kind, NearbyLocation n) {
       locationId: loc.id,
       contextKind: kind.name,
       banterText: _teaserFor(loc),
+      distanceLabel: distanceLabel,
       location: loc.hasCoordinates
           ? GeoPoint(latitude: loc.latitude!, longitude: loc.longitude!)
           : null,
@@ -196,17 +198,19 @@ PlayerLocationContext _fromEvent(NearbyEvent n) {
     ?dateLabel,
     if (timeLabel.isNotEmpty) timeLabel,
   ];
+  final distanceLabel = formatDistance(n.distanceMeters);
   return PlayerLocationContext(
     kind: PlayerLocationKind.event,
     title: e.name,
     imageUrl: e.imageUrl,
-    distanceLabel: formatDistance(n.distanceMeters),
+    distanceLabel: distanceLabel,
     teaser: teaserParts.isEmpty ? null : teaserParts.join(' · '),
     tellMeMoreContext: TellMeMoreContext(
       subject: e.name,
       locationId: e.id,
       contextKind: PlayerLocationKind.event.name,
       banterText: e.bestDescription,
+      distanceLabel: distanceLabel,
       location: e.hasCoordinates
           ? GeoPoint(latitude: e.latitude!, longitude: e.longitude!)
           : null,
