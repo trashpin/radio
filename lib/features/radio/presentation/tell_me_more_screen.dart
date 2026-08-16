@@ -62,7 +62,7 @@ class _NarrationLookup extends ConsumerWidget {
     return async.when(
       loading: () =>
           const Center(child: CircularProgressIndicator(color: RD.green)),
-      error: (_, __) => _Fallback(ctx: ctx),
+      error: (_, _) => _Fallback(ctx: ctx),
       data: (narration) =>
           narration == null ? _Fallback(ctx: ctx) : _FullStory(narration: narration),
     );

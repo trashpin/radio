@@ -1,172 +1,59 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 
-import 'package:explorer_os_mobile/features/gps/services/battery_optimization_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/bearing_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/county_detection_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/geofence_intelligence_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/geolocator_location_provider.dart';
-import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/gps_logger.dart';
-import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/location_provider.dart';
-import 'package:explorer_os_mobile/features/gps/services/location_tracking_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/nearby_destination_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/offline_location_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/park_detection_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/route_engine.dart';
-import 'package:explorer_os_mobile/features/gps/services/speed_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/state_detection_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/travel_context_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/travel_session_service.dart';
-import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_service.dart';
+import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
+import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
 
-/// Dependency-injection wiring for the GPS Intelligence Engine.
+/// The abstraction that decouples the engine from any specific positioning
+/// backend.
 ///
-/// Every sub-service is a scope singleton so they share state across a fix
-/// (route distance, park/county/geofence membership, session). The default
-/// [locationProviderProvider] is a [GeolocatorLocationProvider] — override it
-/// in tests with a simulated provider.
+/// WHY THIS EXISTS: to prepare for multiple providers — system geolocation,
+/// Google Maps, Apple Maps, or offline/downloaded-map positioning — without the
+/// engine caring which is active. A real implementation (e.g. wrapping
+/// `geolocator`) simply implements this interface and is swapped in via the
+/// provider. The engine only ever depends on this contract.
+abstract class LocationProvider {
+  GpsProviderType get type;
 
-/// Structured GPS logger (events + counters + a bounded ring buffer for the
-/// debug screen). Shared so the provider and UI observe the same log.
-final gpsLoggerProvider = Provider<GpsLogger>((ref) => GpsLogger());
+  /// A stream of fixes while tracking is active.
+  Stream<GPSLocation> get stream;
 
-/// The active positioning source.
+  /// The most recent fix, if any.
+  Future<GPSLocation?> current();
+
+  Future<void> start();
+  Future<void> stop();
+}
+
+/// Default provider used until a real one is wired in.
 ///
-/// Defaults to the real device provider. Tests can override this with a
-/// simulated provider without changing the GPS engine.
-final locationProviderProvider = Provider<LocationProvider>((ref) {
-  final provider =
-      GeolocatorLocationProvider(logger: ref.watch(gpsLoggerProvider));
+/// Emits nothing on its own, but exposes [emit] so tests and demos can drive the
+/// engine deterministically with scripted fixes. This mirrors the "no real I/O
+/// yet" approach used elsewhere (the Radio Engine plays no audio).
+class SimulatedLocationProvider implements LocationProvider {
+  final StreamController<GPSLocation> _controller =
+      StreamController<GPSLocation>.broadcast();
+  GPSLocation? _last;
 
-  ref.onDispose(provider.dispose);
+  @override
+  GpsProviderType get type => GpsProviderType.simulated;
 
-  return provider;
-});
+  @override
+  Stream<GPSLocation> get stream => _controller.stream;
 
-final speedServiceProvider =
-    Provider<SpeedService>((ref) => const SpeedService());
+  @override
+  Future<GPSLocation?> current() async => _last;
 
-final headingServiceProvider =
-    Provider<HeadingService>((ref) => const HeadingService());
+  @override
+  Future<void> start() async {}
 
-final bearingServiceProvider =
-    Provider<BearingService>((ref) => const BearingService());
+  @override
+  Future<void> stop() async {}
 
-final distanceServiceProvider =
-    Provider<DistanceService>((ref) => const DistanceService());
+  /// Push a scripted fix through the stream (for tests/simulation).
+  void emit(GPSLocation location) {
+    _last = location;
+    _controller.add(location);
+  }
 
-final etaServiceProvider =
-    Provider<ETAService>((ref) => const ETAService());
-
-final routeEngineProvider =
-    Provider<RouteEngine>((ref) => RouteEngine());
-
-final geofenceServiceProvider =
-    Provider<GeofenceService>((ref) => GeofenceService());
-
-/// Hierarchical geofence intelligence.
-///
-/// Receives the available database geofences and determines which active
-/// geofence is the most specific match for the current GPS position.
-final geofenceIntelligenceServiceProvider =
-    Provider<GeofenceIntelligenceService>(
-  (ref) => GeofenceIntelligenceService(),
-);
-
-final parkDetectionServiceProvider =
-    Provider<ParkDetectionService>((ref) => ParkDetectionService());
-
-final countyDetectionServiceProvider =
-    Provider<CountyDetectionService>((ref) => CountyDetectionService());
-
-final stateDetectionServiceProvider =
-    Provider<StateDetectionService>((ref) => StateDetectionService());
-
-final nearbyDestinationServiceProvider =
-    Provider<NearbyDestinationService>(
-  (ref) => const NearbyDestinationService(),
-);
-
-final upcomingDestinationServiceProvider =
-    Provider<UpcomingDestinationService>(
-  (ref) => const UpcomingDestinationService(),
-);
-
-final destinationDetectionServiceProvider =
-    Provider<DestinationDetectionService>((ref) {
-  return DestinationDetectionService(
-    nearbySearch: ref.watch(nearbyDestinationServiceProvider),
-    upcomingSearch: ref.watch(upcomingDestinationServiceProvider),
-  );
-});
-
-final travelContextServiceProvider =
-    Provider<TravelContextService>((ref) => const TravelContextService());
-
-final travelSessionServiceProvider =
-    Provider<TravelSessionService>((ref) => TravelSessionService());
-
-final batteryOptimizationServiceProvider =
-    Provider<BatteryOptimizationService>(
-  (ref) => const BatteryOptimizationService(),
-);
-
-final gpsCacheServiceProvider =
-    Provider<GPSCacheService>((ref) => GPSCacheService());
-
-final offlineLocationServiceProvider =
-    Provider<OfflineLocationService>(
-  (ref) => OfflineLocationService(
-    ref.watch(gpsCacheServiceProvider),
-  ),
-);
-
-final locationTrackingServiceProvider =
-    Provider<LocationTrackingService>(
-  (ref) => LocationTrackingService(
-    ref.watch(locationProviderProvider),
-  ),
-);
-
-/// The composed GPS Intelligence Engine.
-///
-/// All GPS sub-services are wired together here. The
-/// [GeofenceIntelligenceService] is deliberately separate from the older
-/// [GeofenceService]: the former selects the most specific hierarchical
-/// database geofence, while the latter tracks enter/exit transitions.
-final gpsServiceProvider = Provider<GPSService>((ref) {
-  final service = GPSService(
-    tracking: ref.watch(locationTrackingServiceProvider),
-    speedService: ref.watch(speedServiceProvider),
-    headingService: ref.watch(headingServiceProvider),
-    bearingService: ref.watch(bearingServiceProvider),
-    distanceService: ref.watch(distanceServiceProvider),
-    etaService: ref.watch(etaServiceProvider),
-    routeEngine: ref.watch(routeEngineProvider),
-    geofenceService: ref.watch(geofenceServiceProvider),
-    geofenceIntelligenceService:
-        ref.watch(geofenceIntelligenceServiceProvider),
-    parkDetectionService: ref.watch(parkDetectionServiceProvider),
-    countyDetectionService: ref.watch(countyDetectionServiceProvider),
-    destinationDetectionService:
-        ref.watch(destinationDetectionServiceProvider),
-    stateDetectionService: ref.watch(stateDetectionServiceProvider),
-    travelContextService: ref.watch(travelContextServiceProvider),
-    sessionService: ref.watch(travelSessionServiceProvider),
-    batteryOptimizationService:
-        ref.watch(batteryOptimizationServiceProvider),
-    offlineLocationService:
-        ref.watch(offlineLocationServiceProvider),
-    cache: ref.watch(gpsCacheServiceProvider),
-  );
-
-  ref.onDispose(service.dispose);
-
-  return service;
-});
+  void dispose() => _controller.close();
+}

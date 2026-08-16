@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/features/gps/services/county_detection_servic
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/geofence_intelligence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geolocator_location_provider.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
@@ -59,6 +60,14 @@ final etaServiceProvider = Provider<ETAService>((ref) => const ETAService());
 final routeEngineProvider = Provider<RouteEngine>((ref) => RouteEngine());
 final geofenceServiceProvider =
     Provider<GeofenceService>((ref) => GeofenceService());
+
+/// Hierarchical geofence intelligence — selects the most specific active
+/// database geofence containing the current GPS position. Deliberately
+/// separate from [GeofenceService], which tracks enter/exit transitions.
+final geofenceIntelligenceServiceProvider =
+    Provider<GeofenceIntelligenceService>(
+  (ref) => GeofenceIntelligenceService(),
+);
 final parkDetectionServiceProvider =
     Provider<ParkDetectionService>((ref) => ParkDetectionService());
 final countyDetectionServiceProvider =
@@ -105,6 +114,7 @@ final gpsServiceProvider = Provider<GPSService>((ref) {
     etaService: ref.watch(etaServiceProvider),
     routeEngine: ref.watch(routeEngineProvider),
     geofenceService: ref.watch(geofenceServiceProvider),
+    geofenceIntelligenceService: ref.watch(geofenceIntelligenceServiceProvider),
     parkDetectionService: ref.watch(parkDetectionServiceProvider),
     countyDetectionService: ref.watch(countyDetectionServiceProvider),
     destinationDetectionService:

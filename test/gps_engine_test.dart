@@ -16,6 +16,7 @@ import 'package:explorer_os_mobile/features/gps/services/county_detection_servic
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/geofence_intelligence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_service.dart';
@@ -51,6 +52,7 @@ GPSService buildEngine() {
     etaService: const ETAService(),
     routeEngine: RouteEngine(),
     geofenceService: GeofenceService(),
+    geofenceIntelligenceService: GeofenceIntelligenceService(),
     parkDetectionService: ParkDetectionService(),
     countyDetectionService: CountyDetectionService(),
     destinationDetectionService: DestinationDetectionService(),
