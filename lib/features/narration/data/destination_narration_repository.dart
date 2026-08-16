@@ -118,6 +118,45 @@ class DestinationNarrationRepository {
     }
   }
 
+  /// The best published narration for "Tell Me More": the first
+  /// [scriptTypes] (in preference order) that has a published row, picking
+  /// randomly among that type's variants so repeat taps don't always surface
+  /// the same script.
+  Future<DestinationNarration?> bestPublishedFor({
+    required String destinationId,
+    required List<String> scriptTypes,
+  }) async {
+    if (!SupabaseService.isConfigured ||
+        destinationId.isEmpty ||
+        scriptTypes.isEmpty) {
+      return null;
+    }
+    try {
+      final rows = await SupabaseService.client
+          .from('destination_narrations')
+          .select()
+          .eq('destination_id', destinationId)
+          .eq('status', NarrationStatus.published.dbValue)
+          .inFilter('script_type', scriptTypes) as List;
+      final narrations = rows
+          .cast<Map<String, dynamic>>()
+          .map(DestinationNarration.fromJson)
+          .toList();
+      if (narrations.isEmpty) return null;
+      for (final type in scriptTypes) {
+        final matches =
+            narrations.where((n) => n.scriptType == type).toList();
+        if (matches.isNotEmpty) {
+          matches.shuffle();
+          return matches.first;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> setStatus(String id, NarrationStatus status) =>
       SupabaseService.client.from('destination_narrations').update({
         'status': status.dbValue,

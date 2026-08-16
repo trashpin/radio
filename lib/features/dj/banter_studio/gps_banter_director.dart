@@ -25,7 +25,7 @@ class GpsBanterContext {
     this.songTitle,
     this.artist,
     this.storyTitle,
-    this.station = 'Explorer Radio',
+    this.station = 'Sunshine Travel Radio',
     this.dj,
     this.destinationCode,
     this.moment,

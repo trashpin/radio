@@ -1,6 +1,7 @@
 import 'package:explorer_os_mobile/features/radio/models/announcement.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/shared/models/narration.dart';
 import 'package:explorer_os_mobile/shared/models/song.dart';
 
@@ -81,6 +82,7 @@ class AudioSegment {
     this.interruptible = true,
     this.resumeAfter = false,
     this.spokenText,
+    this.tellMeMoreContext,
   });
 
   final String id;
@@ -127,6 +129,11 @@ class AudioSegment {
   /// completion when the speech ends.
   final String? spokenText;
 
+  /// What this segment was about, if known — the integration point for the
+  /// future "Tell Me More" feature. Null for segments with no structured
+  /// context (e.g. music, generic TTS filler).
+  final TellMeMoreContext? tellMeMoreContext;
+
   AudioSegment copyWith({PlaybackPriority? priority}) => AudioSegment(
         id: id,
         title: title,
@@ -145,6 +152,7 @@ class AudioSegment {
         interruptible: interruptible,
         resumeAfter: resumeAfter,
         spokenText: spokenText,
+        tellMeMoreContext: tellMeMoreContext,
       );
 
   // --- Factories: map source content into normalized segments --------------

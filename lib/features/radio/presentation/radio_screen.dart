@@ -220,7 +220,7 @@ class _PlayerState extends ConsumerState<_Player> {
       _Interruption.none =>
         (nowPlaying?.title.trim().isNotEmpty ?? false)
             ? nowPlaying!.title
-            : 'ExplorerOS Radio',
+            : 'Sunshine Travel Radio',
     };
     final onAir =
         isPlaying ||
@@ -356,25 +356,26 @@ class _PlayerState extends ConsumerState<_Player> {
                           active: onAir,
                         ),
                         const SizedBox(height: RD.xl),
-                        // Replaces the former "I SEE SOMETHING" button per
-                        // the Discover This Area spec — a location-aware
-                        // discovery hub instead of a single point of
-                        // interest. The old screen/route (ISeeSomethingScreen,
-                        // AppRoute.iSeeSomething) is left in place, unused
-                        // from here, in case that flow is wanted elsewhere
-                        // later — nothing was deleted, just un-linked.
+                        // The two primary Radio-screen actions. TELL ME MORE
+                        // is the UI + integration point for the future AI
+                        // narration feature — it hands off whatever
+                        // structured context the current segment carries
+                        // (see AudioSegment.tellMeMoreContext) to
+                        // TellMeMoreScreen; no AI is wired up yet.
                         PrimaryActionCard(
-                          icon: Icons.explore_rounded,
-                          title: 'DISCOVER THIS AREA',
+                          icon: Icons.chat_bubble_rounded,
+                          title: 'TELL ME MORE',
                           subtitle:
-                              'History, wildlife, attractions & tours for wherever you are',
-                          onTap: () =>
-                              context.push(AppRoute.discoverArea.path),
+                              'Ask about what the DJ is talking about right now',
+                          onTap: () => context.push(
+                            AppRoute.tellMeMore.path,
+                            extra: nowPlaying?.tellMeMoreContext,
+                          ),
                         ),
                         const SizedBox(height: RD.md),
                         PrimaryActionCard(
                           icon: Icons.diamond_rounded,
-                          title: 'LOCAL GEMS',
+                          title: 'NEARBY GEMS',
                           subtitle:
                               'Find great places to eat, drink & explore nearby',
                           onTap: () => context.push(AppRoute.localGems.path),
@@ -512,6 +513,17 @@ class _PlayerState extends ConsumerState<_Player> {
                     builder: (_) => const StationsScreen(),
                   ),
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.explore_rounded, color: RD.green),
+              title: const Text(
+                'Discover this area',
+                style: TextStyle(color: RD.textPrimary),
+              ),
+              onTap: () {
+                Navigator.pop(sheet);
+                context.push(AppRoute.discoverArea.path);
               },
             ),
             ListTile(

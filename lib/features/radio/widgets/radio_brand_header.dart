@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 
-/// The ExplorerOS Radio brand header: leading action (menu), a centered
-/// radio-wave glyph + "EXPLOREROS RADIO" wordmark with the green
+/// The Sunshine Travel Radio brand header: leading action (menu), a centered
+/// radio-wave glyph + "SUNSHINE TRAVEL RADIO" wordmark with the green
 /// "EVERY PLACE HAS A STORY" tagline, and a trailing action (notifications).
 class RadioBrandHeader extends StatelessWidget {
   const RadioBrandHeader({
@@ -52,9 +52,8 @@ class _Wordmark extends StatelessWidget {
             text: const TextSpan(
               style: RD.wordmark,
               children: [
-                TextSpan(text: 'EXPLORER'),
-                TextSpan(text: 'OS', style: TextStyle(color: RD.green)),
-                TextSpan(text: ' RADIO'),
+                TextSpan(text: 'SUNSHINE TRAVEL'),
+                TextSpan(text: ' RADIO', style: TextStyle(color: RD.green)),
               ],
             ),
           ),

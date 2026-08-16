@@ -6,7 +6,9 @@ import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_clip.dart
 import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:explorer_os_mobile/features/dj/models/dj_clip.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
@@ -113,8 +115,8 @@ class DjBanterScheduler {
     final director = _gpsDirector;
     final ctxFn = _banterContext;
     if (director == null || ctxFn == null || _banterLibrary.isEmpty) return null;
-    final sel = director.pickAny(
-        _banterLibrary, _banterPriority, ctxFn(), _banterTrip);
+    final ctx = ctxFn();
+    final sel = director.pickAny(_banterLibrary, _banterPriority, ctx, _banterTrip);
     if (sel == null) return null;
     _onBanterPlayed?.call(sel.clip.id);
     final hasAudio = sel.clip.hasAudio;
@@ -128,6 +130,18 @@ class DjBanterScheduler {
       spokenText: hasAudio ? null : sel.text,
       interruptible: true,
       resumeAfter: false,
+      tellMeMoreContext: TellMeMoreContext(
+        subject: ctx.upcomingAttraction ?? ctx.park ?? ctx.county,
+        locationId: null,
+        destinationId: sel.clip.destinationId,
+        destinationCode: sel.clip.destinationCode,
+        category: sel.clip.category.id,
+        banterText: sel.text,
+        knowledgeContentId: sel.clip.id,
+        location: (ctx.latitude != null && ctx.longitude != null)
+            ? GeoPoint(latitude: ctx.latitude!, longitude: ctx.longitude!)
+            : null,
+      ),
     );
   }
 

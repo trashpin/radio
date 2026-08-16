@@ -25,6 +25,7 @@ enum AppRoute {
   explorerMode('/explorer-mode'),
   iSeeSomething('/i-see-something'),
   localGems('/local-gems'),
+  tellMeMore('/tell-me-more'),
   stationSelect('/station-select'),
   discover('/discover'),
   discoverArea('/discover-area'),

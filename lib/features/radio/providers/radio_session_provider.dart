@@ -609,7 +609,7 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     nearbyLakes: named(['lake']),
     nearbyTrails: named(['trail']),
     nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
-    station: stationName ?? 'Explorer Radio',
+    station: stationName ?? 'Sunshine Travel Radio',
     // Time-of-day + season + live-weather aware banter.
     moment: BanterMoment.now(
       weatherCondition: w?.condition,

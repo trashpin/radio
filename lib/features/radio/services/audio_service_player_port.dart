@@ -58,7 +58,7 @@ class RadioBackgroundAudio {
       builder: ExplorerAudioHandler.new,
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.exploreros.audio',
-        androidNotificationChannelName: 'ExplorerOS Radio',
+        androidNotificationChannelName: 'Sunshine Travel Radio',
         androidNotificationOngoing: true,
       ),
     );
