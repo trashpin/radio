@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/locations/models/master_location.dar
 import 'package:explorer_os_mobile/features/narration/data/destination_narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
+import 'package:explorer_os_mobile/shared/models/destination.dart';
 
 /// Maps a DJ Banter category (the `category` token on [TellMeMoreContext])
 /// to the ordered list of narration `script_type`s that best answer "tell me
@@ -59,15 +60,16 @@ List<String> narrationTypesForBanterCategory(String? categoryId) {
   }
 }
 
-/// Resolves a `destination_code` (all a DJ Banter Studio clip carries) to the
-/// `destination_id` uuid `destination_narrations` is actually keyed by.
+/// Resolves a `destination_code` (all a DJ Banter Studio clip carries) to its
+/// full [Destination] row — the `destination_id` uuid `destination_narrations`
+/// is keyed by, and the `hero_image` used for the player's DJ-topic image.
 /// Cached per code for the app session — codes don't change at runtime.
-final _destinationIdByCodeProvider =
-    FutureProvider.family<String?, String>((ref, code) async {
+final _destinationByCodeProvider =
+    FutureProvider.family<Destination?, String>((ref, code) async {
   final matches = await ref
       .watch(destinationRepositoryProvider)
       .getWhere('destination_code', code);
-  return matches.isEmpty ? null : matches.first.id;
+  return matches.isEmpty ? null : matches.first;
 });
 
 /// The best published narration to show for a "Tell Me More" tap, or null
@@ -78,9 +80,9 @@ final tellMeMoreNarrationProvider = FutureProvider.autoDispose
   if ((destinationId == null || destinationId.isEmpty) &&
       (ctx.destinationCode ?? '').isNotEmpty) {
     // DJ banter clips only carry destination_code today, not destination_id.
-    destinationId = await ref.watch(
-      _destinationIdByCodeProvider(ctx.destinationCode!).future,
-    );
+    final dest =
+        await ref.watch(_destinationByCodeProvider(ctx.destinationCode!).future);
+    destinationId = dest?.id;
   }
   if (destinationId == null || destinationId.isEmpty) return null;
 
@@ -291,12 +293,25 @@ final tellMeMoreResultProvider = FutureProvider.autoDispose
       if (county == null || county.isEmpty) return null;
       return ref.watch(_countyTellMeMoreProvider(county).future);
     default:
+      // Resolve the destination itself first (name + hero image) so the
+      // player can show exactly what the DJ is talking about even when its
+      // full-story narration isn't published yet — image and "is there a
+      // full story" are independent questions.
+      Destination? dest;
+      if ((ctx.destinationCode ?? '').isNotEmpty) {
+        dest = await ref
+            .watch(_destinationByCodeProvider(ctx.destinationCode!).future);
+      }
       final narration = await ref.watch(tellMeMoreNarrationProvider(ctx).future);
-      if (narration == null) return null;
+      if (dest == null && narration == null) return null;
       return TellMeMoreResult(
-        title: narration.title ?? narration.type?.label ?? 'The full story',
-        history: narration.script,
-        audioUrl: narration.hasAudio ? narration.audioUrl : null,
+        title: narration?.title ??
+            narration?.type?.label ??
+            dest?.name ??
+            'The full story',
+        imageUrl: dest?.imageUrl,
+        history: narration?.script,
+        audioUrl: (narration?.hasAudio ?? false) ? narration!.audioUrl : null,
       );
   }
 });

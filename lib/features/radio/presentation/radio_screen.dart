@@ -23,6 +23,7 @@ import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
+import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/now_playing.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_brand_header.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -219,6 +220,19 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // What's on air right now (never the internal category).
     final nowPlaying = playback.current?.segment;
+
+    // What the DJ is CURRENTLY TALKING ABOUT — distinct from the GPS-based
+    // playerCtx above. A DJ banter/narration segment already carries a
+    // TellMeMoreContext with whatever destination/location it's scoped to
+    // (dj_banter_scheduler.dart); tellMeMoreResultProvider resolves that
+    // into a title + image the same way TELL ME MORE itself would, so the
+    // two can never disagree. Null while music/generic banter (no specific
+    // subject) is on air, or before the async lookup resolves.
+    final djCtx = nowPlaying?.tellMeMoreContext;
+    final djTopic = (djCtx != null && djCtx.hasContext)
+        ? ref.watch(tellMeMoreResultProvider(djCtx)).value
+        : null;
+
     final title = switch (interruption) {
       _Interruption.iSeeSomething => obs.species!.commonName,
       _Interruption.whatsNearMe => nearby.location?.name ?? 'Nearby',
@@ -244,21 +258,27 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
-    // The location-aware context replaces the normal music artwork (event >
-    // park > spring > town > county) whenever one is active — the music
-    // itself is unaffected, only what's displayed changes.
+    // Priority: what the DJ is specifically talking about (djTopic) > the
+    // GPS-based event/park/spring/town/county context (playerCtx) > the
+    // normal music artwork > generic fallbacks. The music itself is
+    // unaffected either way — only what's displayed changes.
     final heroImage =
         obs.species?.heroImageUrl ??
-        ((playerCtx?.imageUrl ?? '').isNotEmpty
-            ? playerCtx!.imageUrl
-            : ((songCover ?? '').isNotEmpty
-                  ? songCover
-                  : (nearest?.location.images.isNotEmpty ?? false
-                        ? nearest!.location.images.first
-                        : widget.station.imageUrl)));
-    final nearbyPlace = playerCtx?.title ?? nearest?.location.name ?? widget.station.name;
-    final nearbyDistance = playerCtx?.distanceLabel ??
-        (nearest == null ? null : _miles(nearest.distanceMeters));
+        ((djTopic?.imageUrl ?? '').isNotEmpty
+            ? djTopic!.imageUrl
+            : ((playerCtx?.imageUrl ?? '').isNotEmpty
+                  ? playerCtx!.imageUrl
+                  : ((songCover ?? '').isNotEmpty
+                        ? songCover
+                        : (nearest?.location.images.isNotEmpty ?? false
+                              ? nearest!.location.images.first
+                              : widget.station.imageUrl))));
+    final nearbyPlace =
+        djTopic?.title ?? playerCtx?.title ?? nearest?.location.name ?? widget.station.name;
+    final nearbyDistance = djTopic != null
+        ? null
+        : (playerCtx?.distanceLabel ??
+            (nearest == null ? null : _miles(nearest.distanceMeters)));
 
     void backToRadio() {
       if (obs.active) ref.read(observationControllerProvider.notifier).clear();
@@ -372,20 +392,23 @@ class _PlayerState extends ConsumerState<_Player> {
                         const SizedBox(height: RD.xl),
                         // The two primary Radio-screen actions. TELL ME MORE
                         // always reads from the SAME context driving the
-                        // hero/teaser above (playerCtx) when one is active —
-                        // never a different one — falling back to whatever
-                        // the DJ banter segment on air carries when no
-                        // event/park/spring/town/county tier qualifies.
+                        // hero image above — the DJ's specific current topic
+                        // (djCtx) first, since that's what's actually on air
+                        // right now, falling back to the GPS-based
+                        // event/park/spring/town/county tier (playerCtx)
+                        // when the DJ isn't discussing anything identifiable.
+                        // Never a different subject than what's displayed.
                         PrimaryActionCard(
                           icon: Icons.chat_bubble_rounded,
                           title: 'TELL ME MORE',
-                          subtitle: playerCtx != null
-                              ? 'The full story on ${playerCtx.title}'
+                          subtitle: (djTopic?.title ?? playerCtx?.title) != null
+                              ? 'The full story on ${djTopic?.title ?? playerCtx?.title}'
                               : 'Ask about what the DJ is talking about right now',
                           onTap: () => context.push(
                             AppRoute.tellMeMore.path,
-                            extra: playerCtx?.tellMeMoreContext ??
-                                nowPlaying?.tellMeMoreContext,
+                            extra: (djCtx != null && djCtx.hasContext)
+                                ? djCtx
+                                : playerCtx?.tellMeMoreContext,
                           ),
                         ),
                         const SizedBox(height: RD.md),
