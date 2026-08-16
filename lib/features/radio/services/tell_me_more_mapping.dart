@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/destinations/data/destination_repository.dart';
 import 'package:explorer_os_mobile/features/narration/data/destination_narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
@@ -51,16 +52,34 @@ List<String> narrationTypesForBanterCategory(String? categoryId) {
   }
 }
 
+/// Resolves a `destination_code` (all a DJ Banter Studio clip carries) to the
+/// `destination_id` uuid `destination_narrations` is actually keyed by.
+/// Cached per code for the app session — codes don't change at runtime.
+final _destinationIdByCodeProvider =
+    FutureProvider.family<String?, String>((ref, code) async {
+  final matches = await ref
+      .watch(destinationRepositoryProvider)
+      .getWhere('destination_code', code);
+  return matches.isEmpty ? null : matches.first.id;
+});
+
 /// The best published narration to show for a "Tell Me More" tap, or null
 /// when the destination/category has nothing published yet.
 final tellMeMoreNarrationProvider = FutureProvider.autoDispose
-    .family<DestinationNarration?, TellMeMoreContext>((ref, ctx) {
-  final destinationId = ctx.destinationId;
-  if (destinationId == null || destinationId.isEmpty) {
-    return Future.value(null);
+    .family<DestinationNarration?, TellMeMoreContext>((ref, ctx) async {
+  var destinationId = ctx.destinationId;
+  if ((destinationId == null || destinationId.isEmpty) &&
+      (ctx.destinationCode ?? '').isNotEmpty) {
+    // DJ banter clips only carry destination_code today, not destination_id.
+    destinationId = await ref.watch(
+      _destinationIdByCodeProvider(ctx.destinationCode!).future,
+    );
   }
+  if (destinationId == null || destinationId.isEmpty) return null;
+
   final types = narrationTypesForBanterCategory(ctx.category);
-  if (types.isEmpty) return Future.value(null);
+  if (types.isEmpty) return null;
+
   return ref.watch(destinationNarrationRepositoryProvider).bestPublishedFor(
         destinationId: destinationId,
         scriptTypes: types,

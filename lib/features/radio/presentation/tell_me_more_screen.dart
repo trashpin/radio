@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
+import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
+import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -58,6 +61,26 @@ class _NarrationLookup extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Play the full story through the same audio engine that plays
+    // everything else (interrupt → auto-resume), the moment it's found —
+    // fires once per lookup, not on every rebuild.
+    ref.listen(tellMeMoreNarrationProvider(ctx), (previous, next) {
+      final narration = next.value;
+      if (narration == null || !narration.hasAudio) return;
+      ref.read(radioEngineControllerProvider.notifier).requestInterruption(
+        AudioSegment(
+          id: 'tellmemore:${narration.id}:'
+              '${DateTime.now().millisecondsSinceEpoch}',
+          title: narration.title ?? narration.type?.label ?? 'The full story',
+          type: AudioSegmentType.narration,
+          priority: PlaybackPriority.scheduledAnnouncement,
+          audioUrl: narration.audioUrl,
+          interruptible: false,
+          resumeAfter: true,
+        ),
+      );
+    });
+
     final async = ref.watch(tellMeMoreNarrationProvider(ctx));
     return async.when(
       loading: () =>
@@ -89,6 +112,14 @@ class _FullStory extends StatelessWidget {
             textAlign: TextAlign.center,
             style: RD.title.copyWith(fontSize: 20),
           ),
+          if (narration.hasAudio) ...[
+            const SizedBox(height: RD.xs),
+            Text(
+              'Now playing on the radio',
+              textAlign: TextAlign.center,
+              style: RD.caption.copyWith(color: RD.green),
+            ),
+          ],
           const SizedBox(height: RD.lg),
           GlassPanel(
             child: Text(
