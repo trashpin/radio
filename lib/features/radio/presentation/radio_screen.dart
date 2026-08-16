@@ -11,7 +11,6 @@ import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.da
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
-import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -412,20 +411,26 @@ class _PlayerState extends ConsumerState<_Player> {
                           ),
                         ),
                         const SizedBox(height: RD.md),
+                        // DISCOVER reuses the existing "Discover This Area"
+                        // hub (already reachable from the menu) — nearby
+                        // attractions and places for wherever the listener
+                        // currently is.
+                        PrimaryActionCard(
+                          icon: Icons.explore_rounded,
+                          title: 'DISCOVER',
+                          subtitle: 'Nearby attractions and places',
+                          onTap: () => context.push(AppRoute.discoverArea.path),
+                        ),
+                        const SizedBox(height: RD.md),
                         PrimaryActionCard(
                           icon: Icons.diamond_rounded,
-                          title: 'NEARBY GEMS',
+                          title: 'GEMS',
                           subtitle:
-                              'Find great places to eat, drink & explore nearby',
+                              'Curated food, museums, hidden gems & local finds',
                           onTap: () => context.push(AppRoute.localGems.path),
                         ),
                       ],
                     ),
-            ),
-            const SizedBox(height: RD.xl),
-            _NearbyStories(
-              stories: nearbyStories.take(8).toList(),
-              onViewMap: () => context.go(AppRoute.map.path),
             ),
             const SizedBox(height: RD.lg),
             _StatusBar(storyCount: nearbyStories.length, weather: weather),
@@ -829,119 +834,6 @@ class _TransportRow extends StatelessWidget {
             child: Equalizer(active: active, bars: 6, height: 40, seed: 9),
           ),
         ),
-      ],
-    );
-  }
-}
-
-// ── Nearby Stories carousel ──────────────────────────────────────────────────
-
-class _NearbyStories extends StatefulWidget {
-  const _NearbyStories({required this.stories, required this.onViewMap});
-  final List<NearbyLocation> stories;
-  final VoidCallback onViewMap;
-
-  @override
-  State<_NearbyStories> createState() => _NearbyStoriesState();
-}
-
-class _NearbyStoriesState extends State<_NearbyStories> {
-  final _controller = PageController(viewportFraction: 0.62);
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final stories = widget.stories;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text('NEARBY STORIES', style: RD.sectionLabel),
-            const Spacer(),
-            InkWell(
-              onTap: widget.onViewMap,
-              borderRadius: BorderRadius.circular(RD.rSm),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: RD.xs,
-                  vertical: 2,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'VIEW MAP',
-                      style: RD.sectionLabel.copyWith(fontSize: 12),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.location_on_rounded,
-                      color: RD.green,
-                      size: 15,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: RD.md),
-        if (stories.isEmpty)
-          GlassPanel(
-            child: Row(
-              children: [
-                const Icon(Icons.explore_rounded, color: RD.green),
-                const SizedBox(width: RD.md),
-                Expanded(
-                  child: Text(
-                    'Finding stories around you… make sure location is on.',
-                    style: RD.body,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else ...[
-          SizedBox(
-            height: 168,
-            child: PageView.builder(
-              controller: _controller,
-              padEnds: false,
-              onPageChanged: (i) => setState(() => _page = i),
-              itemCount: stories.length,
-              itemBuilder: (_, i) {
-                final s = stories[i];
-                final mi = s.distanceMeters / 1609.344;
-                return Padding(
-                  padding: const EdgeInsets.only(right: RD.md),
-                  child: StoryCard(
-                    width: double.infinity,
-                    title: s.location.name,
-                    category: s.location.type.label,
-                    imageUrl: s.location.images.isNotEmpty
-                        ? s.location.images.first
-                        : null,
-                    distanceLabel: '${mi.toStringAsFixed(mi < 10 ? 1 : 0)} mi',
-                    onTap: () => showDestinationDetail(
-                      context,
-                      s.location,
-                      distanceMeters: s.distanceMeters,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: RD.md),
-          PageDots(count: stories.length.clamp(1, 8), index: _page.clamp(0, 7)),
-        ],
       ],
     );
   }
