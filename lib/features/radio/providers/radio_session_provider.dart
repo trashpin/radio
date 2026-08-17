@@ -31,6 +31,8 @@ import 'package:explorer_os_mobile/features/location_intelligence/models/content
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/providers/explore_providers.dart';
+import 'package:explorer_os_mobile/features/radio/services/explore_rotation_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/weather/county_radio.dart';
@@ -96,6 +98,12 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // play_once, and cooldown_seconds (migration 0040). County/city/community
   // stay owned by the directors above so nothing double-fires.
   _attachLocationTriggers(ref);
+
+  // MARION COUNTY EXPLORE: pushes the existing-content candidate pool into the
+  // engine's Explore rotation and toggles it on/off with the traveler's mode
+  // switch + Marion County GPS gate. Sits alongside every director above —
+  // Radio mode is completely untouched.
+  _attachExplore(ref, engine);
 
   // GPS-triggered location radio from the Supabase `geofences` table: on each
   // GPS update, ask `get_nearby_geofences()` what the traveler is inside, feed
@@ -684,6 +692,54 @@ void _attachLocationTriggers(Ref ref) {
     locationContextProvider,
     (_, next) => handle(next),
   );
+}
+
+/// Wires MARION COUNTY EXPLORE into the live radio, entirely on top of
+/// existing systems:
+///  - keeps [RadioEngineService.explore]'s candidate pool in sync with
+///    [exploreCandidatesProvider] (existing `location_content`,
+///    `destination_narrations`, `counties`, `species`, and the master
+///    `locations` table — no new content source);
+///  - flips [RadioEngineService.exploreMode] with [exploreActiveProvider]
+///    (the traveler's toggle AND the existing GPS county signal being
+///    "Marion" — never generates Explore content outside Marion, spec
+///    section 1);
+///  - checks, on every GPS update, whether WHERE YOU'RE HEADED has become
+///    close enough to jump the rotation (spec section 7), reusing the
+///    existing [TravelContext.nextAttraction] distance/ETA the GPS engine
+///    already computes as the "worth interrupting for" signal, and firing it
+///    through the SAME `requestInterruption` path every other director uses.
+void _attachExplore(Ref ref, RadioEngineService engine) {
+  void pushCandidates() {
+    engine.explore.updateCandidates(ref.read(exploreCandidatesProvider));
+  }
+
+  pushCandidates();
+  ref.listen(exploreCandidatesProvider, (_, _) => pushCandidates());
+
+  void syncMode() {
+    engine.setExploreMode(ref.read(exploreActiveProvider));
+  }
+
+  syncMode();
+  ref.listen(exploreActiveProvider, (_, _) => syncMode());
+
+  void checkUrgent() {
+    if (!ref.read(exploreActiveProvider)) return;
+    final headed = ref.read(exploreCandidatesProvider)[ExploreCategory.whereHeaded];
+    if (headed == null || headed.isEmpty) return;
+    final next = ref.read(gpsControllerProvider).nextAttraction;
+    final closeEnough = next != null &&
+        (next.distanceMeters <= 1609.344 ||
+            (next.eta != null && next.eta! <= const Duration(minutes: 3)));
+    final seg = engine.explore.urgent(headed.first, isCloseEnough: closeEnough);
+    if (seg != null) {
+      ref.read(radioEngineControllerProvider.notifier).requestInterruption(seg);
+    }
+  }
+
+  checkUrgent();
+  ref.listen(gpsControllerProvider, (_, _) => checkUrgent());
 }
 
 // --- GPS geofence → radio (Supabase `geofences` + get_nearby_geofences) ------
