@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 /// Sidebar groupings for the admin modules.
 enum AdminGroup {
   overview('Overview'),
-  content('Locations'),
+  content('Content'),
   audio('Radio'),
   nature('Nature'),
   assets('Assets'),
