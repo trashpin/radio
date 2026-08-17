@@ -477,6 +477,81 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
   return { done: true, msg: `voiced ${loc.name} (${Math.round(bytes.length / 1024)} KB)` };
 }
 
+// ── content: generate + SAVE short/long description + narration script ──
+// For imported/bare master locations (e.g. OpenStreetMap drafts) that have a
+// name + type + place but no copy. Generates type-appropriate text and fills
+// ONLY the empty fields (never clobbers an admin's writing). Leaves
+// content_status untouched, so the location stays a hidden draft until an admin
+// reviews the generated copy and publishes it — this produces the text to
+// review, it does not publish. Triggered by an `audio` job whose notes contain
+// `master_location:content;id=<uuid>`.
+export async function doLocationContent(
+  job: any,
+): Promise<{ done: boolean; msg: string }> {
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no location id in notes" };
+  const rows = await sbGet(
+    `locations?id=eq.${id}&select=id,name,category,county,city,state,description,` +
+      `short_description,long_description,narration_script&limit=1`,
+  );
+  const loc = rows[0];
+  if (!loc) return { done: true, msg: `location not found: ${id}` };
+
+  const cur = (v: unknown) => String(v ?? "").trim();
+  // Nothing to do if a human already wrote the key fields.
+  if (cur(loc.short_description) && cur(loc.long_description) &&
+      cur(loc.narration_script)) {
+    return { done: true, msg: `content already present for ${loc.name}` };
+  }
+
+  const typ = String(loc.category ?? "point of interest").replace(/_/g, " ");
+  const place = [
+    loc.city,
+    loc.county ? `${loc.county} County` : null,
+    cur(loc.state) || "Florida",
+  ].filter(Boolean).join(", ");
+
+  const gen = await openaiJson(
+    "You are a professional travel writer and radio narrator for a US travel " +
+      "companion app. Write accurate, evocative copy. Do NOT invent specific " +
+      "numbers, dates, prices, phone numbers, hours, or unverifiable claims.",
+    `Return JSON with keys "short_description", "long_description", ` +
+      `"narration_script" for this place.\n` +
+      `Place: ${loc.name}\nType: ${typ}\nLocation: ${place}\n` +
+      (cur(loc.description) ? `Known context: ${loc.description}\n` : "") +
+      `- short_description: one vivid sentence, max 160 characters.\n` +
+      `- long_description: 2-3 short paragraphs a traveler would enjoy, ` +
+      `tailored to a ${typ}.\n` +
+      `- narration_script: a warm 60-90 word spoken radio narration ` +
+      `introducing it (no title, no quotes).\n` +
+      `Keep everything factual and non-committal about specifics you cannot verify.`,
+  );
+
+  const patch: Record<string, unknown> = {};
+  if (!cur(loc.short_description) && gen.short_description) {
+    patch.short_description = String(gen.short_description).trim();
+  }
+  if (!cur(loc.long_description) && gen.long_description) {
+    patch.long_description = String(gen.long_description).trim();
+  }
+  if (!cur(loc.narration_script) && gen.narration_script) {
+    patch.narration_script = String(gen.narration_script).trim();
+  }
+  // `description` is what the map/search/legacy narration read; seed it from
+  // the short description when empty so those surfaces improve too.
+  if (!cur(loc.description) && gen.short_description) {
+    patch.description = String(gen.short_description).trim();
+  }
+  if (Object.keys(patch).length === 0) {
+    return { done: true, msg: `no new content produced for ${loc.name}` };
+  }
+  await sbPatch(`locations?id=eq.${id}`, patch);
+  return {
+    done: true,
+    msg: `generated content for ${loc.name} (${Object.keys(patch).join(", ")})`,
+  };
+}
+
 // Extract an ElevenLabs voice id from a job note like "...;voice=<id>".
 function noteVoiceId(notes: string | null): string | null {
   const m = /voice=([A-Za-z0-9]+)/.exec(notes ?? "");
@@ -690,13 +765,21 @@ async function processJob(job: any): Promise<void> {
       case "narration_audio":
         res = await doAudio(job);
         break;
-      case "audio":
-        // `audio` jobs are shared: a `nearby_gem:*` note voices a Nearby Gem,
-        // a `master_location:*` note voices a master location.
-        res = String(job.notes ?? "").startsWith("nearby_gem")
-            ? await doGemAudio(job)
-            : await doLocationAudio(job);
+      case "audio": {
+        // `audio` jobs are shared by target (from the note prefix):
+        //   • `nearby_gem:*`             → voice a Nearby Gem
+        //   • `master_location:content*` → generate TEXT content for a location
+        //   • `master_location:*`        → voice a master location
+        const note = String(job.notes ?? "");
+        if (note.startsWith("nearby_gem")) {
+          res = await doGemAudio(job);
+        } else if (note.includes("master_location:content")) {
+          res = await doLocationContent(job);
+        } else {
+          res = await doLocationAudio(job);
+        }
         break;
+      }
       case "wikimedia_import":
         res = await doWikimediaImport(job);
         break;

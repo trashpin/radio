@@ -25,6 +25,7 @@ enum BanterSituation {
   trail('Trail'),
   sunset('Sunset'),
   sunrise('Sunrise'),
+  countyFact('County fact'),
   stationId('Station ID');
 
   const BanterSituation(this.label);
@@ -47,6 +48,8 @@ class BanterContext {
     this.theme,
     this.djName,
     this.story,
+    this.county,
+    this.fact,
   });
 
   final String station;
@@ -62,6 +65,11 @@ class BanterContext {
   final String? djName;
   final String? story;
 
+  /// Current county name (e.g. "Marion") + one admin-authored fact about it
+  /// (from `CountyConfig.facts`) — used by [BanterSituation.countyFact].
+  final String? county;
+  final String? fact;
+
   Map<String, String> placeholders() => {
         'station': station,
         'park': park,
@@ -75,6 +83,8 @@ class BanterContext {
         'theme': theme ?? "Florida's wild places",
         'dj': djName ?? 'your host',
         'story': story ?? 'a story worth hearing',
+        'county': county ?? 'this area',
+        'fact': fact ?? '',
       };
 }
 
@@ -216,6 +226,16 @@ const List<BanterTemplate> kBanterTemplates = [
       'The sun\'s going down over {park} — golden hour on {station}. Watch for {wildlife} coming out to feed.'),
   BanterTemplate(DjStation.all, BanterSituation.sunrise,
       'Good morning from {park}! Sunrise is the best time to spot {wildlife} — here\'s a fresh track on {station}.'),
+
+  // ── County fact (admin-authored, from CountyConfig.facts) ──
+  BanterTemplate(DjStation.all, BanterSituation.countyFact,
+      'Here\'s a bit of local flavor from {county} County — {fact}'),
+  BanterTemplate(DjStation.all, BanterSituation.countyFact,
+      'Fun fact about {county} County: {fact}'),
+  BanterTemplate(DjStation.all, BanterSituation.countyFact,
+      'A little local knowledge as we roll through {county} County — {fact}'),
+  BanterTemplate(DjStation.all, BanterSituation.countyFact,
+      'Did you know? {fact} That\'s {county} County for you.'),
 
   // ── Station ID ──
   BanterTemplate(DjStation.all, BanterSituation.stationId,

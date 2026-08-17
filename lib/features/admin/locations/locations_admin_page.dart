@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/admin/categories/category_repository
 import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
 import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/geofence_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/import/osm_import_dialog.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
@@ -72,6 +73,7 @@ class _OverviewTab extends ConsumerStatefulWidget {
 
 class _OverviewTabState extends ConsumerState<_OverviewTab> {
   bool _generating = false;
+  bool _generatingContent = false;
   bool _importing = false;
   bool _wikimedia = false;
 
@@ -180,14 +182,40 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
     }
   }
 
+  /// Prompts for a county (case-insensitive match, blank = every county —
+  /// the original all-at-once behavior is still there, just opt-in now
+  /// instead of the only option) before queuing missing-audio jobs, so a
+  /// backlog spanning many counties doesn't drown out the one you actually
+  /// want processed first — the queue is shared and only drains a few items
+  /// every 15 minutes, so scoping it matters.
   Future<void> _generateMissingAudio(List<MasterLocation> all) async {
-    final pending = all
-        .where((l) => l.status == LocationStatus.pending)
-        .toList();
+    final county = await showDialog<String>(
+      context: context,
+      builder: (_) => _CountyScopeDialog(
+        counties: all
+            .map((l) => l.county)
+            .whereType<String>()
+            .where((c) => c.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(),
+      ),
+    );
+    if (county == null) return; // cancelled
+
+    var pending =
+        all.where((l) => l.status == LocationStatus.pending).toList();
+    if (county.isNotEmpty) {
+      pending = pending
+          .where((l) => (l.county ?? '').toLowerCase() == county.toLowerCase())
+          .toList();
+    }
     if (pending.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No pending locations — all narrated.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(county.isEmpty
+            ? 'No pending locations — all narrated.'
+            : 'No pending locations in $county.'),
+      ));
       return;
     }
     setState(() => _generating = true);
@@ -198,7 +226,9 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Queued audio generation for $n location(s).'),
+            content: Text(county.isEmpty
+                ? 'Queued audio generation for $n location(s).'
+                : 'Queued audio generation for $n location(s) in $county.'),
           ),
         );
       }
@@ -210,6 +240,43 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
       }
     } finally {
       if (mounted) setState(() => _generating = false);
+    }
+  }
+
+  Future<void> _generateMissingContent(List<MasterLocation> all) async {
+    // Locations that have a name + type but no written description yet — the
+    // bare imports (OpenStreetMap etc.). Exclude disabled rows.
+    final needy = all
+        .where((l) =>
+            l.status != LocationStatus.disabled &&
+            locationIsMissing(l, MissingContent.description))
+        .toList();
+    if (needy.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No locations missing written content.')),
+      );
+      return;
+    }
+    setState(() => _generatingContent = true);
+    try {
+      final repo = ref.read(locationRepositoryProvider);
+      final n = await repo.enqueueMissingContent(needy);
+      await repo.triggerNarrationWorker();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Queued AI content for $n location(s). They stay '
+                'hidden drafts until you review & publish.'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not queue jobs: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _generatingContent = false);
     }
   }
 
@@ -330,6 +397,22 @@ class _OverviewTabState extends ConsumerState<_OverviewTab> {
                     )
                   : const Icon(Icons.graphic_eq_rounded, size: 18),
               label: Text(_generating ? 'Queuing…' : 'Generate Missing Audio'),
+            ),
+            const Gap.h(AppSpacing.sm),
+            FilledButton.icon(
+              onPressed: _generatingContent
+                  ? null
+                  : () => _generateMissingContent(all),
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: _generatingContent
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome_rounded, size: 18),
+              label: Text(
+                  _generatingContent ? 'Queuing…' : 'Generate Missing Content'),
             ),
           ],
         ),
@@ -671,6 +754,13 @@ class _ListTabState extends ConsumerState<_ListTab> {
               'toggle map/radio visibility.',
           actions: [
             OutlinedButton.icon(
+              onPressed: _busy ? null : () => showOsmImportDialog(context),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+              icon: const Icon(Icons.public_rounded, size: 18),
+              label: const Text('Import (OSM)'),
+            ),
+            const Gap.h(AppSpacing.sm),
+            OutlinedButton.icon(
               onPressed: _busy ? null : () => _attachAll(items),
               style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
               icon: _busy
@@ -914,6 +1004,15 @@ class _Row extends ConsumerWidget {
                         label: 'Disabled',
                       ),
                     },
+                    if (item.isPublishBlocked) ...[
+                      const Gap.h(AppSpacing.xs),
+                      StatusBadge(
+                        BadgeStatus.draft,
+                        label: item.contentStatus == ContentStatus.archived
+                            ? 'Archived'
+                            : 'Draft — hidden',
+                      ),
+                    ],
                     if (item.featured) ...[
                       const Gap.h(AppSpacing.xs),
                       const Icon(
@@ -1014,6 +1113,20 @@ class _Row extends ConsumerWidget {
                 case 'hidden':
                   await repo.update(item.id, {'hidden': !item.hidden});
                   refresh();
+                case 'publish':
+                  await repo.update(item.id, {'content_status': 'published'});
+                  refresh();
+                case 'unpublish':
+                  await repo.update(item.id, {'content_status': 'draft'});
+                  refresh();
+                case 'gencontent':
+                  await repo.enqueueContentJob(item);
+                  await repo.triggerNarrationWorker();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Queued AI content — refresh in a '
+                            'moment to see the generated copy.')));
+                  }
                 case 'delete':
                   await repo.delete(item.id);
                   refresh();
@@ -1032,6 +1145,10 @@ class _Row extends ConsumerWidget {
                 value: 'attach',
                 child: Text('Attach narration'),
               ),
+              const PopupMenuItem(
+                value: 'gencontent',
+                child: Text('Generate AI content'),
+              ),
               const PopupMenuItem(value: 'merge', child: Text('Merge into…')),
               PopupMenuItem(
                 value: 'active',
@@ -1045,6 +1162,16 @@ class _Row extends ConsumerWidget {
                 value: 'hidden',
                 child: Text(item.hidden ? 'Show on map' : 'Hide from map'),
               ),
+              if (item.isPublishBlocked)
+                const PopupMenuItem(
+                  value: 'publish',
+                  child: Text('Publish (make visible to users)'),
+                )
+              else
+                const PopupMenuItem(
+                  value: 'unpublish',
+                  child: Text('Unpublish (hide as Draft)'),
+                ),
               const PopupMenuDivider(),
               const PopupMenuItem(value: 'delete', child: Text('Delete')),
             ],
@@ -1194,6 +1321,7 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late bool _active = widget.item?.active ?? true;
   late bool _featured = widget.item?.featured ?? false;
   late bool _hidden = widget.item?.hidden ?? false;
+  late ContentStatus? _contentStatus = widget.item?.contentStatus;
   late bool _familyFriendly = widget.item?.familyFriendly ?? false;
   late bool _petFriendly = widget.item?.petFriendly ?? false;
   late bool _wheelchair = widget.item?.wheelchairAccessible ?? false;
@@ -1260,6 +1388,9 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'active': _active,
       'featured': _featured,
       'hidden': _hidden,
+      // Editorial publish status. null = leave as the computed default
+      // (grandfathered visible); 'draft'/'archived' hide from users.
+      'content_status': _contentStatus?.id,
       'images': _images,
       'audio_files': _audio,
       // Richer PoI fields (dropped automatically if migration 0038 isn't applied).
@@ -1530,6 +1661,35 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
                   ),
                 ],
               ),
+              const Gap.v(AppSpacing.md),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Publish status',
+                  helperText:
+                      'Draft & Archived stay hidden from users until published '
+                      '(imported places arrive as Draft).',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<ContentStatus?>(
+                    isExpanded: true,
+                    value: _contentStatus,
+                    items: [
+                      const DropdownMenuItem<ContentStatus?>(
+                        value: null,
+                        child: Text('Auto (use readiness default)'),
+                      ),
+                      for (final s in ContentStatus.values)
+                        DropdownMenuItem<ContentStatus?>(
+                          value: s,
+                          child: Text(s.label),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => _contentStatus = v),
+                  ),
+                ),
+              ),
               if (_narrationResult != null) ...[
                 const Gap.v(AppSpacing.md),
                 _narrationPanel(context, _narrationResult!),
@@ -1756,4 +1916,56 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
           ],
         ),
       );
+}
+
+/// Small picker shown before "Generate Missing Audio" — pick a county to
+/// scope the queue to just that county, or leave blank for every county.
+class _CountyScopeDialog extends StatefulWidget {
+  const _CountyScopeDialog({required this.counties});
+  final List<String> counties;
+
+  @override
+  State<_CountyScopeDialog> createState() => _CountyScopeDialogState();
+}
+
+class _CountyScopeDialogState extends State<_CountyScopeDialog> {
+  String? _selected = 'Marion';
+
+  @override
+  Widget build(BuildContext context) {
+    final options = widget.counties;
+    final initial =
+        options.contains('Marion') ? 'Marion' : (options.isEmpty ? null : null);
+    _selected ??= initial;
+
+    return AlertDialog(
+      title: const Text('Generate missing audio for...'),
+      content: SizedBox(
+        width: 360,
+        child: DropdownButtonFormField<String?>(
+          initialValue: _selected,
+          decoration: const InputDecoration(
+            labelText: 'County',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            const DropdownMenuItem(value: null, child: Text('Every county')),
+            for (final c in options) DropdownMenuItem(value: c, child: Text(c)),
+          ],
+          onChanged: (v) => setState(() => _selected = v),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _selected ?? ''),
+          child: const Text('Queue'),
+        ),
+      ],
+    );
+  }
 }

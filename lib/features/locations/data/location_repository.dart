@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration_automation.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
@@ -147,6 +149,52 @@ class LocationRepository {
     return inserted['id']?.toString();
   }
 
+  /// Enqueues AI text-content generation (short/long description + narration
+  /// script) for each location that's missing copy — drained by the same
+  /// narration worker (`master_location:content` note → `doLocationContent`).
+  /// Imported/bare drafts get real, type-appropriate text to review; the
+  /// worker fills only empty fields and never publishes. Returns how many were
+  /// queued.
+  Future<int> enqueueMissingContent(List<MasterLocation> locations) async {
+    if (!SupabaseService.isConfigured || locations.isEmpty) return 0;
+    final rows = [
+      for (final l in locations)
+        {
+          'destination': l.name,
+          'job_type': 'audio',
+          'status': 'pending',
+          'latitude': l.latitude,
+          'longitude': l.longitude,
+          'county': l.county,
+          'progress': 0,
+          'notes': 'master_location:content;id=${l.id}',
+        },
+    ];
+    await SupabaseService.client.from('generation_jobs').insert(rows);
+    return rows.length;
+  }
+
+  /// Enqueues a single content-generation job for [location], returning the new
+  /// job id (for polling) — the text twin of [enqueueAudioJob].
+  Future<String?> enqueueContentJob(MasterLocation location) async {
+    if (!SupabaseService.isConfigured) return null;
+    final inserted = await SupabaseService.client
+        .from('generation_jobs')
+        .insert({
+          'destination': location.name,
+          'job_type': 'audio',
+          'status': 'pending',
+          'latitude': location.latitude,
+          'longitude': location.longitude,
+          'county': location.county,
+          'progress': 0,
+          'notes': 'master_location:content;id=${location.id}',
+        })
+        .select('id')
+        .single();
+    return inserted['id']?.toString();
+  }
+
   /// Asks the narration worker to drain the queue NOW, so a just-enqueued job
   /// runs immediately instead of waiting for the scheduled worker. Returns
   /// false if the `narration-worker` Edge Function isn't deployed/reachable
@@ -261,9 +309,22 @@ final masterLocationsProvider = FutureProvider<List<MasterLocation>>((ref) {
 /// shared [LocationEngine]. This is what Radio / GPS / Nearby Explorer read.
 final nearbyLocationsProvider = Provider<List<NearbyLocation>>((ref) {
   final center = ref.watch(mapCenterProvider);
-  if (center == null) return const [];
-  final all = ref.watch(masterLocationsProvider).value ?? const [];
-  return ref
+  if (center == null) {
+    debugPrint('[nearbyLocations] no center yet (GPS pending) → 0 results');
+    return const [];
+  }
+  // Only the active tiers (county/city/park/state park/spring) are eligible
+  // for Nearby/Radio right now — see active_location_types.dart.
+  final all = onlyActiveTypes(
+      ref.watch(masterLocationsProvider).value ?? const []);
+  debugPrint('[nearbyLocations] querying LocationEngine.nearby at '
+      '(${center.latitude}, ${center.longitude}) over ${all.length} '
+      'active-type locations');
+  final result = ref
       .watch(locationEngineProvider)
       .nearby(center.latitude, center.longitude, all);
+  debugPrint('[nearbyLocations] engine returned ${result.length} '
+      '${result.isEmpty ? '' : '(nearest: "${result.first.location.name}" '
+          '${(result.first.distanceMeters / 1609.344).toStringAsFixed(2)}mi)'}');
+  return result;
 });

@@ -15,6 +15,7 @@ MasterLocation _loc(
   String? county,
   String? city,
   double? triggerRadius,
+  ContentStatus? contentStatus,
 }) =>
     MasterLocation(
       id: id,
@@ -28,18 +29,20 @@ MasterLocation _loc(
       county: county,
       city: city,
       triggerRadius: triggerRadius,
+      contentStatus: contentStatus,
     );
 
 const _engine = LocationEngine();
 
 void main() {
   group('LocationType', () {
-    test('covers all 29 types and maps free-form categories', () {
-      expect(LocationType.values.length, 29);
+    test('covers all types and maps free-form categories', () {
+      expect(LocationType.values.length, 50);
       expect(LocationType.fromId('state_park'), LocationType.statePark);
       expect(LocationType.fromId('Silver Springs'), LocationType.spring);
       expect(LocationType.fromId('Ocklawaha River'), LocationType.river);
-      expect(LocationType.fromId('Ocala National Forest'), LocationType.forest);
+      expect(LocationType.fromId('Ocala National Forest'),
+          LocationType.nationalForest);
       expect(LocationType.fromId('Historic Fort'), LocationType.historicSite);
       expect(LocationType.fromId('mystery'), LocationType.pointOfInterest);
     });
@@ -155,6 +158,64 @@ void main() {
     });
     test('without requireAudio the nearest (silent) wins', () {
       expect(_engine.topNearby(0, 0, list)!.location.id, 'silent');
+    });
+  });
+
+  group('publish gating (content_status)', () {
+    test('isPublishBlocked only for explicit draft/archived; null grandfathered',
+        () {
+      expect(_loc('a', 'A', LocationType.museum).isPublishBlocked, isFalse);
+      expect(
+          _loc('a', 'A', LocationType.museum,
+                  contentStatus: ContentStatus.draft)
+              .isPublishBlocked,
+          isTrue);
+      expect(
+          _loc('a', 'A', LocationType.museum,
+                  contentStatus: ContentStatus.archived)
+              .isPublishBlocked,
+          isTrue);
+      expect(
+          _loc('a', 'A', LocationType.museum,
+                  contentStatus: ContentStatus.published)
+              .isPublishBlocked,
+          isFalse);
+      expect(
+          _loc('a', 'A', LocationType.museum,
+                  contentStatus: ContentStatus.needsReview)
+              .isPublishBlocked,
+          isFalse);
+    });
+
+    test('draft locations are excluded from nearby, search, and map', () {
+      final draft = _loc('d', 'Draft Diner', LocationType.restaurant,
+          miles: 0.4, contentStatus: ContentStatus.draft);
+      final live = _loc('p', 'Published Park', LocationType.cityPark,
+          miles: 0.5, contentStatus: ContentStatus.published);
+      final legacy =
+          _loc('l', 'Legacy Lake', LocationType.lake, miles: 0.6); // null
+      final all = [draft, live, legacy];
+
+      final nearbyIds =
+          _engine.nearby(0, 0, all).map((n) => n.location.id).toSet();
+      expect(nearbyIds, {'p', 'l'});
+      expect(nearbyIds, isNot(contains('d')));
+
+      final searchIds =
+          _engine.search('a', all).map((l) => l.id).toSet(); // matches all names
+      expect(searchIds.contains('d'), isFalse);
+      expect(searchIds, containsAll(<String>['p', 'l']));
+
+      final mapIds = _engine.mapLocations(all).map((l) => l.id).toSet();
+      expect(mapIds, {'p', 'l'});
+    });
+
+    test('publishing a formerly-draft location makes it visible again', () {
+      final draft = _loc('d', 'Draft Diner', LocationType.restaurant,
+          contentStatus: ContentStatus.draft);
+      expect(_engine.nearby(0, 0, [draft]), isEmpty);
+      final published = draft.copyWith(contentStatus: ContentStatus.published);
+      expect(_engine.nearby(0, 0, [published]).single.location.id, 'd');
     });
   });
 }

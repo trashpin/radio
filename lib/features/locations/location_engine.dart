@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
@@ -29,6 +31,18 @@ class NearbyLocation {
 class LocationEngine {
   const LocationEngine();
 
+  /// AUDIT INSTRUMENTATION (diagnostics only — no effect on results).
+  /// When true and in a debug build, [nearby] logs a per-location decision
+  /// trace: the input center, each location's great-circle distance, its
+  /// configured radius (triggerRadius), whether it falls inside range, and the
+  /// exact condition that accepted/rejected it — plus a final kept/total count.
+  /// Set to false to silence. Logic is unchanged whether on or off.
+  static bool debugTrace = true;
+
+  static void _t(String msg) {
+    if (kDebugMode && debugTrace) debugPrint('[LocationEngine.nearby] $msg');
+  }
+
   /// Locations to plot on the map: active, not hidden, has coordinates, and
   /// (optionally) within [maxMiles] of a center, filtered to [types].
   List<MasterLocation> mapLocations(
@@ -40,6 +54,7 @@ class LocationEngine {
   }) {
     return all.where((l) {
       if (!l.active || l.hidden || !l.hasCoordinates) return false;
+      if (l.isPublishBlocked) return false;
       if (types != null && types.isNotEmpty && !types.contains(l.type)) {
         return false;
       }
@@ -66,19 +81,52 @@ class LocationEngine {
     Set<String> exclude = const {},
     bool requireAudio = false,
   }) {
+    _t('IN center=($latitude, $longitude) candidates=${all.length} '
+        'maxMiles=$maxMiles requireAudio=$requireAudio '
+        'excluded=${exclude.length} '
+        'types=${types == null ? 'any' : types.map((e) => e.id).toList()}');
     final out = <NearbyLocation>[];
     for (final l in all) {
-      if (!l.active || l.hidden || !l.hasCoordinates) continue;
-      if (requireAudio && !l.hasAudio) continue;
-      if (exclude.contains(l.id)) continue;
-      if (types != null && types.isNotEmpty && !types.contains(l.type)) continue;
+      if (!l.active || l.hidden || !l.hasCoordinates) {
+        _t('REJECT "${l.name}": readiness (active=${l.active} '
+            'hidden=${l.hidden} hasCoordinates=${l.hasCoordinates})');
+        continue;
+      }
+      if (l.isPublishBlocked) {
+        _t('REJECT "${l.name}": publish-blocked '
+            '(content_status=${l.contentStatus?.id})');
+        continue;
+      }
+      if (requireAudio && !l.hasAudio) {
+        _t('REJECT "${l.name}": requireAudio set and no audio');
+        continue;
+      }
+      if (exclude.contains(l.id)) {
+        _t('REJECT "${l.name}": in exclude set (cooldown/already-played)');
+        continue;
+      }
+      if (types != null && types.isNotEmpty && !types.contains(l.type)) {
+        _t('REJECT "${l.name}": type ${l.type.id} not in requested filter');
+        continue;
+      }
       final m = GeoMath.distanceMeters(
           latitude, longitude, l.latitude!, l.longitude!);
       final band = distanceBand(m);
       final withinTrigger = l.triggerRadius != null && m <= l.triggerRadius!;
-      if (band == 0 && !withinTrigger && m > maxMiles * _mile) continue;
-      out.add(NearbyLocation(l, m, (band == 0 ? 40 : band) + l.priority));
+      if (band == 0 && !withinTrigger && m > maxMiles * _mile) {
+        _t('REJECT "${l.name}": ${(m / _mile).toStringAsFixed(2)}mi > '
+            '${maxMiles}mi and outside triggerRadius='
+            '${l.triggerRadius == null ? 'none' : '${l.triggerRadius}m'}');
+        continue;
+      }
+      final score = (band == 0 ? 40 : band) + l.priority;
+      _t('KEEP   "${l.name}": ${(m / _mile).toStringAsFixed(2)}mi '
+          'band=$band triggerRadius='
+          '${l.triggerRadius == null ? 'none' : '${l.triggerRadius}m'} '
+          'withinTrigger=$withinTrigger priority=${l.priority} score=$score');
+      out.add(NearbyLocation(l, m, score));
     }
+    _t('OUT kept=${out.length}/${all.length}');
     out.sort((a, b) {
       final byScore = b.score.compareTo(a.score);
       return byScore != 0 ? byScore : a.distanceMeters.compareTo(b.distanceMeters);
@@ -126,7 +174,9 @@ class LocationEngine {
 
     final scored = all
         .where((l) =>
-            l.status != LocationStatus.disabled && rank(l) < 99)
+            l.status != LocationStatus.disabled &&
+            !l.isPublishBlocked &&
+            rank(l) < 99)
         .map((l) => (l, rank(l)))
         .toList()
       ..sort((a, b) {

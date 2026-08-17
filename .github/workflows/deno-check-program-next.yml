@@ -1,0 +1,29 @@
+name: Deno Check Program Next
+
+on:
+  push:
+    paths:
+      - 'supabase/functions/program-next/**'
+      - '.github/workflows/deno-check-program-next.yml'
+  pull_request:
+    paths:
+      - 'supabase/functions/program-next/**'
+      - '.github/workflows/deno-check-program-next.yml'
+
+jobs:
+  deno-check:
+    name: Deno static type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1
+
+      - name: Run deno check for program-next
+        run: |
+          deno check supabase/functions/program-next/worker.ts supabase/functions/program-next/index.ts

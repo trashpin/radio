@@ -5,6 +5,7 @@ import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_queue_item.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
+import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/background_discovery_scheduler.dart';
@@ -57,6 +58,7 @@ class RadioEngineService {
     StationIdentificationService? stationIds,
     DjBanterScheduler? djBanter,
     BackgroundDiscoveryScheduler? discovery,
+    this.locationBanter,
   })  : audioFocus = audioFocus ?? AudioFocusManager(),
         offline = offline ?? OfflinePlaybackService(),
         stationIds = stationIds ?? StationIdentificationService(),
@@ -81,6 +83,10 @@ class RadioEngineService {
   /// plants, birds, trees, geology, history, facts, hidden gems) so the radio
   /// keeps teaching even without a major destination.
   final BackgroundDiscoveryScheduler discovery;
+
+  /// Weaves LOCAL banter (park/city/county narration around the user) between
+  /// songs. Optional — null in tests/legacy wiring means no banter is inserted.
+  final LocationBanterScheduler? locationBanter;
 
   final StreamController<RadioEvent> _events =
       StreamController<RadioEvent>.broadcast();
@@ -338,6 +344,13 @@ class RadioEngineService {
     if (due.isEmpty && preferences.narrationsEnabled) {
       final discovered = discovery.due();
       if (discovered != null) due.add(discovered);
+    }
+    // Local banter: a short narration about the park/city/county the user is
+    // in (park > city > county), reusing the location's own AI content. Sits
+    // above generic DJ banter so the station feels genuinely local.
+    if (due.isEmpty && preferences.narrationsEnabled && locationBanter != null) {
+      final local = locationBanter!.onMusicPlayed();
+      if (local != null) due.add(local);
     }
     // DJ banter fills the space between songs when nothing else is scheduled,
     // so the station sounds hosted rather than a bare playlist.

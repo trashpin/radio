@@ -65,6 +65,18 @@ void main() {
       final b = pickRecommendation(w, 1);
       expect(a, isNot(b));
     });
+    test('county recommendations blend into the weather pool', () {
+      // No weather → _recDefault (2 entries); one blended custom → index 2.
+      expect(
+        pickRecommendation(null, 2, extra: const ['Visit Silver Springs.']),
+        'Visit Silver Springs.',
+      );
+      // Blank custom entries are ignored (don't pollute the pool).
+      expect(
+        pickRecommendation(null, 0, extra: const ['  ', '']),
+        isNot('  '),
+      );
+    });
   });
 
   group('CountyWelcomeDirector', () {
@@ -93,6 +105,22 @@ void main() {
           const WeatherData(highF: 88, condition: 'sunny skies'),
           weatherEnabled: false);
       expect(s, isNot(contains('high near')));
+    });
+
+    test('both toggles off → just station ID + greeting (recs list ignored)',
+        () {
+      final d = CountyWelcomeDirector();
+      final s = d.scriptFor(
+        'Sumter',
+        'Florida',
+        const WeatherData(highF: 80, condition: 'sunny skies'),
+        weatherEnabled: false,
+        recommendationsEnabled: false,
+        recommendations: const ['Visit Silver Springs.'],
+      );
+      expect(
+          s, "You're listening to ExplorerOS Radio. Welcome to Sumter County.");
+      expect(s, isNot(contains('Silver Springs')));
     });
   });
 }

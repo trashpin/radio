@@ -143,6 +143,8 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       TextEditingController(text: widget.config?.weatherVoice ?? '');
   late final _recs = TextEditingController(
       text: (widget.config?.recommendations ?? const []).join('\n'));
+  late final _music = TextEditingController(
+      text: (widget.config?.musicCategories ?? const []).join(', '));
   late bool _weather = widget.config?.weatherEnabled ?? true;
   late bool _recEnabled = widget.config?.recommendationsEnabled ?? true;
 
@@ -183,6 +185,7 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       _theme,
       _voice,
       _recs,
+      _music,
       _seal,
       _hero,
       _welcomeNarration,
@@ -240,6 +243,11 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       'weather_enabled': _weather,
       'recommendations_enabled': _recEnabled,
       'recommendations': _lines(_recs.text),
+      'music_categories': _music.text
+          .split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
       'seal_url': _nn(_seal.text),
       'hero_image_url': _nn(_hero.text),
       'welcome_narration_url': _nn(_welcomeNarration.text),
@@ -292,6 +300,9 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
             _f(_voice, 'Weather voice'),
             const Gap.v(AppSpacing.sm),
             _f(_recs, 'Recommendations (one per line)', maxLines: 4),
+            const Gap.v(AppSpacing.sm),
+            _f(_music,
+                'Music categories (comma-separated, e.g. country, americana, southern)'),
             const Gap.v(AppSpacing.sm),
             Row(children: [
               Expanded(

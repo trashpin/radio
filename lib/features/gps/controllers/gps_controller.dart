@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/gps/models/travel_context.dart';
@@ -20,10 +21,22 @@ class GpsController extends Notifier<TravelContext> {
   @override
   TravelContext build() {
     _subscription = _service.travelContextStream.listen((context) {
+      // AUDIT: log every GPS fix that reaches the app (diagnostics only).
+      final l = context.location;
+      debugPrint(l == null
+          ? '[GPS] TravelContext update with NO location fix yet'
+          : '[GPS] fix received: (${l.latitude}, ${l.longitude}) '
+              'acc=${l.accuracyMeters}m heading=${l.headingDegrees} '
+              'speed=${l.speedMps}m/s at ${l.timestamp.toIso8601String()}');
       state = context;
     });
     ref.onDispose(() => _subscription?.cancel());
-    return _service.getTravelContext();
+    final initial = _service.getTravelContext();
+    final il = initial.location;
+    debugPrint(il == null
+        ? '[GPS] initial TravelContext: no location fix yet'
+        : '[GPS] initial fix: (${il.latitude}, ${il.longitude})');
+    return initial;
   }
 
   Future<void> startTracking() => _service.startTracking();

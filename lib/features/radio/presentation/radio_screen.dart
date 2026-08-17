@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/core/error/app_exception.dart';
 import 'package:explorer_os_mobile/core/error/error_handler.dart';
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
+import 'package:explorer_os_mobile/features/gps/presentation/location_prompt.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -314,6 +315,9 @@ class _PlayerState extends ConsumerState<_Player> {
               onNotifications: () => _snack('No new notifications'),
             ),
             const SizedBox(height: RD.lg),
+            // Actionable prompt when there's no location yet — hides itself the
+            // moment a GPS fix arrives (otherwise the nearby list sits empty).
+            const LocationPrompt(margin: EdgeInsets.only(bottom: RD.md)),
             // The player transforms into a "Now Playing" experience whenever a
             // story/song/report is on air, then collapses back automatically.
             AnimatedSwitcher(

@@ -62,8 +62,22 @@ List<String> recommendationPool(WeatherData? w) {
 }
 
 /// Picks a recommendation, rotating through the pool by [rotation].
-String pickRecommendation(WeatherData? w, int rotation) {
-  final pool = recommendationPool(w);
+///
+/// [extra] is a county's own recommendations (`CountyConfig.recommendations`).
+/// They are BLENDED into the weather-conditional pool rather than replacing it,
+/// so a county's evergreen picks (e.g. "visit Silver Springs") rotate in
+/// regardless of weather while the weather-specific lines still do their job —
+/// all through this one uniform rotation.
+String pickRecommendation(
+  WeatherData? w,
+  int rotation, {
+  List<String> extra = const [],
+}) {
+  final pool = <String>[
+    ...recommendationPool(w),
+    for (final e in extra)
+      if (e.trim().isNotEmpty) e.trim(),
+  ];
   return pool[rotation.abs() % pool.length];
 }
 
@@ -90,6 +104,7 @@ class CountyWelcomeDirector {
     Map<String, String> greetings = const {},
     bool weatherEnabled = true,
     bool recommendationsEnabled = true,
+    List<String> recommendations = const [],
   }) {
     final key = (county ?? '').toLowerCase().trim();
     if (key.isEmpty || _welcomed.contains(key)) return null;
@@ -100,7 +115,8 @@ class CountyWelcomeDirector {
       lines.add(summarizeWeather(weather));
     }
     if (recommendationsEnabled) {
-      lines.add(pickRecommendation(weather, _recRotation));
+      lines.add(pickRecommendation(weather, _recRotation,
+          extra: recommendations));
       _recRotation++;
     }
     return lines.join(' ');

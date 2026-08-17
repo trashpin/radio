@@ -46,7 +46,9 @@ void main() {
           contains('confirm your email'));
       expect(friendlyAuthError(Exception('SocketException: failed host')),
           contains('Network error'));
-      expect(friendlyAuthError(Exception('weird')), contains('went wrong'));
+      // Unknown errors are surfaced raw (deliberate diagnostic fallback in
+      // friendlyAuthError) rather than masked with a generic message.
+      expect(friendlyAuthError(Exception('weird')), contains('Sign-in failed'));
     });
   });
 }

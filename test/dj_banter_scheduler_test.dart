@@ -7,6 +7,8 @@ import 'package:explorer_os_mobile/features/dj/models/dj_clip.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/announcement_content.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 
 AudioSegment song(String title, {String? artist}) => AudioSegment(
       id: 'song:$title',
@@ -111,5 +113,69 @@ void main() {
       if (seg?.spokenText?.contains('Backroad Hymn') ?? false) mentioned = true;
     }
     expect(mentioned, isTrue);
+  });
+
+  test('DJ banter engine fills a county fact template (Phase B)', () {
+    final e = BanterEngine(rng: Random(1));
+    for (var i = 0; i < 8; i++) {
+      final s = e.generate(
+        DjStation.all,
+        BanterSituation.countyFact,
+        const BanterContext(
+            county: 'Marion', fact: 'It is the Horse Capital of the World.'),
+      );
+      expect(s, isNotNull);
+      expect(s!, contains('It is the Horse Capital of the World.'));
+      expect(s.contains('{'), isFalse);
+    }
+  });
+
+  test('DJ shares an admin county fact when facts are set (Phase B)', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(3))
+      ..setCountyFacts(
+          county: 'Marion',
+          facts: const ['It is the Horse Capital of the World.']);
+    String? found;
+    for (var i = 0; i < 80 && found == null; i++) {
+      final seg = s.onMusicPlayed(song('Song $i'));
+      final t = seg?.spokenText;
+      if (t != null && t.contains('Horse Capital of the World')) found = t;
+    }
+    expect(found, isNotNull, reason: 'a county fact should surface within 80 songs');
+  });
+
+  test('no county facts set → DJ never emits a county-fact segment', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(3));
+    for (var i = 0; i < 20; i++) {
+      final seg = s.onMusicPlayed(song('Song $i'));
+      expect(seg?.id.startsWith('djcounty:') ?? false, isFalse);
+    }
+  });
+
+  test('automation drives a safety announcement with safety semantics (Step 2)',
+      () {
+    // The unified path: a legacy interval safety rule + the unified content
+    // pool, evaluated by AutomationEngine on a time tick, must produce a
+    // non-interruptible, resume-after safety warning (RadioScheduler parity).
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(1));
+    final rule = legacyScheduleRuleToRule({
+      'id': 'r1',
+      'content_type': 'safety',
+      'cadence': 'interval',
+      'interval_minutes': 15,
+      'active': true,
+    })!;
+    final segs = combineAnnouncementContent(safety: [
+      {'id': 's1', 'title': 'Watch for bears', 'audio_url': 'https://a/s.mp3'}
+    ]);
+    s.setAutomation(AutomationEngine(rng: Random(1)), [rule], segs);
+
+    final seg = s.onTick(radioStationName: null, sessionMinutes: 15);
+    expect(seg, isNotNull);
+    expect(seg!.type, AudioSegmentType.safetyWarning);
+    expect(seg.priority, PlaybackPriority.safetyWarning);
+    expect(seg.interruptible, isFalse);
+    expect(seg.resumeAfter, isTrue);
+    expect(seg.audioUrl, 'https://a/s.mp3');
   });
 }

@@ -1,4 +1,4 @@
-﻿import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 import 'package:explorer_os_mobile/features/gps/models/geofence.dart';
 import 'package:explorer_os_mobile/features/gps/models/geofence_level.dart';

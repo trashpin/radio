@@ -1,8 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/discover_area/data/area_content_repository.dart';
+import 'package:explorer_os_mobile/features/discover_area/models/area_content_block.dart';
+import 'package:explorer_os_mobile/features/gps/data/geofence_repository.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/around_me/models/experience.dart';
 import 'package:explorer_os_mobile/features/around_me/providers/around_me_providers.dart';
@@ -14,7 +19,10 @@ import 'package:explorer_os_mobile/features/dj/data/dj_clip_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/services/location_trigger_engine.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
+import 'package:explorer_os_mobile/features/locations/active_location_types.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
+import 'package:explorer_os_mobile/features/radio_automation/services/announcement_content.dart';
+import 'package:explorer_os_mobile/features/radio/banter/location_banter_scheduler.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/community_welcome_director.dart';
@@ -63,6 +71,14 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // between songs (defensive no-op when there's no library / GPS yet).
   _attachGpsBanter(ref, engine);
 
+  // Wire the Radio Banter Engine: mix short LOCAL narration (park > city >
+  // county, e.g. Marion) between songs, reusing each location's own AI content.
+  _attachLocationBanter(ref, engine);
+
+  // Feed the DJ admin-authored county facts (CountyConfig.facts) so it can drop
+  // real local knowledge between songs; refreshes as the county changes.
+  _attachCountyDjFacts(ref, engine);
+
   // Keep a live forecast cached so banter + the county welcome are weather-aware.
   _attachWeather(ref);
 
@@ -81,6 +97,13 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // stay owned by the directors above so nothing double-fires.
   _attachLocationTriggers(ref);
 
+  // GPS-triggered location radio from the Supabase `geofences` table: on each
+  // GPS update, ask `get_nearby_geofences()` what the traveler is inside, feed
+  // it through the SAME LocationTriggerEngine (enter/exit/cooldown/play-once)
+  // used above, resolve the winning location's existing content, and interrupt
+  // the radio via the existing engine. Wildlife stays area-based (untouched).
+  _attachGeofenceTriggers(ref);
+
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
   // in-character between songs (falls back to TTS when none exist yet).
@@ -91,10 +114,15 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
     final all = [...clips, ...segmentClips];
     if (all.isNotEmpty) engine.djBanter.setClips(all);
 
-    // Rule-driven automation: song-boundary triggers run inside the engine's
-    // between-song hook; time-based triggers run on this periodic tick.
-    final rules = await autoRepo.rules();
-    final segments = await autoRepo.segments();
+    // Rule-driven automation (Scheduler Reconciliation, Step 2): ONE engine now
+    // drives all non-music announcements. It reads the UNIFIED rule set
+    // (radio_schedule_rules + adapted legacy radio_schedule interval rules) and
+    // the UNIFIED content pool (radio_segments + safety/wildlife/story), so the
+    // safety/wildlife/story announcements formerly driven by RadioScheduler's
+    // own timer now run here. Song-boundary triggers run in the between-song
+    // hook; time-based triggers run on this single periodic tick.
+    final rules = await ref.read(unifiedAutomationRulesProvider.future);
+    final segments = await ref.read(unifiedAnnouncementContentProvider.future);
     if (rules.isNotEmpty) {
       engine.djBanter.setAutomation(AutomationEngine(), rules, segments);
       final start = DateTime.now();
@@ -134,7 +162,8 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
         .read(radioEngineServiceProvider)
         .changeStation(selected, songs: songs, autoPlay: false);
     ref.read(radioEngineControllerProvider);
-    _attachScheduler(ref, selected);
+    // Announcements (safety/wildlife/story) are now driven by the unified
+    // automation tick above — no separate RadioScheduler timer (Step 2).
     return selected;
   }
 
@@ -168,7 +197,7 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
 
   // Ensure the controller is alive so it reflects engine events in the UI.
   ref.read(radioEngineControllerProvider);
-  _attachScheduler(ref, station);
+  // Announcements are driven by the unified automation tick above (Step 2).
 
   return station;
 });
@@ -307,6 +336,73 @@ void _attachWeather(Ref ref) {
 /// current weather and plays a spoken Station ID → Welcome → Weather →
 /// Recommendation report through the radio's interrupt→resume path (music
 /// resumes at the exact spot). Once per county per session.
+/// Configures the Radio Banter Engine with the live position + master
+/// locations, and a resolver that reuses each location's EXISTING content for
+/// the clip (recorded audio → AI narration script → composed narration). The
+/// engine (park > city > county priority + cooldown + county fallback) then
+/// decides which one speaks between songs.
+void _attachLocationBanter(Ref ref, RadioEngineService engine) {
+  final scheduler = engine.locationBanter;
+  if (scheduler == null) return;
+  scheduler.configure(context: () {
+    final center = ref.read(mapCenterProvider);
+    if (center == null) return null;
+    final all = ref.read(masterLocationsProvider).value ?? const [];
+    if (all.isEmpty) return null;
+    final county = ref.read(locationContextProvider).county;
+    final content = ref.read(locationContentItemsProvider);
+    return BanterRuntime(
+      lat: center.latitude,
+      lng: center.longitude,
+      county: county,
+      locations: all,
+      resolve: (loc) {
+        if (loc.audioFiles.any((u) => u.trim().isNotEmpty)) {
+          return BanterClip(audioUrl: loc.audioFiles.first);
+        }
+        final script = (loc.narrationScript ?? '').trim();
+        if (script.isNotEmpty) return BanterClip(text: script);
+        final n = resolveLocationNarration(loc, content);
+        return n.hasAudio
+            ? BanterClip(audioUrl: n.audioUrl, text: n.text)
+            : BanterClip(text: n.text);
+      },
+    );
+  });
+}
+
+/// Keeps the DJ's county fact pool in sync with the current county's
+/// CountyConfig (Admin → County Manager). The DJ then occasionally shares one
+/// of those admin-authored facts between songs — see [DjBanterScheduler].
+void _attachCountyDjFacts(Ref ref, RadioEngineService engine) {
+  void update(String? county) {
+    final configs =
+        ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+    final key = (county ?? '').toLowerCase().trim();
+    CountyConfig? cfg;
+    for (final c in configs) {
+      if (c.key == key) {
+        cfg = c;
+        break;
+      }
+    }
+    engine.djBanter
+        .setCountyFacts(county: cfg?.name ?? county, facts: cfg?.facts ?? const []);
+    // Phase C: bias music selection toward the county's preferred genres.
+    engine.station.setCountyMusicCategories(cfg?.musicCategories ?? const []);
+  }
+
+  update(ref.read(locationContextProvider).county);
+  ref.listen<LocationContext>(locationContextProvider, (prev, next) {
+    if ((prev?.county ?? '').toLowerCase() != (next.county ?? '').toLowerCase()) {
+      update(next.county);
+    }
+  });
+  // Also refresh once the admin county configs finish loading / change.
+  ref.listen(countyConfigsProvider,
+      (_, _) => update(ref.read(locationContextProvider).county));
+}
+
 void _attachCountyWelcome(Ref ref) {
   final director = CountyWelcomeDirector();
   final weather = ref.read(weatherClientProvider);
@@ -328,11 +424,28 @@ void _attachCountyWelcome(Ref ref) {
         w = await weather.fetch(lat, lng);
       }
       final greetings = ref.read(countyGreetingsProvider);
+      // The full CountyConfig for this county is the single source of truth for
+      // its radio personality: whether the weather line / recommendation plays,
+      // and its own recommendation list (blended into the weather pool). Falls
+      // back to the built-in defaults when there's no admin row yet.
+      final configs =
+          ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+      final key = county.toLowerCase().trim();
+      CountyConfig? cfg;
+      for (final c in configs) {
+        if (c.key == key) {
+          cfg = c;
+          break;
+        }
+      }
       final script = director.scriptFor(
         county,
         ctx.state,
         w,
         greetings: greetings,
+        weatherEnabled: cfg?.weatherEnabled ?? true,
+        recommendationsEnabled: cfg?.recommendationsEnabled ?? true,
+        recommendations: cfg?.recommendations ?? const [],
       );
       if (script == null) return;
       ref
@@ -385,6 +498,7 @@ void _attachCommunityWelcome(Ref ref) {
         continue;
       }
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.isPublishBlocked) continue;
       out.add(
         CommunityPlace(
           id: l.id,
@@ -482,12 +596,20 @@ void _attachLocationTriggers(Ref ref) {
     final all = ref.read(masterLocationsProvider).value ?? const [];
     final out = <TriggerableLocation>[];
     for (final l in all) {
+      // Only the active tiers may trigger narration today; of those, the
+      // county/city/community tiers are owned by the welcome directors, so POI
+      // triggers cover just parks / state parks / springs.
+      if (!isActiveLocationType(l.type)) continue;
       if (l.type == LocationType.county ||
           l.type == LocationType.city ||
-          l.type == LocationType.community) {
+          l.type == LocationType.town ||
+          l.type == LocationType.village ||
+          l.type == LocationType.community ||
+          l.type == LocationType.neighborhood) {
         continue; // owned by the county/community welcome directors
       }
       if (!l.active || l.hidden || !l.hasCoordinates) continue;
+      if (l.isPublishBlocked) continue;
       if (l.triggerRadius == null) continue;
       out.add(
         TriggerableLocation(
@@ -564,6 +686,252 @@ void _attachLocationTriggers(Ref ref) {
   );
 }
 
+// --- GPS geofence → radio (Supabase `geofences` + get_nearby_geofences) ------
+
+/// Builds [TriggerableLocation]s that feed the reused [LocationTriggerEngine]
+/// the geofence membership decided by `get_nearby_geofences()`. We do NOT
+/// recompute geodesic distance here (the DB already did): an "inside" fence is
+/// anchored at the user's position (distance 0 ≤ radius → inside) and a fence
+/// that was inside last tick but isn't now is anchored ~111 km away (→ outside),
+/// so the engine emits the correct enter/exit transitions and still honors
+/// play-once + cooldown. Pure + testable.
+List<TriggerableLocation> geofenceTriggerCandidates({
+  required Set<String> insideIds,
+  required Set<String> recentIds,
+  required double userLat,
+  required double userLng,
+  int? Function(String locationId)? cooldownForLocation,
+}) {
+  const anchorRadius = 1000.0;
+  final farLat = (userLat + 1.0).clamp(-89.0, 89.0); // ~111 km away → outside
+  final ids = {...insideIds, ...recentIds};
+  return [
+    for (final id in ids)
+      TriggerableLocation(
+        id: id,
+        latitude: insideIds.contains(id) ? userLat : farLat,
+        longitude: userLng,
+        radiusMeters: anchorRadius,
+        arrivalTrigger: true,
+        departureTrigger: false, // geofence ENTER narrates; exit has no content
+        playOnce: false,
+        cooldownSeconds: cooldownForLocation?.call(id),
+      ),
+  ];
+}
+
+/// Picks the single geofence to narrate from the fences the traveler just
+/// ENTERED this tick — highest priority (priority_override) first, then the
+/// closest — so multiple competing location narrations never fire at once.
+NearbyGeofence? selectGeofenceToNarrate(Iterable<NearbyGeofence> entered) {
+  NearbyGeofence? best;
+  for (final g in entered) {
+    if (best == null ||
+        g.priority > best.priority ||
+        (g.priority == best.priority &&
+            g.distanceMeters < best.distanceMeters)) {
+      best = g;
+    }
+  }
+  return best;
+}
+
+/// Resolves a geofence ENTER into a playable [AudioSegment] using EXISTING
+/// content, or null when there's nothing to say (caller logs + skips):
+///   1. the location's own `area_discovery_content` (active, non-wildlife);
+///   2. else [resolveLocationNarration] (the location's audio / matched
+///      `location_content` / a composed TTS script).
+/// Wildlife blocks are intentionally skipped so wildlife stays area-based.
+AudioSegment? geofenceSegmentFor({
+  required String locationId,
+  required String locationName,
+  required List<AreaContentBlock> areaBlocks,
+  MasterLocation? masterLocation,
+  List<ContentItem> contentItems = const [],
+}) {
+  String? title;
+  String? audioUrl;
+  String? script;
+
+  for (final b in areaBlocks) {
+    if (!b.active || !b.hasNarration) continue;
+    if (_isWildlifeToken(b.categoryToken)) continue; // wildlife stays separate
+    title = b.title.trim().isNotEmpty ? b.title.trim() : locationName;
+    if (b.hasAudio) {
+      audioUrl = b.audioUrl;
+    } else {
+      script = b.narrationScript;
+    }
+    break;
+  }
+
+  if (title == null && masterLocation != null) {
+    final n = resolveLocationNarration(masterLocation, contentItems);
+    if (n.hasAudio) {
+      title = n.title;
+      audioUrl = n.audioUrl;
+    } else if (n.text.trim().isNotEmpty) {
+      title = n.title;
+      script = n.text.trim();
+    }
+  }
+
+  if (title == null || (audioUrl == null && (script ?? '').trim().isEmpty)) {
+    return null;
+  }
+
+  return AudioSegment(
+    id: 'geofence:$locationId:${DateTime.now().millisecondsSinceEpoch}',
+    title: title,
+    type: AudioSegmentType.gpsNarration,
+    priority: PlaybackPriority.scheduledAnnouncement,
+    audioUrl: audioUrl,
+    spokenText: audioUrl == null ? script : null,
+    interruptible: true,
+    resumeAfter: true,
+  );
+}
+
+bool _isWildlifeToken(String token) {
+  final t = token.toLowerCase();
+  const keys = [
+    'wildlife', 'animal', 'bird', 'mammal', 'reptile', 'fish',
+    'wildflower', 'native_plant', 'plant', 'tree', 'species',
+  ];
+  return keys.any(t.contains);
+}
+
+/// Carries the "inside last tick" set between [geofenceRadioTick] calls, so the
+/// engine can see a fence go from inside → outside (and fire the exit that
+/// re-arms a later re-entry) without recomputing any geodesic distance.
+class GeofenceTickState {
+  Set<String> insidePrev = <String>{};
+}
+
+/// One geofence-radio tick, pure of Riverpod + audio so it is fully testable:
+///  1. asks [fetchNearby] (→ `get_nearby_geofences`) what fences the traveler
+///     is inside,
+///  2. feeds that membership through the reused [engine] (enter/exit/cooldown),
+///  3. picks the winner (priority → distance),
+///  4. resolves the winner's EXISTING content ([fetchBlocks] →
+///     `area_discovery_content`, else [resolveLocationNarration]),
+/// and RETURNS the [AudioSegment] to interrupt with (or null when there is
+/// nothing to say). Emits the `[GEOFENCE RADIO]` diagnostics. The caller sends
+/// the result through the existing RadioEngineService — this never touches the
+/// audio core.
+Future<AudioSegment?> geofenceRadioTick({
+  required double lat,
+  required double lng,
+  required LocationTriggerEngine engine,
+  required GeofenceTickState state,
+  required Future<List<NearbyGeofence>> Function(double lat, double lng)
+      fetchNearby,
+  required Future<List<AreaContentBlock>> Function(String locationId)
+      fetchBlocks,
+  MasterLocation? Function(String locationId)? locationById,
+  List<ContentItem> contentItems = const [],
+  DateTime? now,
+}) async {
+  debugPrint('[GEOFENCE RADIO] GPS: $lat, $lng');
+  final rows = await fetchNearby(lat, lng);
+  debugPrint('[GEOFENCE RADIO] Nearby geofences: ${rows.length}');
+
+  final insideRows = <String, NearbyGeofence>{
+    for (final r in rows) if (r.inside) r.locationId: r,
+  };
+  final insideIds = insideRows.keys.toSet();
+  final candidates = geofenceTriggerCandidates(
+    insideIds: insideIds,
+    recentIds: state.insidePrev,
+    userLat: lat,
+    userLng: lng,
+    cooldownForLocation: (id) => locationById?.call(id)?.cooldownSeconds,
+  );
+  final fired = engine.evaluate(lat, lng, candidates, now: now);
+  state.insidePrev = insideIds;
+
+  final enteredRows = [
+    for (final e in fired)
+      if (e.kind == LocationTriggerKind.arrival &&
+          insideRows[e.locationId] != null)
+        insideRows[e.locationId]!,
+  ];
+  final winner = selectGeofenceToNarrate(enteredRows);
+  if (winner == null) return null;
+  debugPrint('[GEOFENCE RADIO] Selected location: ${winner.locationName}');
+  debugPrint('[GEOFENCE RADIO] location_id: ${winner.locationId}');
+
+  final blocks = await fetchBlocks(winner.locationId);
+  final seg = geofenceSegmentFor(
+    locationId: winner.locationId,
+    locationName: winner.locationName,
+    areaBlocks: blocks,
+    masterLocation: locationById?.call(winner.locationId),
+    contentItems: contentItems,
+  );
+  if (seg == null) {
+    debugPrint(
+        '[GEOFENCE RADIO] No content for location: ${winner.locationName}');
+    return null;
+  }
+  debugPrint('[GEOFENCE RADIO] Content: ${seg.title}');
+  return seg;
+}
+
+/// Level 4 — Geofence radio. On each GPS update, asks the Supabase
+/// `get_nearby_geofences()` function what the traveler is inside, feeds that
+/// membership through the SAME [LocationTriggerEngine] (enter/exit + play-once
+/// + cooldown) used by the POI directors, resolves the winning location's
+/// existing content, and interrupts the radio through the existing engine —
+/// never touching the audio core, the queue, or wildlife's area-based path.
+void _attachGeofenceTriggers(Ref ref) {
+  final engine = LocationTriggerEngine();
+  final state = GeofenceTickState();
+  var inflight = false;
+
+  MasterLocation? locById(String id) {
+    for (final l in ref.read(masterLocationsProvider).value ?? const []) {
+      if (l.id == id) return l;
+    }
+    return null;
+  }
+
+  Future<void> handle(LocationContext ctx) async {
+    if (ctx.latitude == 0 && ctx.longitude == 0) return; // no GPS fix yet
+    if (inflight) return; // keep one RPC in flight at a time
+    inflight = true;
+    try {
+      final seg = await geofenceRadioTick(
+        lat: ctx.latitude,
+        lng: ctx.longitude,
+        engine: engine,
+        state: state,
+        fetchNearby: (a, b) => ref.read(geofenceRepositoryProvider).nearby(a, b),
+        fetchBlocks: (id) =>
+            ref.read(areaContentRepositoryProvider).forLocation(id),
+        locationById: locById,
+        contentItems: ref.read(locationContentItemsProvider),
+      );
+      if (seg == null) return;
+      debugPrint('[GEOFENCE RADIO] Triggering radio interruption');
+      ref
+          .read(radioEngineControllerProvider.notifier)
+          .requestInterruption(seg);
+      debugPrint('[GEOFENCE RADIO] Playback request completed');
+    } catch (_) {
+      // Never let a geofence/network hiccup break the radio session.
+    } finally {
+      inflight = false;
+    }
+  }
+
+  handle(ref.read(locationContextProvider));
+  ref.listen<LocationContext>(
+    locationContextProvider,
+    (_, next) => handle(next),
+  );
+}
+
 bool _hasWord(String c, List<String> words) => words.any(c.contains);
 
 /// Builds the live [GpsBanterContext] from the GPS engine + Around Me feed at
@@ -629,17 +997,10 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
   );
 }
 
-/// Starts the programming scheduler for the session: it injects due
-/// announcements (safety/wildlife with audio) into the engine's interruption
-/// path. No-op until `radio_schedule` rules + voiceover audio exist.
-void _attachScheduler(Ref ref, RadioStation station) {
-  final scheduler = ref.read(radioSchedulerProvider);
-  scheduler.start(station: station.name);
-  ref.onDispose(scheduler.stop);
-}
-
-/// The programming scheduler (singleton). Exposed so the radio UI can trigger a
-/// "Test announcement" (fireNow) and so the session can start/stop it.
+/// The programming scheduler (singleton). Retained only for the admin
+/// "Test announcement" (fireNow) button — the periodic driver was removed in
+/// Scheduler Reconciliation Step 2 in favor of the unified automation tick, so
+/// safety/wildlife/story now flow through the single AutomationEngine path.
 final radioSchedulerProvider = Provider<RadioScheduler>((ref) {
   return RadioScheduler(
     client: SupabaseService.isConfigured ? SupabaseService.client : null,

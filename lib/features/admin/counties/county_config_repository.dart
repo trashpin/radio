@@ -43,9 +43,10 @@ class CountyConfigRepository {
       SupabaseService.client.from('counties').delete().eq('id', id);
 
   /// Runs a write, and if it fails only because a column isn't in the schema
-  /// cache yet, drops that column and retries — matches the same pattern used
-  /// for `nearby_gems` so County Profile edits never break on a stale schema
-  /// cache.
+  /// cache yet (e.g. `music_categories` before migration 0044, or a County
+  /// Profile field before migration 0040), drops that column and retries —
+  /// matches the same pattern used for `nearby_gems` so writes never break on
+  /// a stale/older schema.
   Future<void> _resilient(
     Map<String, dynamic> row,
     Future<void> Function(Map<String, dynamic>) run,

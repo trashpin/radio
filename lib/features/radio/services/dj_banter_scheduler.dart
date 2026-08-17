@@ -72,6 +72,20 @@ class DjBanterScheduler {
   GpsBanterContext Function()? _banterContext;
   void Function(String clipId)? _onBanterPlayed;
 
+  // ── County knowledge (from CountyConfig.facts) ────────────────────────────
+  // Admin-authored local facts for the current county. When present, the DJ
+  // occasionally drops one between songs — genuine, editable "local knowledge"
+  // reusing the County Manager content, not a separate store.
+  String? _county;
+  List<String> _countyFacts = const [];
+  int _factRotation = 0;
+
+  /// Sets the current county's name + its fact pool (call on county change).
+  void setCountyFacts({String? county, List<String> facts = const []}) {
+    _county = county;
+    _countyFacts = [for (final f in facts) if (f.trim().isNotEmpty) f.trim()];
+  }
+
   /// Priority of categories to consider between songs (context-relevant teases
   /// first, then general transitions).
   static const List<BanterCategory> _banterPriority = [
@@ -145,19 +159,85 @@ class DjBanterScheduler {
     );
   }
 
+  /// ~1-in-3 of the time (when facts are loaded), returns a spoken county-fact
+  /// segment built from the next rotating [CountyConfig.facts] entry; else null.
+  AudioSegment? _maybeCountyFact() {
+    if (_countyFacts.isEmpty) return null;
+    if (_rng.nextInt(3) != 0) return null;
+    final fact = _countyFacts[_factRotation.abs() % _countyFacts.length];
+    _factRotation++;
+    final ctx = BanterContext(
+      station: brand,
+      park: park,
+      county: _county,
+      fact: fact,
+    );
+    final text = _engine.generate(DjStation.all, BanterSituation.countyFact, ctx);
+    if (text == null || text.trim().isEmpty) return null;
+    return AudioSegment(
+      id: 'djcounty:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'On air',
+      artist: 'DJ',
+      type: AudioSegmentType.announcement,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      spokenText: text,
+      interruptible: true,
+      resumeAfter: false,
+    );
+  }
+
   /// Builds a playable segment from a library [RadioSegment] (its own audio if
   /// voiced, else its script via TTS).
-  AudioSegment _fromSegment(RadioSegment s) => AudioSegment(
-        id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
-        title: s.title.isEmpty ? 'On air' : s.title,
-        artist: s.voice ?? 'DJ',
-        type: AudioSegmentType.announcement,
-        priority: PlaybackPriority.scheduledAnnouncement,
-        audioUrl: s.hasAudio ? s.audioUrl : null,
-        spokenText: s.hasAudio ? null : s.script,
-        interruptible: true,
-        resumeAfter: false,
-      );
+  ///
+  /// Semantics are category-aware so the unified announcement content (safety /
+  /// wildlife / story now flow through here) keeps its original behavior from
+  /// the legacy RadioScheduler: safety can't be interrupted and always resumes
+  /// music; wildlife/story duck + resume; ordinary DJ banter plays in the gap
+  /// between songs (no resume).
+  AudioSegment _fromSegment(RadioSegment s) {
+    final (
+      AudioSegmentType type,
+      PlaybackPriority priority,
+      bool interruptible,
+      bool resumeAfter,
+    ) = switch (s.category) {
+      SegmentCategory.safety => (
+          AudioSegmentType.safetyWarning,
+          PlaybackPriority.safetyWarning,
+          false,
+          true,
+        ),
+      SegmentCategory.wildlifeIntro => (
+          AudioSegmentType.wildlifeAlert,
+          PlaybackPriority.scheduledAnnouncement,
+          false,
+          true,
+        ),
+      SegmentCategory.story => (
+          AudioSegmentType.narration,
+          PlaybackPriority.scheduledAnnouncement,
+          true,
+          true,
+        ),
+      _ => (
+          AudioSegmentType.announcement,
+          PlaybackPriority.scheduledAnnouncement,
+          true,
+          false,
+        ),
+    };
+    return AudioSegment(
+      id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
+      title: s.title.isEmpty ? 'On air' : s.title,
+      artist: s.voice ?? 'DJ',
+      type: type,
+      priority: priority,
+      audioUrl: s.hasAudio ? s.audioUrl : null,
+      spokenText: s.hasAudio ? null : s.script,
+      interruptible: interruptible,
+      resumeAfter: resumeAfter,
+    );
+  }
 
   /// Time-based rule evaluation (called on a periodic tick by the session).
   /// Returns a segment to interrupt with, or null.
@@ -224,6 +304,11 @@ class DjBanterScheduler {
     // the DJ references the actual surroundings and never repeats in a trip.
     final gps = _gpsBanter();
     if (gps != null) return gps;
+
+    // 3b) Occasionally share an admin-authored county fact (CountyConfig.facts)
+    // — real, editable local knowledge, rotated so it never repeats too soon.
+    final countyFact = _maybeCountyFact();
+    if (countyFact != null) return countyFact;
 
     final station = stationFor(radioStationName);
 

@@ -8,8 +8,8 @@ import 'package:explorer_os_mobile/features/gps/services/geofence_selector.dart'
 /// database geofences and determines the best matching hierarchical fence.
 class GeofenceIntelligenceService {
   GeofenceIntelligenceService({
-    this._selector = const GeofenceSelector(),
-  });
+    GeofenceSelector selector = const GeofenceSelector(),
+  }) : _selector = selector;
 
   final GeofenceSelector _selector;
 

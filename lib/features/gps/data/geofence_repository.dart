@@ -46,9 +46,10 @@ class NearbyGeofence {
       );
 }
 
-/// Read/write access to `geofences`. Read-safe when Supabase isn't
-/// configured or the table doesn't exist yet — callers get an empty list
-/// rather than an error, matching every other repository in this codebase.
+/// Read/write access to `geofences` (migration 0043). Read-safe when
+/// Supabase isn't configured or the table doesn't exist yet — callers get
+/// an empty list rather than an error, matching every other repository in
+/// this codebase.
 class GeofenceRepository {
   const GeofenceRepository();
 
