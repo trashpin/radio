@@ -203,13 +203,24 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
   return out;
 }
 
-/// WILDLIFE/NATURE/HISTORY from the geocoded `location_content` index — the
-/// same content the Background Discovery Engine already teaches from between
-/// songs, filtered to Marion County (or area-general items with no county
-/// set). Reused, not duplicated.
+/// WHERE YOU ARE/COUNTY/WILDLIFE/NATURE/HISTORY from the geocoded
+/// `location_content` index — the same content the Background Discovery
+/// Engine already teaches from between songs, filtered to Marion County (or
+/// area-general items with no county set). Reused, not duplicated.
+///
+/// City/community rows (Ocklawaha's own welcome/history/fun-facts/community-
+/// story items, etc.) supplement WHERE YOU ARE alongside the single
+/// [playerLocationContextProvider] candidate, so the tour actually surfaces
+/// what's been written about the specific town the traveler is passing
+/// through, not just a single synthesized line. `county_*` rows supplement
+/// [_countyCandidates] the same way, so MARION COUNTY plays real authored
+/// content even on counties whose CountyConfig (Admin → County Manager)
+/// hasn't been filled in yet.
 Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
     List<ContentItem> items) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
+    ExploreCategory.whereYouAre: [],
+    ExploreCategory.county: [],
     ExploreCategory.wildlife: [],
     ExploreCategory.nature: [],
     ExploreCategory.history: [],
@@ -238,9 +249,26 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
 
 /// Birds count as WILDLIFE per this feature's spec (section 4.4), not
 /// nature — distinct from the older `DiscoveryCategory` taxonomy elsewhere in
-/// the radio engine, which splits them out.
+/// the radio engine, which splits them out. City/community categories map to
+/// WHERE YOU ARE (they're written about a specific town) and `county_*`
+/// categories map to MARION COUNTY (spec sections 4.1/4.3) rather than the
+/// broader HISTORY bucket, which is reserved for county-wide historical
+/// topics not tied to one town.
 ExploreCategory? _bucketForContentCategory(ContentCategory c) {
   switch (c) {
+    case ContentCategory.cityWelcome:
+    case ContentCategory.cityIntro:
+    case ContentCategory.cityHistory:
+    case ContentCategory.cityFunFacts:
+    case ContentCategory.communityStory:
+      return ExploreCategory.whereYouAre;
+    case ContentCategory.countyWelcome:
+    case ContentCategory.countyHistory:
+    case ContentCategory.countyFunFacts:
+    case ContentCategory.countyAgriculture:
+    case ContentCategory.countyEconomy:
+    case ContentCategory.countyHiddenGems:
+      return ExploreCategory.county;
     case ContentCategory.wildlife:
     case ContentCategory.birds:
       return ExploreCategory.wildlife;
@@ -255,11 +283,8 @@ ExploreCategory? _bucketForContentCategory(ContentCategory c) {
     case ContentCategory.scenicOverlook:
       return ExploreCategory.nature;
     case ContentCategory.history:
-    case ContentCategory.countyHistory:
-    case ContentCategory.cityHistory:
     case ContentCategory.historicLandmark:
     case ContentCategory.historicHighway:
-    case ContentCategory.communityStory:
       return ExploreCategory.history;
     default:
       return null;
@@ -420,13 +445,30 @@ final exploreCandidatesProvider =
   if (whereHeaded != null) pool[ExploreCategory.whereHeaded]!.add(whereHeaded);
   pool[ExploreCategory.county]!.addAll(_countyCandidates(ref));
 
-  _mergeInto(pool, _fromLocationContent(ref.watch(locationContentItemsProvider)));
+  final contentItems = ref.watch(locationContentItemsProvider);
+  _mergeInto(pool, _fromLocationContent(contentItems));
 
+  // The live `destinations` table has no `county` column (a MasterDestination
+  // field that's never actually populated), so "is this destination in
+  // Marion?" is derived the same way [marionCountyActiveProvider] derives the
+  // traveler's own county — via the existing LocationIntelligenceEngine
+  // against the destination's own coordinates — rather than a field that
+  // doesn't exist in the schema.
   final destinations =
       ref.watch(masterDestinationsProvider).value ?? const <MasterDestination>[];
+  final engine = ref.watch(locationIntelligenceEngineProvider);
   final marionDestinations = <String, MasterDestination>{
     for (final d in destinations)
-      if ((d.county ?? '').trim().toLowerCase() == 'marion') d.id: d,
+      if (d.latitude != null &&
+          d.longitude != null &&
+          (engine
+                      .deriveContext(d.latitude!, d.longitude!, contentItems)
+                      .county ??
+                  '')
+                  .trim()
+                  .toLowerCase() ==
+              'marion')
+        d.id: d,
   };
   final narrations = ref.watch(explorePublishedNarrationsProvider).value ??
       const <DestinationNarration>[];
