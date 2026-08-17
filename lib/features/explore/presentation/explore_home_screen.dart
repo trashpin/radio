@@ -200,7 +200,7 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('ExplorerOS Radio',
+                    const Text('Sunshine Travel Radio',
                         style: TextStyle(
                             color: _P.dim,
                             fontSize: 12,

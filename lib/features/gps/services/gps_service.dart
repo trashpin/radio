@@ -4,6 +4,7 @@ import 'package:explorer_os_mobile/features/gps/events/gps_event.dart';
 import 'package:explorer_os_mobile/features/gps/models/attraction_point.dart';
 import 'package:explorer_os_mobile/features/gps/models/county_boundary.dart';
 import 'package:explorer_os_mobile/features/gps/models/destination_context.dart';
+import 'package:explorer_os_mobile/features/gps/models/geofence.dart';
 import 'package:explorer_os_mobile/features/gps/models/geofence_region.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_location.dart';
@@ -21,6 +22,7 @@ import 'package:explorer_os_mobile/features/gps/services/county_detection_servic
 import 'package:explorer_os_mobile/features/gps/services/destination_detection_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/distance_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/eta_service.dart';
+import 'package:explorer_os_mobile/features/gps/services/geofence_intelligence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/geofence_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/gps_cache_service.dart';
 import 'package:explorer_os_mobile/features/gps/services/heading_service.dart';
@@ -38,11 +40,16 @@ import 'package:explorer_os_mobile/features/gps/services/travel_session_service.
 /// [GpsEvent]s the rest of ExplorerOS reacts to.
 ///
 /// It orchestrates every GPS sub-service: fixes arrive from the
-/// [LocationTrackingService]; each runs through the pipeline (speed → heading →
-/// distance/route → geofence → park → county → state → destinations); a
-/// [TravelContext] is assembled + cached; the session updates; and meaningful
-/// changes are emitted as events. No map-SDK dependency — positioning comes from
-/// the swappable `LocationProvider`.
+/// [LocationTrackingService]; each runs through the pipeline:
+///
+/// speed → heading → distance/route → geofence → hierarchical geofence
+/// intelligence → park → county → state → destinations
+///
+/// A [TravelContext] is assembled + cached; the session updates; and meaningful
+/// changes are emitted as events.
+///
+/// No map-SDK dependency — positioning comes from the swappable
+/// [LocationProvider].
 ///
 /// [processLocation] is synchronous and side-effect-contained so the whole
 /// engine is drivable/assertable in tests without timers.
@@ -56,6 +63,7 @@ class GPSService {
     required this.etaService,
     required this.routeEngine,
     required this.geofenceService,
+    required this.geofenceIntelligenceService,
     required this.parkDetectionService,
     required this.countyDetectionService,
     required this.destinationDetectionService,
@@ -74,7 +82,16 @@ class GPSService {
   final DistanceService distanceService;
   final ETAService etaService;
   final RouteEngine routeEngine;
+
+  /// Existing enter/exit geofence service.
   final GeofenceService geofenceService;
+
+  /// New hierarchical geofence intelligence service.
+  ///
+  /// This selects the deepest active database geofence containing the
+  /// user's current GPS position.
+  final GeofenceIntelligenceService geofenceIntelligenceService;
+
   final ParkDetectionService parkDetectionService;
   final CountyDetectionService countyDetectionService;
   final DestinationDetectionService destinationDetectionService;
@@ -87,108 +104,190 @@ class GPSService {
 
   final StreamController<TravelContext> _contextController =
       StreamController<TravelContext>.broadcast();
+
   final StreamController<GpsEvent> _eventController =
       StreamController<GpsEvent>.broadcast();
 
   Stream<TravelContext> get travelContextStream => _contextController.stream;
+
   Stream<GpsEvent> get events => _eventController.stream;
 
   GpsTrackingStatus _status = GpsTrackingStatus.idle;
+
   GpsTrackingStatus get status => _status;
 
   TravelContext _current = TravelContext.initial();
+
   TravelStatistics _stats = TravelStatistics.empty;
+
   GPSLocation? _previous;
+
   bool _gpsLost = false;
 
   // Transition trackers.
   String? _prevStateCode;
   String? _prevStateName;
+
   String? _prevCountyId;
   String? _prevCountyName;
+
   String? _prevParkId;
+
   ArrivalStatus? _prevArrival;
+
   MovementState? _prevMovement;
+
   TravelMode? _prevTravelMode;
+
   CardinalDirection? _prevHeadingDirection;
+
   bool _wasMoving = false;
+
   final Set<String> _seenNearby = {};
 
-  /// Seeds the engine with content it reasons about (from repositories).
+  /// Hierarchical database geofences used by
+  /// [GeofenceIntelligenceService].
+  ///
+  /// These are separate from the older [GeofenceRegion] system so the
+  /// existing GPS behavior remains intact.
+  List<Geofence> _hierarchicalGeofences = const [];
+
+  /// The currently selected hierarchical geofence.
+  ///
+  /// This is the deepest active geofence containing the current GPS position.
+  GeofenceMatch? get currentGeofence =>
+      geofenceIntelligenceService.current;
+
+  /// Seeds the engine with content it reasons about from repositories.
+  ///
+  /// [geofences] is the existing GeofenceRegion system.
+  ///
+  /// [hierarchicalGeofences] is the new database-backed hierarchy using
+  /// Geofence + GeofenceLevel.
   void configure({
     List<ParkBoundary> parks = const [],
     List<StateBoundary> states = const [],
     List<CountyBoundary> counties = const [],
     List<AttractionPoint> attractions = const [],
     List<GeofenceRegion> geofences = const [],
+    List<Geofence> hierarchicalGeofences = const [],
     String? routeId,
     List<AttractionPoint> routeStops = const [],
   }) {
     parkDetectionService.setParks(parks);
+
     stateDetectionService.setStates(states);
+
     countyDetectionService.setCounties(counties);
+
     destinationDetectionService.setCandidates(attractions);
+
     geofenceService.setRegions(
-      geofences.isNotEmpty ? geofences : _geofencesFromParks(parks),
+      geofences.isNotEmpty
+          ? geofences
+          : _geofencesFromParks(parks),
     );
-    routeEngine.setRoute(routeId: routeId, stops: routeStops);
+
+    _hierarchicalGeofences =
+        List<Geofence>.unmodifiable(hierarchicalGeofences);
+
+    geofenceIntelligenceService.reset();
+
+    routeEngine.setRoute(
+      routeId: routeId,
+      stops: routeStops,
+    );
   }
 
-  // --- Tracking lifecycle --------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Tracking lifecycle
+  // ---------------------------------------------------------------------------
 
   Future<void> startTracking() async {
     if (_status == GpsTrackingStatus.tracking) return;
+
     _status = GpsTrackingStatus.tracking;
+
     sessionService.start();
-    _stats = TravelStatistics(tripStartedAt: DateTime.now());
+
+    _stats = TravelStatistics(
+      tripStartedAt: DateTime.now(),
+    );
+
     await tracking.start(processLocation);
   }
 
   Future<void> stopTracking() async {
     _status = GpsTrackingStatus.stopped;
+
     sessionService.stop();
+
     await tracking.stop();
-    _emit(TravelStopped(DateTime.now()));
+
+    _emit(
+      TravelStopped(DateTime.now()),
+    );
   }
 
   void pauseTracking() {
     if (_status != GpsTrackingStatus.tracking) return;
+
     _status = GpsTrackingStatus.paused;
+
     tracking.pause();
   }
 
   void resumeTracking() {
     if (_status != GpsTrackingStatus.paused) return;
+
     _status = GpsTrackingStatus.tracking;
+
     tracking.resume();
   }
 
-  /// Starts tracking optimized for a backgrounded app (emits a background event
-  /// so systems like Explorer Radio know to keep running).
+  /// Starts tracking optimized for a backgrounded app.
   Future<void> startBackgroundTracking() async {
-    _emit(BackgroundTrackingStarted(DateTime.now()));
+    _emit(
+      BackgroundTrackingStarted(DateTime.now()),
+    );
+
     await startTracking();
   }
 
   Future<void> stopBackgroundTracking() async {
-    _emit(BackgroundTrackingStopped(DateTime.now()));
+    _emit(
+      BackgroundTrackingStopped(DateTime.now()),
+    );
+
     await stopTracking();
   }
 
-  /// Ends the current trip and starts a fresh one (stats reset).
+  /// Ends the current trip and starts a fresh one.
   void resetTravelSession() {
     sessionService.reset();
-    _stats = TravelStatistics(tripStartedAt: DateTime.now());
+
+    _stats = TravelStatistics(
+      tripStartedAt: DateTime.now(),
+    );
+
     routeEngine.reset();
+
     _seenNearby.clear();
-    _emit(TravelStarted(DateTime.now()));
+
+    _emit(
+      TravelStarted(DateTime.now()),
+    );
   }
 
-  /// Signal that positioning was lost (called by a real provider adapter).
+  /// Signal that positioning was lost.
   void reportSignalLost() {
     if (_gpsLost) return;
+
     _gpsLost = true;
-    _emit(GpsLost(DateTime.now()));
+
+    _emit(
+      GpsLost(DateTime.now()),
+    );
   }
 
   /// The battery-aware sampling policy for the current movement/mode.
@@ -198,21 +297,36 @@ class GPSService {
         _current.travelMode,
       );
 
-  // --- The pipeline --------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // GPS processing pipeline
+  // ---------------------------------------------------------------------------
 
-  /// Processes a fix. Resilient: if any enrichment service throws on real
-  /// device data, the raw location is STILL published so the app is located
-  /// (previously an enrichment error dropped the whole fix → "finding your
-  /// location" forever).
+  /// Processes a GPS fix.
+  ///
+  /// The raw location is still published if an enrichment service throws,
+  /// preventing a single enrichment failure from making the app appear to be
+  /// stuck on "finding your location".
   TravelContext processLocation(GPSLocation loc) {
     try {
       return _enrichLocation(loc);
     } catch (e) {
-      final fallback = TravelContext(timestamp: loc.timestamp, location: loc);
+      final fallback = TravelContext(
+        timestamp: loc.timestamp,
+        location: loc,
+      );
+
       _current = fallback;
       _previous = loc;
+
       _contextController.add(fallback);
-      _emit(LocationUpdated(loc.timestamp, loc));
+
+      _emit(
+        LocationUpdated(
+          loc.timestamp,
+          loc,
+        ),
+      );
+
       return fallback;
     }
   }
@@ -220,18 +334,47 @@ class GPSService {
   TravelContext _enrichLocation(GPSLocation loc) {
     if (_gpsLost) {
       _gpsLost = false;
-      _emit(GpsRecovered(loc.timestamp));
+
+      _emit(
+        GpsRecovered(loc.timestamp),
+      );
     }
 
     final mps = loc.speedMps ?? _derivedSpeedMps(loc);
+
     final speed = speedService.classify(mps);
-    final heading = headingService.resolve(loc, previous: _previous);
+
+    final heading = headingService.resolve(
+      loc,
+      previous: _previous,
+    );
 
     routeEngine.onLocation(loc);
+
+    // Existing geofence enter/exit system.
     geofenceService.evaluate(loc);
+
+    // New hierarchical database geofence intelligence.
+    //
+    // The selector checks all active geofences containing this coordinate and
+    // chooses the deepest hierarchy level. If two geofences are at the same
+    // level, priority and then distance determine the winner.
+    if (_hierarchicalGeofences.isNotEmpty) {
+      geofenceIntelligenceService.evaluate(
+        geofences: _hierarchicalGeofences,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+      );
+    } else {
+      geofenceIntelligenceService.reset();
+    }
+
     final park = parkDetectionService.update(loc);
+
     final county = countyDetectionService.detect(loc);
+
     final state = stateDetectionService.detect(loc);
+
     final routeProgress = routeEngine.progress(
       loc,
       speedMps: speed.metersPerSecond,
@@ -239,19 +382,30 @@ class GPSService {
     );
 
     final nearby = destinationDetectionService.nearby(loc);
+
     final upcoming = heading == null
         ? const <UpcomingDestination>[]
-        : destinationDetectionService.upcoming(loc, heading.degrees,
-            speedMps: speed.metersPerSecond);
-    final NearbyDestination? nearest = nearby.isEmpty ? null : nearby.first;
-    final UpcomingDestination? next = upcoming.isEmpty ? null : upcoming.first;
+        : destinationDetectionService.upcoming(
+            loc,
+            heading.degrees,
+            speedMps: speed.metersPerSecond,
+          );
+
+    final NearbyDestination? nearest =
+        nearby.isEmpty ? null : nearby.first;
+
+    final UpcomingDestination? next =
+        upcoming.isEmpty ? null : upcoming.first;
 
     final isParked =
-        speed.travelMode == TravelMode.stationary && park.parkId != null;
+        speed.travelMode == TravelMode.stationary &&
+        park.parkId != null;
 
     _stats = _stats.copyWith(
-      distanceTravelledMeters: routeEngine.distanceTravelledMeters,
-      maxSpeedMps: mps > _stats.maxSpeedMps ? mps : _stats.maxSpeedMps,
+      distanceTravelledMeters:
+          routeEngine.distanceTravelledMeters,
+      maxSpeedMps:
+          mps > _stats.maxSpeedMps ? mps : _stats.maxSpeedMps,
     );
 
     final currentDestination = park.parkId == null
@@ -275,7 +429,8 @@ class GPSService {
       bearingDegrees: heading?.degrees,
       speed: speed,
       isParked: isParked,
-      distanceTravelledMeters: routeEngine.distanceTravelledMeters,
+      distanceTravelledMeters:
+          routeEngine.distanceTravelledMeters,
       nearest: nearest,
       next: next,
       estimatedArrival: next?.eta,
@@ -284,57 +439,109 @@ class GPSService {
       visited: destinationDetectionService.visited,
       routeProgress: routeProgress,
       distanceRemainingMeters:
-          routeProgress.distanceToNextMeters ?? next?.distanceMeters,
+          routeProgress.distanceToNextMeters ??
+          next?.distanceMeters,
       statistics: _stats,
       travelSession: sessionService.current,
     );
 
-    _publishTransitions(context, speed, heading?.direction, state?.name,
-        county, nearby);
+    _publishTransitions(
+      context,
+      speed,
+      heading?.direction,
+      state?.name,
+      county,
+      nearby,
+    );
 
     sessionService.recordFix(_stats);
+
     _current = context;
+
     _previous = loc;
-    cache.record(LocationSnapshot(
-      location: loc,
-      movementState: speed.movementState,
-      stateCode: state?.code,
-      parkId: park.parkId,
-    ));
+
+    cache.record(
+      LocationSnapshot(
+        location: loc,
+        movementState: speed.movementState,
+        stateCode: state?.code,
+        parkId: park.parkId,
+      ),
+    );
+
     _contextController.add(context);
-    _emit(LocationUpdated(loc.timestamp, loc));
+
+    _emit(
+      LocationUpdated(
+        loc.timestamp,
+        loc,
+      ),
+    );
+
     return context;
   }
 
-  // --- Public query API ----------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Public query API
+  // ---------------------------------------------------------------------------
 
   GPSLocation? getCurrentLocation() =>
-      tracking.last ?? offlineLocationService.lastKnownLocation();
+      tracking.last ??
+      offlineLocationService.lastKnownLocation();
 
   TravelContext getTravelContext() => _current;
+
   TravelStatistics getTravelStatistics() => _stats;
 
   List<UpcomingDestination> getUpcomingDestinations() =>
       _current.upcomingDestinations;
+
   List<NearbyDestination> getNearbyDestinations() =>
       _current.nearbyDestinations;
 
-  double calculateHeading(GPSLocation from, GPSLocation to) =>
+  /// Returns the currently selected hierarchical database geofence.
+  ///
+  /// Example:
+  ///
+  /// County → City → Park → Museum → POI
+  ///
+  /// The deepest matching level wins.
+  GeofenceMatch? getCurrentGeofence() =>
+      geofenceIntelligenceService.current;
+
+  double calculateHeading(
+    GPSLocation from,
+    GPSLocation to,
+  ) =>
       headingService.bearingBetween(from, to);
 
-  double calculateBearing(GPSLocation from, GPSLocation to) =>
+  double calculateBearing(
+    GPSLocation from,
+    GPSLocation to,
+  ) =>
       bearingService.between(from, to).degrees;
 
-  double calculateDistance(GPSLocation a, GPSLocation b) =>
+  double calculateDistance(
+    GPSLocation a,
+    GPSLocation b,
+  ) =>
       distanceService.between(a, b);
 
-  Duration? calculateETA(double distanceMeters, double? speedMps) =>
-      etaService.estimate(distanceMeters, speedMps);
+  Duration? calculateETA(
+    double distanceMeters,
+    double? speedMps,
+  ) =>
+      etaService.estimate(
+        distanceMeters,
+        speedMps,
+      );
 
   /// The current compass travel direction, if a heading is known.
-  CardinalDirection? calculateTravelDirection() => _current.heading?.direction;
+  CardinalDirection? calculateTravelDirection() =>
+      _current.heading?.direction;
 
   bool isMoving() => _current.isMoving;
+
   bool isStopped() => !_current.isMoving;
 
   bool isApproachingDestination() =>
@@ -345,24 +552,40 @@ class GPSService {
       _current.arrivalStatus == ArrivalStatus.left;
 
   void markVisited(String attractionId) {
-    if (destinationDetectionService.isVisited(attractionId)) return;
+    if (destinationDetectionService.isVisited(attractionId)) {
+      return;
+    }
+
     destinationDetectionService.markVisited(attractionId);
+
     _stats = _stats.copyWith(
-      attractionsVisited: _stats.attractionsVisited + 1,
+      attractionsVisited:
+          _stats.attractionsVisited + 1,
     );
-    _emit(DestinationVisited(DateTime.now(), attractionId));
+
+    _emit(
+      DestinationVisited(
+        DateTime.now(),
+        attractionId,
+      ),
+    );
   }
 
-  void notifyRouteChanged() => _emit(RouteChanged(DateTime.now()));
+  void notifyRouteChanged() =>
+      _emit(RouteChanged(DateTime.now()));
 
   void dispose() {
     _contextController.close();
+
     _eventController.close();
   }
 
-  // --- Internals -----------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Transition events
+  // ---------------------------------------------------------------------------
 
-  void _emit(GpsEvent event) => _eventController.add(event);
+  void _emit(GpsEvent event) =>
+      _eventController.add(event);
 
   void _publishTransitions(
     TravelContext ctx,
@@ -375,25 +598,53 @@ class GPSService {
     // State enter/exit.
     if (ctx.currentStateCode != _prevStateCode) {
       if (_prevStateCode != null) {
-        _emit(ExitedState(ctx.timestamp, _prevStateCode!, _prevStateName ?? ''));
+        _emit(
+          ExitedState(
+            ctx.timestamp,
+            _prevStateCode!,
+            _prevStateName ?? '',
+          ),
+        );
       }
+
       if (ctx.currentStateCode != null) {
-        _emit(EnteredState(
-            ctx.timestamp, ctx.currentStateCode!, stateName ?? ''));
+        _emit(
+          EnteredState(
+            ctx.timestamp,
+            ctx.currentStateCode!,
+            stateName ?? '',
+          ),
+        );
       }
+
       _prevStateCode = ctx.currentStateCode;
       _prevStateName = stateName;
     }
 
     // County enter/exit.
     final countyId = county?.id;
+
     if (countyId != _prevCountyId) {
       if (_prevCountyId != null) {
-        _emit(ExitedCounty(ctx.timestamp, _prevCountyId!, _prevCountyName ?? ''));
+        _emit(
+          ExitedCounty(
+            ctx.timestamp,
+            _prevCountyId!,
+            _prevCountyName ?? '',
+          ),
+        );
       }
+
       if (countyId != null) {
-        _emit(EnteredCounty(ctx.timestamp, countyId, county?.name ?? ''));
+        _emit(
+          EnteredCounty(
+            ctx.timestamp,
+            countyId,
+            county?.name ?? '',
+          ),
+        );
       }
+
       _prevCountyId = countyId;
       _prevCountyName = county?.name;
     }
@@ -401,84 +652,166 @@ class GPSService {
     // Park enter/exit.
     if (ctx.currentParkId != _prevParkId) {
       if (_prevParkId != null) {
-        _emit(ExitedPark(ctx.timestamp, _prevParkId!));
+        _emit(
+          ExitedPark(
+            ctx.timestamp,
+            _prevParkId!,
+          ),
+        );
       }
+
       if (ctx.currentParkId != null) {
-        _emit(EnteredPark(ctx.timestamp, ctx.currentParkId!));
-        _stats = _stats.copyWith(parksVisited: _stats.parksVisited + 1);
+        _emit(
+          EnteredPark(
+            ctx.timestamp,
+            ctx.currentParkId!,
+          ),
+        );
+
+        _stats = _stats.copyWith(
+          parksVisited: _stats.parksVisited + 1,
+        );
       }
+
       _prevParkId = ctx.currentParkId;
     }
 
     // Arrival status transitions.
-    if (ctx.arrivalStatus != _prevArrival && ctx.currentParkId != null) {
+    if (ctx.arrivalStatus != _prevArrival &&
+        ctx.currentParkId != null) {
       final id = ctx.currentParkId!;
+
       switch (ctx.arrivalStatus) {
         case ArrivalStatus.approaching:
-          _emit(ApproachingDestination(ctx.timestamp, id));
+          _emit(
+            ApproachingDestination(
+              ctx.timestamp,
+              id,
+            ),
+          );
+
         case ArrivalStatus.arrived:
-          _emit(ArrivedAtDestination(ctx.timestamp, id));
+          _emit(
+            ArrivedAtDestination(
+              ctx.timestamp,
+              id,
+            ),
+          );
+
         case ArrivalStatus.visiting:
-          _emit(VisitingDestination(ctx.timestamp, id));
+          _emit(
+            VisitingDestination(
+              ctx.timestamp,
+              id,
+            ),
+          );
+
         case ArrivalStatus.departing:
-          _emit(LeavingDestination(ctx.timestamp, id));
+          _emit(
+            LeavingDestination(
+              ctx.timestamp,
+              id,
+            ),
+          );
+
         case ArrivalStatus.left:
         case null:
           break;
       }
     }
+
     _prevArrival = ctx.arrivalStatus;
 
     // Speed / travel-mode change.
     if (speed.movementState != _prevMovement ||
         speed.travelMode != _prevTravelMode) {
-      _emit(SpeedChanged(ctx.timestamp, speed));
+      _emit(
+        SpeedChanged(
+          ctx.timestamp,
+          speed,
+        ),
+      );
+
       _prevMovement = speed.movementState;
       _prevTravelMode = speed.travelMode;
     }
 
-    // Heading change (by compass point).
-    if (headingDirection != null && headingDirection != _prevHeadingDirection) {
-      _emit(HeadingChanged(ctx.timestamp, ctx.bearingDegrees ?? 0));
+    // Heading change by compass point.
+    if (headingDirection != null &&
+        headingDirection != _prevHeadingDirection) {
+      _emit(
+        HeadingChanged(
+          ctx.timestamp,
+          ctx.bearingDegrees ?? 0,
+        ),
+      );
+
       _prevHeadingDirection = headingDirection;
     }
 
     // New nearby destinations.
     for (final n in nearby) {
       if (_seenNearby.add(n.id)) {
-        _emit(NearbyDestinationDetected(ctx.timestamp, n.id));
+        _emit(
+          NearbyDestinationDetected(
+            ctx.timestamp,
+            n.id,
+          ),
+        );
       }
     }
 
     // Travel started / stopped.
     final isMovingNow = speed.isMoving;
+
     if (isMovingNow && !_wasMoving) {
-      _emit(TravelStarted(ctx.timestamp));
+      _emit(
+        TravelStarted(ctx.timestamp),
+      );
     } else if (!isMovingNow && _wasMoving) {
-      _emit(TravelStopped(ctx.timestamp));
+      _emit(
+        TravelStopped(ctx.timestamp),
+      );
     }
+
     _wasMoving = isMovingNow;
   }
 
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
   double _derivedSpeedMps(GPSLocation loc) {
     final prev = _previous;
+
     if (prev == null) return 0;
-    final meters = distanceService.between(prev, loc);
+
+    final meters =
+        distanceService.between(prev, loc);
+
     final seconds =
-        loc.timestamp.difference(prev.timestamp).inMilliseconds / 1000.0;
+        loc.timestamp
+                .difference(prev.timestamp)
+                .inMilliseconds /
+            1000.0;
+
     return seconds > 0 ? meters / seconds : 0;
   }
 
-  List<GeofenceRegion> _geofencesFromParks(List<ParkBoundary> parks) {
+  List<GeofenceRegion> _geofencesFromParks(
+    List<ParkBoundary> parks,
+  ) {
     return parks
-        .map((p) => GeofenceRegion(
-              id: 'park_${p.parkId}',
-              latitude: p.latitude,
-              longitude: p.longitude,
-              radiusMeters: p.radiusMeters,
-              type: GeofenceType.park,
-              referenceId: p.parkId,
-            ))
+        .map(
+          (p) => GeofenceRegion(
+            id: 'park_${p.parkId}',
+            latitude: p.latitude,
+            longitude: p.longitude,
+            radiusMeters: p.radiusMeters,
+            type: GeofenceType.park,
+            referenceId: p.parkId,
+          ),
+        )
         .toList(growable: false);
   }
 }

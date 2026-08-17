@@ -11,9 +11,9 @@ const List<StationProfile> defaultStationProfiles = [
   StationProfile(
     id: 'explorer_radio',
     stationId: 'explorer_radio',
-    name: 'Explorer Radio',
-    description: 'The flagship ExplorerOS station: music, ranger stories, and '
-        'location audio.',
+    name: 'Sunshine Travel Radio',
+    description: 'The flagship Sunshine Travel Radio station: music, ranger '
+        'stories, and location audio.',
     genre: 'Variety',
     mood: 'Adventurous',
     targetAudience: 'All explorers',

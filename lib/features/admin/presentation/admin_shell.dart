@@ -8,7 +8,6 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/admin_modules.dart';
 import 'package:explorer_os_mobile/features/admin/admin_state.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_generator_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/content_pages.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/content_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/admin_settings_page.dart';
@@ -19,15 +18,13 @@ import 'package:explorer_os_mobile/features/admin/counties/county_completion_das
 import 'package:explorer_os_mobile/features/admin/counties/county_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/location_tester/location_tester_page.dart';
 import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/events/events_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/map_editor_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/presentation/audio_production_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/presentation/media_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/media_imports_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/playback_debug_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/radio_automation_page.dart';
-import 'package:explorer_os_mobile/features/admin/presentation/radio_director_settings_page.dart';
 import 'package:explorer_os_mobile/features/radio_scheduler/presentation/rundown_builder_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/song_uploader_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page.dart';
@@ -63,8 +60,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     switch (module) {
       case AdminModule.dashboard:
         return const DashboardPage();
-      case AdminModule.mediaImports:
-        return const MediaImportsPage();
       case AdminModule.masterLocations:
         return const LocationsAdminPage();
       case AdminModule.countyManager:
@@ -75,14 +70,14 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const CountyCompletionDashboardPage();
       case AdminModule.nearbyGems:
         return const NearbyGemsManagerPage();
+      case AdminModule.events:
+        return const EventsManagerPage();
       case AdminModule.locationTester:
         return const LocationTesterPage();
       case AdminModule.destinations:
         return const DestinationDashboardPage();
       case AdminModule.settings:
         return const AdminSettingsPage();
-      case AdminModule.mediaLibrary:
-        return const MediaLibraryPage();
       case AdminModule.stories:
         return const ContentUploaderPage(storiesConfig);
       case AdminModule.wildlifeAlerts:
@@ -99,8 +94,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const DjStudioPage();
       case AdminModule.radioAutomation:
         return const RadioAutomationPage();
-      case AdminModule.radioDirector:
-        return const RadioDirectorSettingsPage();
       case AdminModule.storyStudio:
         return const StoryStudioPage();
       case AdminModule.contentGenerator:
@@ -109,8 +102,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const DatabaseToolsPage();
       case AdminModule.playbackDebug:
         return const PlaybackDebugPage();
-      case AdminModule.mapEditor:
-        return const MapEditorPage();
       case AdminModule.species:
         return const SpeciesAdminPage();
       case AdminModule.speciesImages:
@@ -121,8 +112,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const MediaManagerPage();
       case AdminModule.audioProduction:
         return const AudioProductionPage();
-      default:
-        return ModulePlaceholder(module: module);
     }
   }
 

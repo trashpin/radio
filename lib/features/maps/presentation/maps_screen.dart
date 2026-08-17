@@ -426,7 +426,7 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             ),
           );
       messenger.showSnackBar(
-          SnackBar(content: Text('Playing ${sel.name} on Explorer Radio')));
+          SnackBar(content: Text('Playing ${sel.name} on Sunshine Travel Radio')));
       return;
     }
     messenger.showSnackBar(

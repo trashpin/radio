@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -80,6 +81,14 @@ class _CountyCard extends ConsumerWidget {
                 const StatusBadge(BadgeStatus.published, label: 'Weather on')
               else
                 const StatusBadge(BadgeStatus.draft, label: 'Weather off'),
+              const Gap.h(AppSpacing.sm),
+              StatusBadge(
+                config.profileCompleteness >= 1
+                    ? BadgeStatus.published
+                    : BadgeStatus.draft,
+                label:
+                    'Profile ${(config.profileCompleteness * 100).round()}%',
+              ),
             ]),
             const Gap.v(AppSpacing.xs),
             Text(config.welcome ?? '(built-in greeting)',
@@ -138,6 +147,32 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       text: (widget.config?.musicCategories ?? const []).join(', '));
   late bool _weather = widget.config?.weatherEnabled ?? true;
   late bool _recEnabled = widget.config?.recommendationsEnabled ?? true;
+
+  // County Profile fields (read by TELL ME MORE's county tier).
+  late final _seal = TextEditingController(text: widget.config?.sealUrl ?? '');
+  late final _hero =
+      TextEditingController(text: widget.config?.heroImageUrl ?? '');
+  late final _welcomeNarration = TextEditingController(
+      text: widget.config?.welcomeNarrationUrl ?? '');
+  late final _history =
+      TextEditingController(text: widget.config?.history ?? '');
+  late final _overview =
+      TextEditingController(text: widget.config?.overview ?? '');
+  late final _population = TextEditingController(
+      text: widget.config?.population?.toString() ?? '');
+  late final _sizeSqMiles = TextEditingController(
+      text: widget.config?.sizeSqMiles?.toString() ?? '');
+  late final _yearEstablished = TextEditingController(
+      text: widget.config?.yearEstablished?.toString() ?? '');
+  late final _facts =
+      TextEditingController(text: (widget.config?.facts ?? const []).join('\n'));
+  late final _tourismInfo =
+      TextEditingController(text: widget.config?.tourismInfo ?? '');
+  late final _officialWebsite =
+      TextEditingController(text: widget.config?.officialWebsite ?? '');
+  late final _galleryImages = TextEditingController(
+      text: (widget.config?.galleryImages ?? const []).join('\n'));
+
   bool _saving = false;
 
   @override
@@ -151,11 +186,49 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
       _voice,
       _recs,
       _music,
+      _seal,
+      _hero,
+      _welcomeNarration,
+      _history,
+      _overview,
+      _population,
+      _sizeSqMiles,
+      _yearEstablished,
+      _facts,
+      _tourismInfo,
+      _officialWebsite,
+      _galleryImages,
     ]) {
       c.dispose();
     }
     super.dispose();
   }
+
+  Future<void> _pickImage(TextEditingController target) async {
+    final res =
+        await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
+    if (res == null || res.files.isEmpty || res.files.first.bytes == null) {
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final url = await ref
+          .read(countyConfigRepositoryProvider)
+          .uploadImage(res.files.first.bytes!, res.files.first.name);
+      setState(() => target.text = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Upload failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String? _nn(String s) => s.trim().isEmpty ? null : s.trim();
+  List<String> _lines(String s) =>
+      s.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
 
   Future<void> _save() async {
     setState(() => _saving = true);
@@ -163,22 +236,30 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
     final row = {
       'name': _name.text.trim(),
       'state': _state.text.trim(),
-      'welcome': _welcome.text.trim().isEmpty ? null : _welcome.text.trim(),
-      'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
-      'theme_song_url': _theme.text.trim().isEmpty ? null : _theme.text.trim(),
-      'weather_voice': _voice.text.trim().isEmpty ? null : _voice.text.trim(),
+      'welcome': _nn(_welcome.text),
+      'description': _nn(_desc.text),
+      'theme_song_url': _nn(_theme.text),
+      'weather_voice': _nn(_voice.text),
       'weather_enabled': _weather,
       'recommendations_enabled': _recEnabled,
-      'recommendations': _recs.text
-          .split('\n')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList(),
+      'recommendations': _lines(_recs.text),
       'music_categories': _music.text
           .split(',')
           .map((s) => s.trim())
           .where((s) => s.isNotEmpty)
           .toList(),
+      'seal_url': _nn(_seal.text),
+      'hero_image_url': _nn(_hero.text),
+      'welcome_narration_url': _nn(_welcomeNarration.text),
+      'history': _nn(_history.text),
+      'overview': _nn(_overview.text),
+      'population': int.tryParse(_population.text.trim()),
+      'size_sq_miles': double.tryParse(_sizeSqMiles.text.trim()),
+      'year_established': int.tryParse(_yearEstablished.text.trim()),
+      'facts': _lines(_facts.text),
+      'tourism_info': _nn(_tourismInfo.text),
+      'official_website': _nn(_officialWebsite.text),
+      'gallery_images': _lines(_galleryImages.text),
     };
     try {
       if (widget.config == null) {
@@ -201,7 +282,7 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
     return AlertDialog(
       title: Text(widget.config == null ? 'Add county' : 'Edit county'),
       content: SizedBox(
-        width: 520,
+        width: 560,
         child: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Row(children: [
@@ -241,6 +322,57 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
                 ),
               ),
             ]),
+            const Divider(height: 32),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('County Profile',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+            const Gap.v(AppSpacing.xs),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Read by TELL ME MORE when a traveler is out in open country '
+                '(no event/park/spring/town nearby).',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ),
+            const Gap.v(AppSpacing.sm),
+            Row(children: [
+              Expanded(child: _imagePick(_seal, 'Seal image URL')),
+              const Gap.h(AppSpacing.sm),
+              Expanded(child: _imagePick(_hero, 'Hero image URL')),
+            ]),
+            const Gap.v(AppSpacing.sm),
+            _f(_welcomeNarration, 'Welcome narration audio URL'),
+            const Gap.v(AppSpacing.sm),
+            _f(_history, 'History', maxLines: 3),
+            const Gap.v(AppSpacing.sm),
+            _f(_overview, 'Overview', maxLines: 3),
+            const Gap.v(AppSpacing.sm),
+            Row(children: [
+              Expanded(child: _f(_population, 'Population')),
+              const Gap.h(AppSpacing.sm),
+              Expanded(child: _f(_sizeSqMiles, 'Size (sq mi)')),
+              const Gap.h(AppSpacing.sm),
+              Expanded(child: _f(_yearEstablished, 'Year established')),
+            ]),
+            const Gap.v(AppSpacing.sm),
+            _f(_facts, 'Fun facts (one per line)', maxLines: 3),
+            const Gap.v(AppSpacing.sm),
+            _f(_tourismInfo, 'Tourism info', maxLines: 2),
+            const Gap.v(AppSpacing.sm),
+            _f(_officialWebsite, 'Official website'),
+            const Gap.v(AppSpacing.sm),
+            _f(_galleryImages, 'Gallery image URLs (one per line)',
+                maxLines: 3),
+            if (_saving) ...[
+              const Gap.v(AppSpacing.sm),
+              const LinearProgressIndicator(),
+            ],
           ]),
         ),
       ),
@@ -261,5 +393,18 @@ class _CountyEditorState extends ConsumerState<_CountyEditor> {
         maxLines: maxLines,
         decoration: InputDecoration(
             labelText: label, isDense: true, border: const OutlineInputBorder()),
+      );
+
+  Widget _imagePick(TextEditingController c, String label) => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: _f(c, label)),
+          const Gap.h(AppSpacing.xs),
+          IconButton(
+            tooltip: 'Upload',
+            onPressed: _saving ? null : () => _pickImage(c),
+            icon: const Icon(Icons.upload_rounded),
+          ),
+        ],
       );
 }

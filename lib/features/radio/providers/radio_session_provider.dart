@@ -31,6 +31,7 @@ import 'package:explorer_os_mobile/features/location_intelligence/models/content
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 import 'package:explorer_os_mobile/features/weather/county_radio.dart';
 import 'package:explorer_os_mobile/features/weather/current_weather.dart';
@@ -951,8 +952,18 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
   ].take(3).toList();
 
   final stationName = engine.getCurrentStation()?.name;
-  final park = t.currentParkId ?? stationName?.replaceAll(' Radio', '');
+  // The active event/park/spring/town/county tier is the reliable, distance-
+  // ranked signal for "where the visitor actually is" — GpsBanterDirector
+  // matches a destination-scoped clip's gps_region against this park value
+  // (substring match), so feeding it the old park-boundary id / station name
+  // meant destination-scoped banter (e.g. OCK_RIVER's "Ocklawaha River"
+  // region) could never match regardless of location. Same precedence used
+  // for upcomingAttraction below.
+  final playerCtx = ref.read(playerLocationContextProvider);
+  final park =
+      playerCtx?.title ?? t.currentParkId ?? stationName?.replaceAll(' Radio', '');
   final upcoming =
+      playerCtx?.title ??
       t.nextAttraction?.name ??
       t.nearestAttraction?.name ??
       (exps.isNotEmpty ? exps.first.name : null);
@@ -977,7 +988,7 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     nearbyLakes: named(['lake']),
     nearbyTrails: named(['trail']),
     nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
-    station: stationName ?? 'Explorer Radio',
+    station: stationName ?? 'Sunshine Travel Radio',
     // Time-of-day + season + live-weather aware banter.
     moment: BanterMoment.now(
       weatherCondition: w?.condition,

@@ -15,16 +15,19 @@ import 'package:explorer_os_mobile/features/explore/presentation/explorer_mode_s
 import 'package:explorer_os_mobile/features/around_me/presentation/around_me_screen.dart';
 import 'package:explorer_os_mobile/features/around_me/presentation/gps_debug_screen.dart';
 import 'package:explorer_os_mobile/features/discover_area/presentation/marion_discovery_screen.dart';
+import 'package:explorer_os_mobile/features/discover_area/presentation/nearby_places_screen.dart';
 import 'package:explorer_os_mobile/features/discovery/presentation/discovery_categories_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
 import 'package:explorer_os_mobile/features/profile/presentation/profile_screen.dart';
+import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/i_see_something_screen.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/local_gems_screen.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/radio_screen.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/station_selection_screen.dart';
+import 'package:explorer_os_mobile/features/radio/presentation/tell_me_more_screen.dart';
 import 'package:explorer_os_mobile/features/radio_director/presentation/radio_director_debug_page.dart';
 import 'package:explorer_os_mobile/features/programming_director/presentation/programming_director_console_page.dart';
 import 'package:explorer_os_mobile/features/settings/presentation/settings_screen.dart';
@@ -90,10 +93,19 @@ class AppRouter {
       _route(AppRoute.explorerMode.path, const ExplorerModeScreen()),
       _route(AppRoute.iSeeSomething.path, const ISeeSomethingScreen()),
       _route(AppRoute.localGems.path, const LocalGemsScreen()),
+      GoRoute(
+        path: AppRoute.tellMeMore.path,
+        builder: (context, state) => TellMeMoreScreen(
+          tellMeMoreContext: state.extra is TellMeMoreContext
+              ? state.extra as TellMeMoreContext
+              : null,
+        ),
+      ),
       _route(AppRoute.stationSelect.path, const StationSelectionScreen()),
       _route(AppRoute.home.path, const HomeScreen()),
       _route(AppRoute.discover.path, const DiscoveryCategoriesScreen()),
       _route(AppRoute.discoverArea.path, const MarionDiscoveryScreen()),
+      _route(AppRoute.nearbyPlaces.path, const NearbyPlacesScreen()),
       _route(AppRoute.profile.path, const ProfileScreen()),
       _route(AppRoute.settings.path, const SettingsScreen()),
       _route(AppRoute.downloads.path, const DownloadsScreen()),

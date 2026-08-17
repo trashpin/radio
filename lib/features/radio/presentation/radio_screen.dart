@@ -12,7 +12,6 @@ import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.da
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
-import 'package:explorer_os_mobile/features/locations/presentation/destination_detail_card.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -23,6 +22,8 @@ import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
+import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
+import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/now_playing.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_brand_header.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -201,6 +202,11 @@ class _PlayerState extends ConsumerState<_Player> {
     final weather = ref.watch(currentWeatherProvider);
     final isPlaying = playback.status == PlaybackStatus.playing;
 
+    // EVENT > PARK > SPRING > TOWN > COUNTY — the location-aware player's
+    // visual/info layer. Purely additive: music keeps playing regardless of
+    // what this resolves to; only pressing TELL ME MORE plays anything.
+    final playerCtx = ref.watch(playerLocationContextProvider);
+
     // Refresh weather once a GPS fix flows into the map center.
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeRefreshWeather());
 
@@ -214,6 +220,19 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // What's on air right now (never the internal category).
     final nowPlaying = playback.current?.segment;
+
+    // What the DJ is CURRENTLY TALKING ABOUT — distinct from the GPS-based
+    // playerCtx above. A DJ banter/narration segment already carries a
+    // TellMeMoreContext with whatever destination/location it's scoped to
+    // (dj_banter_scheduler.dart); tellMeMoreResultProvider resolves that
+    // into a title + image the same way TELL ME MORE itself would, so the
+    // two can never disagree. Null while music/generic banter (no specific
+    // subject) is on air, or before the async lookup resolves.
+    final djCtx = nowPlaying?.tellMeMoreContext;
+    final djTopic = (djCtx != null && djCtx.hasContext)
+        ? ref.watch(tellMeMoreResultProvider(djCtx)).value
+        : null;
+
     final title = switch (interruption) {
       _Interruption.iSeeSomething => obs.species!.commonName,
       _Interruption.whatsNearMe => nearby.location?.name ?? 'Nearby',
@@ -221,7 +240,7 @@ class _PlayerState extends ConsumerState<_Player> {
       _Interruption.none =>
         (nowPlaying?.title.trim().isNotEmpty ?? false)
             ? nowPlaying!.title
-            : 'ExplorerOS Radio',
+            : 'Sunshine Travel Radio',
     };
     final onAir =
         isPlaying ||
@@ -239,17 +258,27 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
+    // Priority: what the DJ is specifically talking about (djTopic) > the
+    // GPS-based event/park/spring/town/county context (playerCtx) > the
+    // normal music artwork > generic fallbacks. The music itself is
+    // unaffected either way — only what's displayed changes.
     final heroImage =
         obs.species?.heroImageUrl ??
-        ((songCover ?? '').isNotEmpty
-            ? songCover
-            : (nearest?.location.images.isNotEmpty ?? false
-                  ? nearest!.location.images.first
-                  : widget.station.imageUrl));
-    final nearbyPlace = nearest?.location.name ?? widget.station.name;
-    final nearbyDistance = nearest == null
+        ((djTopic?.imageUrl ?? '').isNotEmpty
+            ? djTopic!.imageUrl
+            : ((playerCtx?.imageUrl ?? '').isNotEmpty
+                  ? playerCtx!.imageUrl
+                  : ((songCover ?? '').isNotEmpty
+                        ? songCover
+                        : (nearest?.location.images.isNotEmpty ?? false
+                              ? nearest!.location.images.first
+                              : widget.station.imageUrl))));
+    final nearbyPlace =
+        djTopic?.title ?? playerCtx?.title ?? nearest?.location.name ?? widget.station.name;
+    final nearbyDistance = djTopic != null
         ? null
-        : _miles(nearest.distanceMeters);
+        : (playerCtx?.distanceLabel ??
+            (nearest == null ? null : _miles(nearest.distanceMeters)));
 
     void backToRadio() {
       if (obs.active) ref.read(observationControllerProvider.notifier).clear();
@@ -349,6 +378,10 @@ class _PlayerState extends ConsumerState<_Player> {
                               ? songArtist
                               : 'Hosted by $_stationHost',
                         ),
+                        if ((playerCtx?.teaser ?? '').isNotEmpty) ...[
+                          const SizedBox(height: RD.sm),
+                          _LocationTeaser(text: playerCtx!.teaser!),
+                        ],
                         const SizedBox(height: RD.md),
                         _TransportRow(
                           isPlaying: isPlaying,
@@ -360,36 +393,49 @@ class _PlayerState extends ConsumerState<_Player> {
                           active: onAir,
                         ),
                         const SizedBox(height: RD.xl),
-                        // Replaces the former "I SEE SOMETHING" button per
-                        // the Discover This Area spec — a location-aware
-                        // discovery hub instead of a single point of
-                        // interest. The old screen/route (ISeeSomethingScreen,
-                        // AppRoute.iSeeSomething) is left in place, unused
-                        // from here, in case that flow is wanted elsewhere
-                        // later — nothing was deleted, just un-linked.
+                        // The two primary Radio-screen actions. TELL ME MORE
+                        // always reads from the SAME context driving the
+                        // hero image above — the DJ's specific current topic
+                        // (djCtx) first, since that's what's actually on air
+                        // right now, falling back to the GPS-based
+                        // event/park/spring/town/county tier (playerCtx)
+                        // when the DJ isn't discussing anything identifiable.
+                        // Never a different subject than what's displayed.
+                        PrimaryActionCard(
+                          icon: Icons.chat_bubble_rounded,
+                          title: 'TELL ME MORE',
+                          subtitle: (djTopic?.title ?? playerCtx?.title) != null
+                              ? 'The full story on ${djTopic?.title ?? playerCtx?.title}'
+                              : 'Ask about what the DJ is talking about right now',
+                          onTap: () => context.push(
+                            AppRoute.tellMeMore.path,
+                            extra: (djCtx != null && djCtx.hasContext)
+                                ? djCtx
+                                : playerCtx?.tellMeMoreContext,
+                          ),
+                        ),
+                        const SizedBox(height: RD.md),
+                        // DISCOVER lists the events/parks/springs/towns
+                        // currently nearby (reusing the exact same nearby
+                        // providers and TellMeMoreContext builders as the
+                        // player's own image/teaser) — tapping one opens
+                        // TELL ME MORE for that exact place.
                         PrimaryActionCard(
                           icon: Icons.explore_rounded,
-                          title: 'DISCOVER THIS AREA',
-                          subtitle:
-                              'History, wildlife, attractions & tours for wherever you are',
-                          onTap: () =>
-                              context.push(AppRoute.discoverArea.path),
+                          title: 'DISCOVER',
+                          subtitle: 'Nearby attractions and places',
+                          onTap: () => context.push(AppRoute.nearbyPlaces.path),
                         ),
                         const SizedBox(height: RD.md),
                         PrimaryActionCard(
                           icon: Icons.diamond_rounded,
-                          title: 'LOCAL GEMS',
+                          title: 'GEMS',
                           subtitle:
-                              'Find great places to eat, drink & explore nearby',
+                              'Curated food, museums, hidden gems & local finds',
                           onTap: () => context.push(AppRoute.localGems.path),
                         ),
                       ],
                     ),
-            ),
-            const SizedBox(height: RD.xl),
-            _NearbyStories(
-              stories: nearbyStories.take(8).toList(),
-              onViewMap: () => context.go(AppRoute.map.path),
             ),
             const SizedBox(height: RD.lg),
             _StatusBar(storyCount: nearbyStories.length, weather: weather),
@@ -516,6 +562,17 @@ class _PlayerState extends ConsumerState<_Player> {
                     builder: (_) => const StationsScreen(),
                   ),
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.explore_rounded, color: RD.green),
+              title: const Text(
+                'Discover this area',
+                style: TextStyle(color: RD.textPrimary),
+              ),
+              onTap: () {
+                Navigator.pop(sheet);
+                context.push(AppRoute.discoverArea.path);
               },
             ),
             ListTile(
@@ -649,6 +706,32 @@ class _NowPlayingLine extends StatelessWidget {
   }
 }
 
+// ── Location-aware teaser ("Did you know…") ──────────────────────────────────
+
+/// The short curiosity-hook line for the active event/park/spring/town/county
+/// tier — never the full story (that's what TELL ME MORE is for).
+class _LocationTeaser extends StatelessWidget {
+  const _LocationTeaser({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: RD.lg),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: RD.caption.copyWith(
+          color: RD.textSecondary,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+}
+
 /// The expanded "Now Playing" experience shown while a story/song/report is on
 /// air: a Ken Burns / slideshow hero with the item's title, category, distance
 /// and favorite, plus Play/Pause, Skip, Save, Navigate and More Photos controls.
@@ -756,119 +839,6 @@ class _TransportRow extends StatelessWidget {
             child: Equalizer(active: active, bars: 6, height: 40, seed: 9),
           ),
         ),
-      ],
-    );
-  }
-}
-
-// ── Nearby Stories carousel ──────────────────────────────────────────────────
-
-class _NearbyStories extends StatefulWidget {
-  const _NearbyStories({required this.stories, required this.onViewMap});
-  final List<NearbyLocation> stories;
-  final VoidCallback onViewMap;
-
-  @override
-  State<_NearbyStories> createState() => _NearbyStoriesState();
-}
-
-class _NearbyStoriesState extends State<_NearbyStories> {
-  final _controller = PageController(viewportFraction: 0.62);
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final stories = widget.stories;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Text('NEARBY STORIES', style: RD.sectionLabel),
-            const Spacer(),
-            InkWell(
-              onTap: widget.onViewMap,
-              borderRadius: BorderRadius.circular(RD.rSm),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: RD.xs,
-                  vertical: 2,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'VIEW MAP',
-                      style: RD.sectionLabel.copyWith(fontSize: 12),
-                    ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.location_on_rounded,
-                      color: RD.green,
-                      size: 15,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: RD.md),
-        if (stories.isEmpty)
-          GlassPanel(
-            child: Row(
-              children: [
-                const Icon(Icons.explore_rounded, color: RD.green),
-                const SizedBox(width: RD.md),
-                Expanded(
-                  child: Text(
-                    'Finding stories around you… make sure location is on.',
-                    style: RD.body,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else ...[
-          SizedBox(
-            height: 168,
-            child: PageView.builder(
-              controller: _controller,
-              padEnds: false,
-              onPageChanged: (i) => setState(() => _page = i),
-              itemCount: stories.length,
-              itemBuilder: (_, i) {
-                final s = stories[i];
-                final mi = s.distanceMeters / 1609.344;
-                return Padding(
-                  padding: const EdgeInsets.only(right: RD.md),
-                  child: StoryCard(
-                    width: double.infinity,
-                    title: s.location.name,
-                    category: s.location.type.label,
-                    imageUrl: s.location.images.isNotEmpty
-                        ? s.location.images.first
-                        : null,
-                    distanceLabel: '${mi.toStringAsFixed(mi < 10 ? 1 : 0)} mi',
-                    onTap: () => showDestinationDetail(
-                      context,
-                      s.location,
-                      distanceMeters: s.distanceMeters,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: RD.md),
-          PageDots(count: stories.length.clamp(1, 8), index: _page.clamp(0, 7)),
-        ],
       ],
     );
   }

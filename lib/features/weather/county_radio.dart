@@ -20,7 +20,7 @@ String greetingFor(
   final key = (county ?? '').toLowerCase().trim();
   if (key.isEmpty) {
     return state == null || state.trim().isEmpty
-        ? 'Welcome, traveler, to ExplorerOS Radio.'
+        ? 'Welcome, traveler, to Sunshine Travel Radio.'
         : 'Welcome to $state.';
   }
   final custom = overrides[key] ?? kDefaultCountyGreetings[key];
@@ -84,7 +84,7 @@ String pickRecommendation(
 /// Builds the county welcome radio sequence and enforces once-per-county.
 class CountyWelcomeDirector {
   CountyWelcomeDirector({
-    this.stationId = "You're listening to ExplorerOS Radio.",
+    this.stationId = "You're listening to Sunshine Travel Radio.",
   });
 
   final String stationId;

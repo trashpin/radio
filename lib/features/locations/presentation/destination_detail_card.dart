@@ -217,7 +217,7 @@ class DestinationDetailCard extends ConsumerWidget {
         .narrateLocation(location);
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Playing ${location.name} on Explorer Radio')),
+      SnackBar(content: Text('Playing ${location.name} on Sunshine Travel Radio')),
     );
   }
 

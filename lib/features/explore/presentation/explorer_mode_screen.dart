@@ -237,7 +237,7 @@ class _ExplorerModeScreenState extends ConsumerState<ExplorerModeScreen> {
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1)),
           const SizedBox(height: 6),
-          Text((nowTitle ?? '').trim().isNotEmpty ? nowTitle! : 'ExplorerOS Radio',
+          Text((nowTitle ?? '').trim().isNotEmpty ? nowTitle! : 'Sunshine Travel Radio',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

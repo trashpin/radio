@@ -238,6 +238,9 @@ class _GeofenceEditorState extends ConsumerState<_GeofenceEditor> {
 
   @override
   Widget build(BuildContext context) {
+    // A geofence can't be its own parent, directly or (best-effort) via a
+    // simple self-exclusion — deeper cycle prevention happens in
+    // ancestorChain() at read time regardless.
     final parentOptions = widget.allGeofences
         .where((g) => g.id != widget.geofence?.id)
         .toList();
