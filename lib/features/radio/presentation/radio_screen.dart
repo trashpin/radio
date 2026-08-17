@@ -411,15 +411,16 @@ class _PlayerState extends ConsumerState<_Player> {
                           ),
                         ),
                         const SizedBox(height: RD.md),
-                        // DISCOVER reuses the existing "Discover This Area"
-                        // hub (already reachable from the menu) — nearby
-                        // attractions and places for wherever the listener
-                        // currently is.
+                        // DISCOVER lists the events/parks/springs/towns
+                        // currently nearby (reusing the exact same nearby
+                        // providers and TellMeMoreContext builders as the
+                        // player's own image/teaser) — tapping one opens
+                        // TELL ME MORE for that exact place.
                         PrimaryActionCard(
                           icon: Icons.explore_rounded,
                           title: 'DISCOVER',
                           subtitle: 'Nearby attractions and places',
-                          onTap: () => context.push(AppRoute.discoverArea.path),
+                          onTap: () => context.push(AppRoute.nearbyPlaces.path),
                         ),
                         const SizedBox(height: RD.md),
                         PrimaryActionCard(

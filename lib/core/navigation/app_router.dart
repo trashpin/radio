@@ -15,6 +15,7 @@ import 'package:explorer_os_mobile/features/explore/presentation/explorer_mode_s
 import 'package:explorer_os_mobile/features/around_me/presentation/around_me_screen.dart';
 import 'package:explorer_os_mobile/features/around_me/presentation/gps_debug_screen.dart';
 import 'package:explorer_os_mobile/features/discover_area/presentation/discover_area_screen.dart';
+import 'package:explorer_os_mobile/features/discover_area/presentation/nearby_places_screen.dart';
 import 'package:explorer_os_mobile/features/discovery/presentation/discovery_categories_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
@@ -104,6 +105,7 @@ class AppRouter {
       _route(AppRoute.home.path, const HomeScreen()),
       _route(AppRoute.discover.path, const DiscoveryCategoriesScreen()),
       _route(AppRoute.discoverArea.path, const DiscoverAreaScreen()),
+      _route(AppRoute.nearbyPlaces.path, const NearbyPlacesScreen()),
       _route(AppRoute.profile.path, const ProfileScreen()),
       _route(AppRoute.settings.path, const SettingsScreen()),
       _route(AppRoute.downloads.path, const DownloadsScreen()),

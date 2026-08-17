@@ -68,7 +68,7 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
   // 1) EVENT — highest priority.
   final events = ref.watch(nearbyEventsProvider);
   if (events.isNotEmpty) {
-    return _fromEvent(events.first);
+    return playerContextForEvent(events.first);
   }
 
   // 2/3/4) PARK, SPRING, TOWN — same ranked nearby list "Nearby Stories" and
@@ -88,7 +88,7 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
     within: (n) => n.distanceMeters <= parkSpringMaxMeters,
   );
   if (park != null) {
-    return _fromLocation(PlayerLocationKind.park, park);
+    return playerContextForLocation(PlayerLocationKind.park, park);
   }
 
   final spring = _firstOfType(
@@ -97,7 +97,7 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
     within: (n) => n.distanceMeters <= parkSpringMaxMeters,
   );
   if (spring != null) {
-    return _fromLocation(PlayerLocationKind.spring, spring);
+    return playerContextForLocation(PlayerLocationKind.spring, spring);
   }
 
   final town = _firstOfType(
@@ -108,7 +108,7 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
     within: (n) => n.distanceMeters <= (n.location.triggerRadius ?? _kTownEntryMeters),
   );
   if (town != null) {
-    return _fromLocation(PlayerLocationKind.town, town);
+    return playerContextForLocation(PlayerLocationKind.town, town);
   }
 
   // 5) COUNTY — lowest priority, always available once GPS knows the county.
@@ -147,7 +147,11 @@ String? _teaserFor(MasterLocation loc) {
   return composeLocationScript(loc);
 }
 
-PlayerLocationContext _fromLocation(PlayerLocationKind kind, NearbyLocation n) {
+/// Builds a [PlayerLocationContext] for any single nearby master location —
+/// public so callers other than the priority resolver above (e.g. a "nearby
+/// places" list showing every park/spring/town, not just the top-ranked one)
+/// can reuse the exact same title/image/teaser/TellMeMoreContext logic.
+PlayerLocationContext playerContextForLocation(PlayerLocationKind kind, NearbyLocation n) {
   final loc = n.location;
   final distanceLabel = formatDistance(n.distanceMeters);
   return PlayerLocationContext(
@@ -187,7 +191,9 @@ String _formatEventTime(LocalEvent e) {
   return start ?? end ?? '';
 }
 
-PlayerLocationContext _fromEvent(NearbyEvent n) {
+/// Builds a [PlayerLocationContext] for any single nearby event — public for
+/// the same reason as [playerContextForLocation].
+PlayerLocationContext playerContextForEvent(NearbyEvent n) {
   final e = n.event;
   final dateLabel = e.eventDate == null
       ? null

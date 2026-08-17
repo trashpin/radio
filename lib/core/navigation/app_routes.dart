@@ -29,6 +29,7 @@ enum AppRoute {
   stationSelect('/station-select'),
   discover('/discover'),
   discoverArea('/discover-area'),
+  nearbyPlaces('/nearby-places'),
   explore('/explore'),
   profile('/profile'),
   settings('/settings'),
