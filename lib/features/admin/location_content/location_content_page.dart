@@ -8,7 +8,6 @@ import 'package:explorer_os_mobile/features/admin/categories/category_repository
 import 'package:explorer_os_mobile/features/admin/categories/location_category.dart';
 import 'package:explorer_os_mobile/features/admin/discover_area/area_content_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/geofence_manager_page.dart';
-import 'package:explorer_os_mobile/features/admin/location_content/location_content_page.dart';
 import 'package:explorer_os_mobile/features/admin/media_manager/data/media_manager_repository.dart';
 import 'package:explorer_os_mobile/features/admin/media_search/presentation/location_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
@@ -36,7 +35,7 @@ class LocationsAdminPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Column(
         children: [
           Material(
@@ -47,7 +46,6 @@ class LocationsAdminPage extends StatelessWidget {
               tabs: [
                 Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
                 Tab(icon: Icon(Icons.place_rounded), text: 'Locations'),
-                Tab(icon: Icon(Icons.pin_drop_rounded), text: 'Location Content'),
               ],
             ),
           ),
@@ -55,7 +53,7 @@ class LocationsAdminPage extends StatelessWidget {
           const Expanded(
             child: TabBarView(
               physics: NeverScrollableScrollPhysics(),
-              children: [_OverviewTab(), _ListTab(), LocationContentPage()],
+              children: [_OverviewTab(), _ListTab()],
             ),
           ),
         ],
