@@ -32,12 +32,16 @@ class ExploreModeNotifier extends Notifier<bool> {
 final exploreModeProvider =
     NotifierProvider<ExploreModeNotifier, bool>(ExploreModeNotifier.new);
 
-/// True only while the GPS-detected county is Marion — the existing county
-/// signal ([gpsControllerProvider]) is the single source of truth here, no
-/// new geofence/GPS logic. Explore is Marion-only for this first phase (spec
-/// section 1).
+/// True only while the traveler is in Marion County — reuses
+/// [locationContextProvider].county, the SAME county signal the existing
+/// County Welcome / DJ county-facts directors already depend on (derived from
+/// the nearest geocoded `location_content`, not a separate county-boundary
+/// dataset — [gpsControllerProvider]'s own `currentCounty` is a boundary-
+/// polygon detector that isn't reliably seeded everywhere yet, which is why
+/// this reuses the proven signal instead of introducing a second one).
+/// Explore is Marion-only for this first phase (spec section 1).
 final marionCountyActiveProvider = Provider<bool>((ref) {
-  final county = ref.watch(gpsControllerProvider).currentCounty;
+  final county = ref.watch(locationContextProvider).county;
   return (county ?? '').trim().toLowerCase() == 'marion';
 });
 
