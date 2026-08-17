@@ -76,9 +76,9 @@ enum AdminModule {
   countyManager('County Manager', Icons.map_rounded, AdminGroup.content,
       ready: true,
       description: 'County welcome greetings, weather reports & recommendations '
-          'for the travel-radio county reports. NOTE: does not yet expose '
-          'the County Profile fields (history/facts/hero image) the '
-          'TELL ME MORE county tier reads — flagged in the admin audit.',
+          'for the travel-radio county reports, plus the County Profile '
+          '(history, facts, hero/seal images, population, tourism info) '
+          'that the TELL ME MORE county tier reads.',
       table: 'counties'),
   categoryManager('Category Manager', Icons.category_rounded,
       AdminGroup.content,
@@ -102,6 +102,11 @@ enum AdminModule {
           'curated (name, badge, images, GPS, narration, active). No Google '
           'Places / third-party import.',
       table: 'nearby_gems'),
+  events('Events Manager', Icons.event_rounded, AdminGroup.content,
+      ready: true,
+      description: 'Local events — the EVENT tier of the location-aware '
+          'player, highest priority ahead of Park/Spring/Town/County.',
+      table: 'events'),
 
   musicLibrary('Music Library', Icons.library_music_rounded, AdminGroup.audio,
       ready: true,
