@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/radio/services/announcement_schedule
 import 'package:explorer_os_mobile/features/radio/services/audio_focus_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/background_discovery_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio/services/explore_rotation_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/history_manager.dart';
 import 'package:explorer_os_mobile/features/radio/services/music_scheduler.dart';
@@ -58,12 +59,14 @@ class RadioEngineService {
     StationIdentificationService? stationIds,
     DjBanterScheduler? djBanter,
     BackgroundDiscoveryScheduler? discovery,
+    ExploreRotationScheduler? explore,
     this.locationBanter,
   })  : audioFocus = audioFocus ?? AudioFocusManager(),
         offline = offline ?? OfflinePlaybackService(),
         stationIds = stationIds ?? StationIdentificationService(),
         djBanter = djBanter ?? DjBanterScheduler(),
-        discovery = discovery ?? BackgroundDiscoveryScheduler();
+        discovery = discovery ?? BackgroundDiscoveryScheduler(),
+        explore = explore ?? ExploreRotationScheduler();
 
   final QueueManagerService queue;
   final PlaybackController playback;
@@ -87,6 +90,24 @@ class RadioEngineService {
   /// Weaves LOCAL banter (park/city/county narration around the user) between
   /// songs. Optional — null in tests/legacy wiring means no banter is inserted.
   final LocationBanterScheduler? locationBanter;
+
+  /// MARION COUNTY EXPLORE's information-first rotation (WHERE YOU'RE HEADED →
+  /// WHERE YOU ARE → COUNTY → WILDLIFE → NATURE → GEOLOGY → HISTORY). Only
+  /// consulted when [exploreMode] is on — see [setExploreMode].
+  final ExploreRotationScheduler explore;
+
+  /// Whether the traveler has switched the player into MARION COUNTY EXPLORE.
+  /// When true, [_injectScheduledContent] asks [explore] for the next segment
+  /// instead of the normal Radio-mode discovery/location-banter chain; DJ
+  /// banter and plain music remain the fallback either way, so the player is
+  /// never silent (spec section 8).
+  bool exploreMode = false;
+
+  /// Toggles MARION COUNTY EXPLORE. Does NOT reset [explore]'s rotation
+  /// position — briefly leaving and returning (e.g. the traveler drifts just
+  /// outside Marion County and back) resumes where the tour left off, per
+  /// spec section 7.
+  void setExploreMode(bool enabled) => exploreMode = enabled;
 
   final StreamController<RadioEvent> _events =
       StreamController<RadioEvent>.broadcast();
@@ -339,18 +360,27 @@ class RadioEngineService {
       final announcement = announcements.onMusicPlayed();
       if (announcement != null) due.add(announcement);
     }
-    // Background discovery: when it's been quiet for a while, teach something
-    // about the nearby environment (before falling back to generic DJ banter).
-    if (due.isEmpty && preferences.narrationsEnabled) {
-      final discovered = discovery.due();
-      if (discovered != null) due.add(discovered);
-    }
-    // Local banter: a short narration about the park/city/county the user is
-    // in (park > city > county), reusing the location's own AI content. Sits
-    // above generic DJ banter so the station feels genuinely local.
-    if (due.isEmpty && preferences.narrationsEnabled && locationBanter != null) {
-      final local = locationBanter!.onMusicPlayed();
-      if (local != null) due.add(local);
+    if (due.isEmpty && exploreMode) {
+      // MARION COUNTY EXPLORE: information-first — check every song boundary
+      // (no quiet-gap wait) and supersede the normal discovery/location-banter
+      // chain below so the tour doesn't compete with itself. DJ banter + plain
+      // music remain the final fallback (spec section 8 — never silent).
+      final exploreSegment = explore.due();
+      if (exploreSegment != null) due.add(exploreSegment);
+    } else if (due.isEmpty) {
+      // Background discovery: when it's been quiet for a while, teach something
+      // about the nearby environment (before falling back to generic DJ banter).
+      if (preferences.narrationsEnabled) {
+        final discovered = discovery.due();
+        if (discovered != null) due.add(discovered);
+      }
+      // Local banter: a short narration about the park/city/county the user is
+      // in (park > city > county), reusing the location's own AI content. Sits
+      // above generic DJ banter so the station feels genuinely local.
+      if (due.isEmpty && preferences.narrationsEnabled && locationBanter != null) {
+        final local = locationBanter!.onMusicPlayed();
+        if (local != null) due.add(local);
+      }
     }
     // DJ banter fills the space between songs when nothing else is scheduled,
     // so the station sounds hosted rather than a bare playlist.

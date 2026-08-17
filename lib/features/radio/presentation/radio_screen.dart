@@ -21,6 +21,7 @@ import 'package:explorer_os_mobile/features/radio/discovery/observation_controll
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/stations_screen.dart';
+import 'package:explorer_os_mobile/features/radio/providers/explore_providers.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
 import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
@@ -314,7 +315,9 @@ class _PlayerState extends ConsumerState<_Player> {
               onMenu: _openMenu,
               onNotifications: () => _snack('No new notifications'),
             ),
-            const SizedBox(height: RD.lg),
+            const SizedBox(height: RD.md),
+            const _ExploreModeToggle(),
+            const SizedBox(height: RD.sm),
             // Actionable prompt when there's no location yet — hides itself the
             // moment a GPS fix arrives (otherwise the nearby list sits empty).
             const LocationPrompt(margin: EdgeInsets.only(bottom: RD.md)),
@@ -365,6 +368,10 @@ class _PlayerState extends ConsumerState<_Player> {
                       key: const ValueKey('radio'),
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        if (ref.watch(exploreActiveProvider)) ...[
+                          const _ExploreBanner(),
+                          const SizedBox(height: RD.sm),
+                        ],
                         _Hero(
                           imageUrl: heroImage,
                           place: nearbyPlace,
@@ -727,6 +734,107 @@ class _LocationTeaser extends StatelessWidget {
           color: RD.textSecondary,
           fontStyle: FontStyle.italic,
         ),
+      ),
+    );
+  }
+}
+
+// ── Marion County Explore ─────────────────────────────────────────────────
+
+/// RADIO / EXPLORE segmented switch. Explore is Marion-County-only for this
+/// first phase: outside Marion the switch stays visible but explains why it's
+/// paused rather than pretending to work (spec section 1) — the toggle itself
+/// isn't disabled so a traveler already mid-drive-into-Marion can pre-select
+/// it and have it engage the moment they cross the county line.
+class _ExploreModeToggle extends ConsumerWidget {
+  const _ExploreModeToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wantsExplore = ref.watch(exploreModeProvider);
+    final inMarion = ref.watch(marionCountyActiveProvider);
+
+    Widget segment(String label, bool selected, VoidCallback onTap) {
+      return Expanded(
+        child: GestureDetector(
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: RD.fast,
+            padding: const EdgeInsets.symmetric(vertical: RD.sm),
+            decoration: BoxDecoration(
+              color: selected ? RD.green : Colors.transparent,
+              borderRadius: BorderRadius.circular(RD.rPill),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: RD.badge.copyWith(
+                color: selected ? RD.onGreen : RD.textSecondary,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: RD.panel,
+            borderRadius: BorderRadius.circular(RD.rPill),
+            border: Border.all(color: RD.stroke),
+          ),
+          child: Row(
+            children: [
+              segment(
+                'RADIO',
+                !wantsExplore,
+                () => ref.read(exploreModeProvider.notifier).set(false),
+              ),
+              segment(
+                'MARION COUNTY EXPLORE',
+                wantsExplore,
+                () => ref.read(exploreModeProvider.notifier).set(true),
+              ),
+            ],
+          ),
+        ),
+        if (wantsExplore && !inMarion) ...[
+          const SizedBox(height: RD.xs),
+          Text(
+            "Explore is paused — it starts once you're in Marion County.",
+            textAlign: TextAlign.center,
+            style: RD.caption.copyWith(color: RD.textFaint, fontSize: 11),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Shown above the hero whenever Explore is actively driving the player
+/// (toggle on AND inside Marion County) — makes it unmistakable that this
+/// isn't normal Radio mode (spec section 13).
+class _ExploreBanner extends StatelessWidget {
+  const _ExploreBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.xs),
+      decoration: BoxDecoration(
+        color: RD.green.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(RD.rPill),
+        border: Border.all(color: RD.green.withValues(alpha: 0.4)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        'MARION COUNTY EXPLORE',
+        style: RD.badge.copyWith(color: RD.greenBright, letterSpacing: 1.4),
       ),
     );
   }

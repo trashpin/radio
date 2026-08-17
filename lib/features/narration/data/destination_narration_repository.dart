@@ -157,6 +157,29 @@ class DestinationNarrationRepository {
     }
   }
 
+  /// Every PUBLISHED narration of the given [scriptTypes], across all
+  /// destinations, in one query — used by MARION COUNTY EXPLORE to source
+  /// Geology/History/Wildlife/Nature content without fetching per-destination.
+  /// Callers filter by destination (e.g. county) client-side against a
+  /// destination list they already have loaded.
+  Future<List<DestinationNarration>> publishedForScriptTypes(
+      List<String> scriptTypes) async {
+    if (!SupabaseService.isConfigured || scriptTypes.isEmpty) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('destination_narrations')
+          .select()
+          .eq('status', NarrationStatus.published.dbValue)
+          .inFilter('script_type', scriptTypes) as List;
+      return rows
+          .cast<Map<String, dynamic>>()
+          .map(DestinationNarration.fromJson)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<void> setStatus(String id, NarrationStatus status) =>
       SupabaseService.client.from('destination_narrations').update({
         'status': status.dbValue,
