@@ -21,10 +21,18 @@ class WildlifeScreen extends StatelessWidget {
   static const Color _textPrimary = Color(0xFFF3F6F2);
   static const Color _textSecondary = Color(0xFF8E9A93);
 
-  /// Every existing category except "I Don't Know" (an identification-flow
-  /// prompt, not a browsable subject).
-  static final _categories =
-      discoveryCategories.where((c) => c.token != 'unknown').toList();
+  /// The six categories the Wildlife Guide shows — UI-only trim over the
+  /// shared [discoveryCategories] list (used unfiltered elsewhere, e.g. "I
+  /// See Something"). Every other category (nature/history/etc.) still
+  /// exists in the data and is still reachable from that other flow; it's
+  /// just not shown as a tile here.
+  static const _kWildlifeGuideTokens = {
+    'animals', 'birds', 'reptiles', 'amphibians', 'fish', 'plants',
+  };
+
+  static final _categories = discoveryCategories
+      .where((c) => _kWildlifeGuideTokens.contains(c.token))
+      .toList();
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +54,8 @@ class WildlifeScreen extends StatelessWidget {
                 AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.xxl),
             children: [
               const Text(
-                'Browse and listen to Marion County wildlife, nature, and '
-                'history — tap a category, then a species to hear its story.',
+                'Browse and listen to Marion County wildlife — tap a '
+                'category, then a species to hear its story.',
                 style: TextStyle(color: _textSecondary, fontSize: 13),
               ),
               const Gap.v(AppSpacing.lg),
