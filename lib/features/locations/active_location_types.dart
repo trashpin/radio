@@ -1,17 +1,24 @@
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 
 /// THE allow-list that scopes the whole app to a curated set of location types
-/// while we perfect them. At this stage ExplorerOS only imports, displays, and
-/// narrates FIVE tiers:
+/// while we perfect them. At this stage ExplorerOS imports, displays, and
+/// narrates SIX tiers:
 ///
 ///   1. County                       (LocationType.county)
 ///   2. City / Community             (city, town, village, community, neighborhood)
 ///   3. City Park                    (cityPark)
 ///   4. Florida State Park           (statePark)
 ///   5. Spring                       (spring)
+///   6. Museum                       (museum)
 ///
-/// Everything else (restaurants, gas, shops, museums, trails, lakes, historic
-/// sites, hidden gems, events, …) is intentionally excluded from import, the
+/// Museum was added because real, ready-to-air content already exists for it
+/// (trigger_radius + arrival_trigger + narration script/audio on every Marion
+/// museum row) — the GPS arrival-trigger system just couldn't reach it while
+/// museum wasn't in this list, so it was never mentioned on air despite being
+/// fully populated.
+///
+/// Everything else (restaurants, gas, shops, trails, lakes, historic sites,
+/// hidden gems, events, …) is still intentionally excluded from import, the
 /// map, Nearby, and narration until it's ready.
 ///
 /// To add a category later you ONLY edit this file — every surface reads from
@@ -22,6 +29,7 @@ enum LocationTier {
   park,
   statePark,
   spring,
+  museum,
 }
 
 /// The tier a type belongs to, or null if the type is NOT currently active.
@@ -42,6 +50,8 @@ LocationTier? locationTierOf(LocationType t) {
       return LocationTier.statePark;
     case LocationType.spring:
       return LocationTier.spring;
+    case LocationType.museum:
+      return LocationTier.museum;
     default:
       return null;
   }

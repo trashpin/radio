@@ -26,13 +26,13 @@ class BanterConfig {
 
 /// THE Radio Banter Engine (pure, data-driven, unit-testable).
 ///
-/// Scoped to the FIVE active tiers only (county, city/community, city park,
-/// Florida state park, spring — see [locationTierOf]); nothing else is ever
-/// eligible. For the user's position it builds a pool of clips from the master
-/// `locations` in the current county — the county itself, the city/community
-/// they're inside, and NEARBY parks / state parks / springs — then picks one to
-/// weave between songs, honoring:
-///   • narration priority County ▸ City ▸ Park ▸ State Park ▸ Spring,
+/// Scoped to the active tiers only (county, city/community, city park,
+/// Florida state park, spring, museum — see [locationTierOf]); nothing else
+/// is ever eligible. For the user's position it builds a pool of clips from
+/// the master `locations` in the current county — the county itself, the
+/// city/community they're inside, and NEARBY parks / state parks / springs /
+/// museums — then picks one to weave between songs, honoring:
+///   • narration priority County ▸ City ▸ Park ▸ State Park ▸ Spring ▸ Museum,
 ///   • a cooldown so the same clip never repeats too soon.
 ///
 /// Everything is derived from location rows (type/county/content/GPS), so new
@@ -107,6 +107,7 @@ class BanterEngine {
         case LocationTier.park:
         case LocationTier.statePark:
         case LocationTier.spring:
+        case LocationTier.museum:
           relevant = d <= config.nearbyRadiusMeters; // nearby
       }
       if (relevant) out.add(BanterCandidate(l, tier, d));

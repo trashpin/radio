@@ -35,8 +35,8 @@ MasterLocation _loc(
 
 const _engine = BanterEngine();
 
-// A Marion County world spanning all five active tiers, plus rows that must be
-// excluded (a museum = inactive type; a spring in another county).
+// A Marion County world spanning all six active tiers, plus rows that must be
+// excluded (a restaurant = inactive type; a spring in another county).
 final _county = _loc('Marion County', LocationType.county, miles: 0,
     audio: ['https://x/county.mp3']);
 final _city = _loc('Ocala', LocationType.city, miles: 0.5, triggerRadius: 8000);
@@ -47,27 +47,28 @@ final _statePark =
     _loc('Silver Springs State Park', LocationType.statePark, miles: 2);
 final _spring = _loc('Fern Hammock Springs', LocationType.spring, miles: 3);
 final _museum = _loc('Appleton Museum', LocationType.museum, miles: 0.3);
+final _restaurant = _loc('Cafe', LocationType.restaurant, miles: 0.1);
 final _otherCountySpring =
     _loc('Duval Spring', LocationType.spring, miles: 2, county: 'Duval');
 
 final _world = [
   _county, _city, _otherCity, _park, _statePark, _spring,
-  _museum, _otherCountySpring,
+  _museum, _restaurant, _otherCountySpring,
 ];
 
 void main() {
   final now = DateTime(2026, 8, 5, 12);
 
-  test('active-type allow-list is exactly the five tiers', () {
+  test('active-type allow-list is exactly the six tiers', () {
     expect(isActiveLocationType(LocationType.county), isTrue);
     expect(isActiveLocationType(LocationType.city), isTrue);
     expect(isActiveLocationType(LocationType.cityPark), isTrue);
     expect(isActiveLocationType(LocationType.statePark), isTrue);
     expect(isActiveLocationType(LocationType.spring), isTrue);
+    expect(isActiveLocationType(LocationType.museum), isTrue);
     for (final t in [
       LocationType.restaurant,
       LocationType.coffeeShop,
-      LocationType.museum,
       LocationType.lake,
       LocationType.historicSite,
       LocationType.trail,
@@ -78,8 +79,9 @@ void main() {
     }
   });
 
-  test('pool includes county + current city + nearby park/statePark/spring; '
-      'excludes inactive types, other counties, and non-current cities', () {
+  test('pool includes county + current city + nearby park/statePark/spring/'
+      'museum; excludes inactive types, other counties, and non-current '
+      'cities', () {
     final pool = _engine.buildPool(_baseLat, _baseLng, _world, county: 'Marion');
     final byId = {for (final c in pool) c.location.id: c.tier};
     expect(byId['Marion County'], LocationTier.county);
@@ -87,13 +89,15 @@ void main() {
     expect(byId['Tuscawilla Park'], LocationTier.park);
     expect(byId['Silver Springs State Park'], LocationTier.statePark);
     expect(byId['Fern Hammock Springs'], LocationTier.spring);
+    expect(byId['Appleton Museum'], LocationTier.museum);
     // Excluded:
-    expect(byId.containsKey('Appleton Museum'), isFalse); // inactive type
+    expect(byId.containsKey('Cafe'), isFalse); // inactive type
     expect(byId.containsKey('Duval Spring'), isFalse); // other county
     expect(byId.containsKey('Belleview'), isFalse); // not the current city
   });
 
-  group('narration priority County ▸ City ▸ Park ▸ State Park ▸ Spring', () {
+  group('narration priority County ▸ City ▸ Park ▸ State Park ▸ Spring ▸ '
+      'Museum', () {
     BanterCandidate? pick(Map<String, DateTime> cooling) => _engine.selectNext(
         _baseLat, _baseLng, _world,
         now: now, county: 'Marion', lastPlayed: cooling);
@@ -114,7 +118,7 @@ void main() {
               .tier,
           LocationTier.statePark);
     });
-    test('then spring, and null when all cool down', () {
+    test('then spring', () {
       final cool = {
         'Marion County': now,
         'Ocala': now,
@@ -122,7 +126,17 @@ void main() {
         'Silver Springs State Park': now,
       };
       expect(pick(cool)!.tier, LocationTier.spring);
-      expect(pick({...cool, 'Fern Hammock Springs': now}), isNull);
+    });
+    test('then museum, and null when all cool down', () {
+      final cool = {
+        'Marion County': now,
+        'Ocala': now,
+        'Tuscawilla Park': now,
+        'Silver Springs State Park': now,
+        'Fern Hammock Springs': now,
+      };
+      expect(pick(cool)!.tier, LocationTier.museum);
+      expect(pick({...cool, 'Appleton Museum': now}), isNull);
     });
   });
 
