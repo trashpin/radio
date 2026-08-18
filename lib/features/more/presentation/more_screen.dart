@@ -6,18 +6,21 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 
 /// The "More" tab — a menu for the sections that don't have a dedicated tab
-/// (Explore, Wildlife, Downloads, Profile, Settings).
+/// (Explore, Stories, Downloads, Profile, Settings). Wildlife Guide moved out
+/// of here to its own primary tab; Explore and Stories moved in when they
+/// were removed from the primary bottom navigation (their screens are
+/// unchanged — only the entry point moved).
 ///
-/// Keeps the primary nav focused on the five core experiences while remaining a
-/// single tap from everything else.
+/// Keeps the primary nav focused on the four core experiences while remaining
+/// a single tap from everything else.
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final items = <_MoreItem>[
-      const _MoreItem(Icons.explore_rounded, 'Explore', AppRoute.explore, push: false),
-      const _MoreItem(Icons.pets_rounded, 'Wildlife', AppRoute.wildlife),
+      const _MoreItem(Icons.explore_rounded, 'Explore', AppRoute.explore),
+      const _MoreItem(Icons.menu_book_rounded, 'Stories', AppRoute.stories),
       const _MoreItem(Icons.download_rounded, 'Downloads', AppRoute.downloads),
       const _MoreItem(Icons.person_rounded, 'Profile', AppRoute.profile),
       const _MoreItem(Icons.settings_rounded, 'Settings', AppRoute.settings),
@@ -41,9 +44,7 @@ class MoreScreen extends StatelessWidget {
               leading: Icon(item.icon, color: theme.colorScheme.primary),
               title: Text(item.label, style: theme.textTheme.titleMedium),
               trailing: const Icon(Icons.chevron_right_rounded),
-              onTap: () => item.push
-                  ? context.push(item.route.path)
-                  : context.go(item.route.path),
+              onTap: () => context.push(item.route.path),
             ),
           );
         },
@@ -53,9 +54,8 @@ class MoreScreen extends StatelessWidget {
 }
 
 class _MoreItem {
-  const _MoreItem(this.icon, this.label, this.route, {this.push = true});
+  const _MoreItem(this.icon, this.label, this.route);
   final IconData icon;
   final String label;
   final AppRoute route;
-  final bool push;
 }

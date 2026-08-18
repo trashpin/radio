@@ -236,7 +236,7 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
       (Icons.podcasts_rounded, 'Radio', () => context.go(AppRoute.radio.path)),
       (Icons.near_me_rounded, 'Nearby', () => context.push(AppRoute.aroundMe.path)),
       (Icons.map_rounded, 'Map', () => context.go(AppRoute.map.path)),
-      (Icons.menu_book_rounded, 'Stories', () => context.go(AppRoute.stories.path)),
+      (Icons.menu_book_rounded, 'Stories', () => context.push(AppRoute.stories.path)),
       (Icons.smart_toy_rounded, 'AI Ranger',
           () => context.push(AppRoute.aiRanger.path)),
     ];

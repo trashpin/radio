@@ -1,12 +1,10 @@
 /// Strongly-typed route table for ExplorerOS.
 ///
 /// Using an enum instead of raw path strings ("/home", "/map"…) prevents typos
-/// and makes navigation refactors safe. The first five are bottom-navigation
-/// tabs; the rest are pushed detail routes (prepared for upcoming features so
-/// the dashboard can already link to them).
+/// and makes navigation refactors safe. The bottom-navigation tabs (see
+/// AppShell/AppRouter) are exactly: radio, map, wildlife, more. The rest are
+/// pushed detail routes.
 enum AppRoute {
-  // Bottom-navigation tabs (order matches the nav bar): Around Me, Radio, AI
-  // Ranger, Stories, Map, More.
   aroundMe('/around-me'),
   home('/home'),
   radio('/radio'),

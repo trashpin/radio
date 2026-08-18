@@ -14,8 +14,10 @@ import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 /// `extendBody` lets screen content flow underneath the floating bar for the
 /// premium edge-to-edge look.
 ///
-/// Tab order (fixed): Radio, Explore, Map, Stories, More. To change tabs, keep
-/// this bar and the branch list in `AppRouter` index-aligned.
+/// Tab order (fixed): Radio, Map, Wildlife Guide, More. To change tabs, keep
+/// this bar and the branch list in `AppRouter` index-aligned. Explore and
+/// Stories were removed from the primary nav (still reachable from the More
+/// tab) — see `more_screen.dart`.
 ///
 /// The bar is styled as a dark, floating pill with a gold active state (a
 /// premium National-Geographic feel) regardless of the app's light/dark mode,
@@ -89,19 +91,14 @@ class AppShell extends StatelessWidget {
                       label: 'Radio',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.explore_outlined),
-                      selectedIcon: Icon(Icons.explore_rounded),
-                      label: 'Explore',
-                    ),
-                    NavigationDestination(
                       icon: Icon(Icons.map_outlined),
                       selectedIcon: Icon(Icons.map_rounded),
                       label: 'Map',
                     ),
                     NavigationDestination(
-                      icon: Icon(Icons.menu_book_outlined),
-                      selectedIcon: Icon(Icons.menu_book_rounded),
-                      label: 'Stories',
+                      icon: Icon(Icons.pets_outlined),
+                      selectedIcon: Icon(Icons.pets_rounded),
+                      label: 'Wildlife Guide',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.more_horiz_rounded),
