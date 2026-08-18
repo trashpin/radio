@@ -1,43 +1,118 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
+import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
+import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
+import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
+import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-const Set<LocationType> _parkTypes = {
+const Set<LocationType> _parkAndSpringTypes = {
   LocationType.statePark,
   LocationType.nationalPark,
   LocationType.countyPark,
+  LocationType.spring,
 };
 const Set<LocationType> _townTypes = {LocationType.city, LocationType.community};
+const Set<LocationType> _attractionTypes = {
+  LocationType.attraction,
+  LocationType.museum,
+  LocationType.historicSite,
+  LocationType.historicDistrict,
+  LocationType.scenicOverlook,
+  LocationType.hiddenGem,
+  LocationType.pointOfInterest,
+};
 
-/// DISCOVER -- every event, park, spring, and town currently nearby, each as
-/// a tappable photo card. Tapping one opens the exact same TELL ME MORE info
-/// page the player's own image uses (same [playerContextForLocation] /
-/// [playerContextForEvent] builders, same [tellMeMoreResultProvider] lookup),
-/// so the listener sees the place's photo, history, and practical info, and
-/// hears its recorded narration if one exists -- reusing TELL ME MORE rather
-/// than a second info/audio system.
+/// Attractions/Historical Sites aren't part of the curated
+/// [kActiveLocationTypes] allow-list `nearbyLocationsProvider` enforces (that
+/// allow-list also gates the map/GPS-narration/geofence systems, which this
+/// change must not touch) — so DISCOVER reads the master `locations` table
+/// directly for this one section and ranks it itself with the same
+/// [GeoMath] distance math every other nearby feature already uses.
+class _NearbyAttraction {
+  const _NearbyAttraction(this.location, this.distanceMeters);
+  final MasterLocation location;
+  final double distanceMeters;
+}
+
+const double _kDiscoverRadiusMeters = 20 * 1609.344;
+
+final _nearbyAttractionsProvider = Provider<List<_NearbyAttraction>>((ref) {
+  final center = ref.watch(mapCenterProvider);
+  if (center == null) return const [];
+  final all = ref.watch(masterLocationsProvider).value ?? const [];
+  final out = <_NearbyAttraction>[];
+  for (final l in all) {
+    if (!_attractionTypes.contains(l.type)) continue;
+    if (!l.active || l.hidden || !l.hasCoordinates || l.isPublishBlocked) {
+      continue;
+    }
+    final d = GeoMath.distanceMeters(
+        center.latitude, center.longitude, l.latitude!, l.longitude!);
+    if (d > _kDiscoverRadiusMeters) continue;
+    out.add(_NearbyAttraction(l, d));
+  }
+  out.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
+  return out;
+});
+
+/// DISCOVER -- the main nearby-discovery experience, in priority order:
+/// GEMS, EVENTS, PARKS & SPRINGS, ATTRACTIONS/HISTORICAL SITES, TOWN, COUNTY.
+/// Every section reuses an existing, already-ranked provider (Gems' own
+/// featured/priority/popularity/distance ranking, the events/locations
+/// nearby lists, the county profile) -- nothing here is a new data source.
+/// Tapping a card opens the exact same TELL ME MORE info page the player's
+/// own image uses (same [playerContextForLocation]/[playerContextForEvent]/
+/// [playerContextForGem]/[playerContextForCounty] builders, same
+/// [tellMeMoreResultProvider] lookup), so the listener sees the place's
+/// photo, history, and practical info, and hears its recorded narration if
+/// one exists.
 class NearbyPlacesScreen extends ConsumerWidget {
   const NearbyPlacesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gems = ref.watch(nearbyGemsForUserProvider);
     final events = ref.watch(nearbyEventsProvider);
     final nearby = ref.watch(nearbyLocationsProvider);
-    final parks = nearby.where((n) => _parkTypes.contains(n.location.type)).toList();
-    final springs =
-        nearby.where((n) => n.location.type == LocationType.spring).toList();
+    final parksAndSprings = nearby
+        .where((n) => _parkAndSpringTypes.contains(n.location.type))
+        .toList()
+      ..sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
+    final attractions = ref.watch(_nearbyAttractionsProvider);
     final towns = nearby.where((n) => _townTypes.contains(n.location.type)).toList();
 
-    final hasAnything =
-        events.isNotEmpty || parks.isNotEmpty || springs.isNotEmpty || towns.isNotEmpty;
+    final county = ref.watch(locationContextProvider).county;
+    final countyConfigs =
+        ref.watch(countyConfigsProvider).value ?? const <CountyConfig>[];
+    CountyConfig? countyConfig;
+    if (county != null) {
+      final key = county.toLowerCase().trim();
+      for (final c in countyConfigs) {
+        if (c.key == key) {
+          countyConfig = c;
+          break;
+        }
+      }
+    }
+
+    final hasAnything = gems.isNotEmpty ||
+        events.isNotEmpty ||
+        parksAndSprings.isNotEmpty ||
+        attractions.isNotEmpty ||
+        towns.isNotEmpty ||
+        county != null;
 
     return Scaffold(
       backgroundColor: RD.bg,
@@ -55,6 +130,19 @@ class NearbyPlacesScreen extends ConsumerWidget {
                   : ListView(
                       padding: const EdgeInsets.fromLTRB(RD.lg, 0, RD.lg, RD.xl),
                       children: [
+                        if (gems.isNotEmpty)
+                          _Section(
+                            label: 'GEMS',
+                            children: [
+                              for (final g in gems)
+                                _PlaceCard(
+                                  placeContext: playerContextForGem(
+                                      g.gem,
+                                      distanceMeters: g.distanceMeters),
+                                  category: g.gem.category ?? 'Gem',
+                                ),
+                            ],
+                          ),
                         if (events.isNotEmpty)
                           _Section(
                             label: 'EVENTS',
@@ -66,27 +154,32 @@ class NearbyPlacesScreen extends ConsumerWidget {
                                 ),
                             ],
                           ),
-                        if (parks.isNotEmpty)
+                        if (parksAndSprings.isNotEmpty)
                           _Section(
-                            label: 'PARKS',
+                            label: 'PARKS & SPRINGS',
                             children: [
-                              for (final n in parks)
+                              for (final n in parksAndSprings)
                                 _PlaceCard(
                                   placeContext: playerContextForLocation(
-                                      PlayerLocationKind.park, n),
-                                  category: 'Park',
+                                      n.location.type == LocationType.spring
+                                          ? PlayerLocationKind.spring
+                                          : PlayerLocationKind.park,
+                                      n),
+                                  category: n.location.type.label,
                                 ),
                             ],
                           ),
-                        if (springs.isNotEmpty)
+                        if (attractions.isNotEmpty)
                           _Section(
-                            label: 'SPRINGS',
+                            label: 'ATTRACTIONS & HISTORICAL SITES',
                             children: [
-                              for (final n in springs)
+                              for (final a in attractions)
                                 _PlaceCard(
                                   placeContext: playerContextForLocation(
-                                      PlayerLocationKind.spring, n),
-                                  category: 'Spring',
+                                      PlayerLocationKind.attraction,
+                                      NearbyLocation(
+                                          a.location, a.distanceMeters, 0)),
+                                  category: a.location.type.label,
                                 ),
                             ],
                           ),
@@ -100,6 +193,17 @@ class NearbyPlacesScreen extends ConsumerWidget {
                                       PlayerLocationKind.town, n),
                                   category: 'Town',
                                 ),
+                            ],
+                          ),
+                        if (county != null)
+                          _Section(
+                            label: 'COUNTY',
+                            children: [
+                              _PlaceCard(
+                                placeContext: playerContextForCounty(
+                                    county, countyConfig),
+                                category: 'County',
+                              ),
                             ],
                           ),
                       ],
@@ -182,8 +286,8 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: RD.sm),
             Text(
-              'Keep driving -- events, parks, springs, and towns will show up '
-              'here as you get near them.',
+              'Keep driving -- gems, events, parks, springs, attractions, '
+              'and towns will show up here as you get near them.',
               textAlign: TextAlign.center,
               style: RD.body,
             ),

@@ -234,6 +234,14 @@ class _PlayerState extends ConsumerState<_Player> {
         ? ref.watch(tellMeMoreResultProvider(djCtx)).value
         : null;
 
+    // MARION COUNTY EXPLORE's own current subject — image, name, and
+    // NAVIGATE target are all carried directly on the segment itself (set at
+    // candidate-build time in explore_providers.dart), not re-resolved
+    // through a second async lookup, so they can never drift from what's
+    // actually narrating (spec: "current subject").
+    final exploreSegment =
+        (nowPlaying?.tags.contains('explore') ?? false) ? nowPlaying : null;
+
     final title = switch (interruption) {
       _Interruption.iSeeSomething => obs.species!.commonName,
       _Interruption.whatsNearMe => nearby.location?.name ?? 'Nearby',
@@ -259,24 +267,30 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
-    // Priority: what the DJ is specifically talking about (djTopic) > the
-    // GPS-based event/park/spring/town/county context (playerCtx) > the
-    // normal music artwork > generic fallbacks. The music itself is
-    // unaffected either way — only what's displayed changes.
+    // Priority: Explore's own current subject (exploreSegment) > what the DJ
+    // is specifically talking about (djTopic) > the GPS-based event/park/
+    // spring/town/county context (playerCtx) > the normal music artwork >
+    // generic fallbacks. The music itself is unaffected either way — only
+    // what's displayed changes.
     final heroImage =
         obs.species?.heroImageUrl ??
-        ((djTopic?.imageUrl ?? '').isNotEmpty
-            ? djTopic!.imageUrl
-            : ((playerCtx?.imageUrl ?? '').isNotEmpty
-                  ? playerCtx!.imageUrl
-                  : ((songCover ?? '').isNotEmpty
-                        ? songCover
-                        : (nearest?.location.images.isNotEmpty ?? false
-                              ? nearest!.location.images.first
-                              : widget.station.imageUrl))));
-    final nearbyPlace =
-        djTopic?.title ?? playerCtx?.title ?? nearest?.location.name ?? widget.station.name;
-    final nearbyDistance = djTopic != null
+        ((exploreSegment?.imageUrl ?? '').isNotEmpty
+            ? exploreSegment!.imageUrl
+            : ((djTopic?.imageUrl ?? '').isNotEmpty
+                  ? djTopic!.imageUrl
+                  : ((playerCtx?.imageUrl ?? '').isNotEmpty
+                        ? playerCtx!.imageUrl
+                        : ((songCover ?? '').isNotEmpty
+                              ? songCover
+                              : (nearest?.location.images.isNotEmpty ?? false
+                                    ? nearest!.location.images.first
+                                    : widget.station.imageUrl)))));
+    final nearbyPlace = exploreSegment?.title ??
+        djTopic?.title ??
+        playerCtx?.title ??
+        nearest?.location.name ??
+        widget.station.name;
+    final nearbyDistance = (exploreSegment != null || djTopic != null)
         ? null
         : (playerCtx?.distanceLabel ??
             (nearest == null ? null : _miles(nearest.distanceMeters)));
@@ -389,6 +403,20 @@ class _PlayerState extends ConsumerState<_Player> {
                           const SizedBox(height: RD.sm),
                           _LocationTeaser(text: playerCtx!.teaser!),
                         ],
+                        // MARION COUNTY EXPLORE's NAVIGATE action — shown only
+                        // when the current subject is genuinely tied to a
+                        // physical destination (exploreSegment.location is
+                        // null for county-wide/non-geo content, so no button
+                        // appears there — spec section 7/8).
+                        if (exploreSegment?.location != null) ...[
+                          const SizedBox(height: RD.md),
+                          _NavigateButton(
+                            onTap: () => _navigate(
+                              exploreSegment!.location!.latitude,
+                              exploreSegment.location!.longitude,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: RD.md),
                         _TransportRow(
                           isPlaying: isPlaying,
@@ -400,46 +428,18 @@ class _PlayerState extends ConsumerState<_Player> {
                           active: onAir,
                         ),
                         const SizedBox(height: RD.xl),
-                        // The two primary Radio-screen actions. TELL ME MORE
-                        // always reads from the SAME context driving the
-                        // hero image above — the DJ's specific current topic
-                        // (djCtx) first, since that's what's actually on air
-                        // right now, falling back to the GPS-based
-                        // event/park/spring/town/county tier (playerCtx)
-                        // when the DJ isn't discussing anything identifiable.
-                        // Never a different subject than what's displayed.
-                        PrimaryActionCard(
-                          icon: Icons.chat_bubble_rounded,
-                          title: 'TELL ME MORE',
-                          subtitle: (djTopic?.title ?? playerCtx?.title) != null
-                              ? 'The full story on ${djTopic?.title ?? playerCtx?.title}'
-                              : 'Ask about what the DJ is talking about right now',
-                          onTap: () => context.push(
-                            AppRoute.tellMeMore.path,
-                            extra: (djCtx != null && djCtx.hasContext)
-                                ? djCtx
-                                : playerCtx?.tellMeMoreContext,
-                          ),
-                        ),
-                        const SizedBox(height: RD.md),
-                        // DISCOVER lists the events/parks/springs/towns
-                        // currently nearby (reusing the exact same nearby
-                        // providers and TellMeMoreContext builders as the
-                        // player's own image/teaser) — tapping one opens
-                        // TELL ME MORE for that exact place.
+                        // DISCOVER: gems, events, parks & springs,
+                        // attractions/historical sites, towns, and county —
+                        // reusing the exact same nearby providers and
+                        // TellMeMoreContext builders as the player's own
+                        // image/teaser — tapping one opens the same info page
+                        // ("TELL ME MORE") for that exact place.
                         PrimaryActionCard(
                           icon: Icons.explore_rounded,
                           title: 'DISCOVER',
-                          subtitle: 'Nearby attractions and places',
-                          onTap: () => context.push(AppRoute.nearbyPlaces.path),
-                        ),
-                        const SizedBox(height: RD.md),
-                        PrimaryActionCard(
-                          icon: Icons.diamond_rounded,
-                          title: 'GEMS',
                           subtitle:
-                              'Curated food, museums, hidden gems & local finds',
-                          onTap: () => context.push(AppRoute.localGems.path),
+                              'Gems, events, parks, springs & attractions nearby',
+                          onTap: () => context.push(AppRoute.nearbyPlaces.path),
                         ),
                       ],
                     ),
@@ -734,6 +734,34 @@ class _LocationTeaser extends StatelessWidget {
           color: RD.textSecondary,
           fontStyle: FontStyle.italic,
         ),
+      ),
+    );
+  }
+}
+
+/// NAVIGATE — Explore's most important action when the current subject is a
+/// physical destination (spec section 8). Opens the existing navigation
+/// implementation ([_PlayerState._navigate], the same Google Maps deep link
+/// every other Navigate button in this app already uses) — no second
+/// navigation system.
+class _NavigateButton extends StatelessWidget {
+  const _NavigateButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        style: FilledButton.styleFrom(
+          backgroundColor: RD.green,
+          foregroundColor: RD.onGreen,
+          minimumSize: const Size(0, 48),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(RD.rPill)),
+        ),
+        icon: const Icon(Icons.navigation_rounded, size: 20),
+        label: const Text('NAVIGATE', style: TextStyle(letterSpacing: 1)),
       ),
     );
   }
