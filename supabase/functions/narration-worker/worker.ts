@@ -156,7 +156,10 @@ function readability(s: string) {
 // ── PostgREST helpers ──
 async function sbGet(path: string): Promise<any[]> {
   const r = await fetch(buildSupabaseUrl(`rest/v1/${path}`), { headers: SB });
-  if (!r.ok) return [];
+  if (!r.ok) {
+    console.error(`sbGet ${path} -> ${r.status}: ${(await r.text()).slice(0, 300)}`);
+    return [];
+  }
   return await r.json();
 }
 async function sbInsert(table: string, row: unknown) {
