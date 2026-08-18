@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/features/destinations/data/master_destination
 import 'package:explorer_os_mobile/features/destinations/models/master_destination.dart';
 import 'package:explorer_os_mobile/features/discovery/data/species_repository.dart';
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
+import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
@@ -70,12 +71,37 @@ ExploreCandidate? _whereYouAreCandidate(Ref ref) {
   final ctx = ref.watch(playerLocationContextProvider);
   final text = (ctx?.teaser ?? '').trim();
   if (ctx == null || text.isEmpty) return null;
+  final loc = ctx.tellMeMoreContext.location;
   return ExploreCandidate(
     id: 'whereyouare:${ctx.tellMeMoreContext.locationId ?? ctx.tellMeMoreContext.subject ?? ctx.title}',
     category: ExploreCategory.whereYouAre,
     title: ctx.title,
     spokenText: text,
     tellMeMoreContext: ctx.tellMeMoreContext,
+    imageUrl: ctx.imageUrl,
+    latitude: loc?.latitude,
+    longitude: loc?.longitude,
+  );
+}
+
+/// EVENTS — reuses [nearbyEventsProvider] (the exact list DISCOVER and the
+/// player's own EVENT tier already read), nearest-first.
+ExploreCandidate? _eventsCandidate(Ref ref) {
+  final events = ref.watch(nearbyEventsProvider);
+  if (events.isEmpty) return null;
+  final ctx = playerContextForEvent(events.first);
+  final text = (ctx.teaser ?? '').trim();
+  if (text.isEmpty) return null;
+  final loc = ctx.tellMeMoreContext.location;
+  return ExploreCandidate(
+    id: 'event:${events.first.event.id}',
+    category: ExploreCategory.events,
+    title: ctx.title,
+    spokenText: text,
+    tellMeMoreContext: ctx.tellMeMoreContext,
+    imageUrl: ctx.imageUrl,
+    latitude: loc?.latitude,
+    longitude: loc?.longitude,
   );
 }
 
@@ -145,6 +171,9 @@ ExploreCandidate? _whereHeadedCandidate(Ref ref, ExploreCandidate? whereYouAre) 
     title: ctx.title,
     spokenText: "Coming up ahead: ${ctx.title}. $teaser",
     tellMeMoreContext: ctx.tellMeMoreContext,
+    imageUrl: ctx.imageUrl,
+    latitude: picked.location.latitude,
+    longitude: picked.location.longitude,
   );
 }
 
@@ -168,6 +197,7 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
         banterText: text,
       );
 
+  final image = marion.heroImageUrl;
   final out = <ExploreCandidate>[];
   final history = (marion.history ?? '').trim();
   if (history.isNotEmpty) {
@@ -177,6 +207,7 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
       title: 'Marion County History',
       spokenText: history,
       tellMeMoreContext: ctxFor(history),
+      imageUrl: image,
     ));
   }
   final overview = (marion.overview ?? '').trim();
@@ -187,6 +218,7 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
       title: 'Marion County',
       spokenText: overview,
       tellMeMoreContext: ctxFor(overview),
+      imageUrl: image,
     ));
   }
   for (var i = 0; i < marion.facts.length; i++) {
@@ -198,6 +230,7 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
       title: 'Marion County',
       spokenText: fact,
       tellMeMoreContext: ctxFor(fact),
+      imageUrl: image,
     ));
   }
   return out;
@@ -217,7 +250,9 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
 /// content even on counties whose CountyConfig (Admin → County Manager)
 /// hasn't been filled in yet.
 Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
-    List<ContentItem> items) {
+  List<ContentItem> items,
+  List<MasterLocation> masterLocations,
+) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
     ExploreCategory.whereYouAre: [],
     ExploreCategory.county: [],
@@ -232,6 +267,8 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
     if (bucket == null) continue;
     final text = (item.text ?? '').trim();
     if ((item.audioUrl ?? '').trim().isEmpty && text.isEmpty) continue;
+    final lat = item.latitude == 0 ? null : item.latitude;
+    final lng = item.longitude == 0 ? null : item.longitude;
     out[bucket]!.add(ExploreCandidate(
       id: 'content:${item.id}',
       category: bucket,
@@ -242,9 +279,28 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
         subject: item.title,
         banterText: text.isEmpty ? null : text,
       ),
+      imageUrl: _imageForContentItem(item, masterLocations),
+      latitude: lat,
+      longitude: lng,
     ));
   }
   return out;
+}
+
+/// Best-effort photo for a `location_content` row (the table itself has no
+/// image column) — matches its city/title against the master `locations`
+/// table's own name and borrows that record's existing photo. No image is
+/// invented when nothing matches; the player simply falls back to its normal
+/// artwork (spec: "Do not invent missing information").
+String? _imageForContentItem(ContentItem item, List<MasterLocation> locations) {
+  final key = (item.city ?? item.title).trim().toLowerCase();
+  if (key.isEmpty) return null;
+  for (final l in locations) {
+    if (l.name.trim().toLowerCase() == key && l.images.isNotEmpty) {
+      return l.images.first;
+    }
+  }
+  return null;
 }
 
 /// Birds count as WILDLIFE per this feature's spec (section 4.4), not
@@ -364,6 +420,9 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
         destinationId: dest.id,
         banterText: script.isEmpty ? null : script,
       ),
+      imageUrl: dest.heroImage,
+      latitude: dest.latitude,
+      longitude: dest.longitude,
     ));
   }
   return out;
@@ -412,6 +471,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromSpecies(List<Species> species)
       title: s.commonName,
       spokenText: text,
       tellMeMoreContext: TellMeMoreContext(subject: s.commonName, banterText: text),
+      imageUrl: s.heroImageUrl,
     ));
   }
   return out;
@@ -437,16 +497,20 @@ final exploreCandidatesProvider =
     Provider<Map<ExploreCategory, List<ExploreCandidate>>>((ref) {
   final whereYouAre = _whereYouAreCandidate(ref);
   final whereHeaded = _whereHeadedCandidate(ref, whereYouAre);
+  final event = _eventsCandidate(ref);
 
   final pool = <ExploreCategory, List<ExploreCandidate>>{
     for (final c in ExploreCategory.values) c: [],
   };
   if (whereYouAre != null) pool[ExploreCategory.whereYouAre]!.add(whereYouAre);
   if (whereHeaded != null) pool[ExploreCategory.whereHeaded]!.add(whereHeaded);
+  if (event != null) pool[ExploreCategory.events]!.add(event);
   pool[ExploreCategory.county]!.addAll(_countyCandidates(ref));
 
   final contentItems = ref.watch(locationContentItemsProvider);
-  _mergeInto(pool, _fromLocationContent(contentItems));
+  final masterLocations = ref.watch(masterLocationsProvider).value ??
+      const <MasterLocation>[];
+  _mergeInto(pool, _fromLocationContent(contentItems, masterLocations));
 
   // The live `destinations` table has no `county` column (a MasterDestination
   // field that's never actually populated), so "is this destination in

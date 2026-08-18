@@ -11,11 +11,16 @@ import 'package:explorer_os_mobile/features/locations/location_engine.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart'
     show formatDistance;
+import 'package:explorer_os_mobile/features/nearby_gems/models/nearby_gem.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 
-/// The location-aware player's five content tiers, in priority order.
-enum PlayerLocationKind { event, park, spring, town, county }
+/// The location-aware player's content tiers. [gem] isn't part of the
+/// player's own EVENT>PARK>SPRING>TOWN>COUNTY priority resolution (Gems live
+/// in DISCOVER, not the ambient hero) — it's here so DISCOVER/Explore can
+/// build a [PlayerLocationContext] for a gem with the exact same shape as
+/// every other place, reusing one context type instead of a second one.
+enum PlayerLocationKind { event, park, spring, town, county, gem, attraction }
 
 /// "Inside a town" radius when a location has no explicit trigger_radius —
 /// same default the existing community-welcome director uses
@@ -122,7 +127,7 @@ final playerLocationContextProvider = Provider<PlayerLocationContext?>((ref) {
       break;
     }
   }
-  return _fromCounty(county, config);
+  return playerContextForCounty(county, config);
 });
 
 NearbyLocation? _firstOfType(
@@ -224,7 +229,11 @@ PlayerLocationContext playerContextForEvent(NearbyEvent n) {
   );
 }
 
-PlayerLocationContext _fromCounty(String county, CountyConfig? config) {
+/// Builds a [PlayerLocationContext] for a county — public for the same
+/// reason as [playerContextForLocation]/[playerContextForEvent] (DISCOVER's
+/// COUNTY section and MARION COUNTY EXPLORE both need this, not just the
+/// player's own tier-5 fallback above).
+PlayerLocationContext playerContextForCounty(String county, CountyConfig? config) {
   final teaser = config == null
       ? null
       : (config.facts.isNotEmpty
@@ -239,6 +248,34 @@ PlayerLocationContext _fromCounty(String county, CountyConfig? config) {
       subject: county,
       contextKind: PlayerLocationKind.county.name,
       banterText: teaser,
+    ),
+  );
+}
+
+/// Builds a [PlayerLocationContext] for a Nearby Gem — public for the same
+/// reason as [playerContextForLocation]/[playerContextForEvent]. Used by
+/// DISCOVER's GEMS section (spec: Gems are the first DISCOVER priority).
+PlayerLocationContext playerContextForGem(NearbyGem gem, {double? distanceMeters}) {
+  final distanceLabel =
+      distanceMeters == null ? null : formatDistance(distanceMeters);
+  final teaser = (gem.shortDescription ?? '').trim().isNotEmpty
+      ? gem.shortDescription!.trim()
+      : gem.narrationText;
+  return PlayerLocationContext(
+    kind: PlayerLocationKind.gem,
+    title: gem.name,
+    imageUrl: gem.featuredImage,
+    distanceLabel: distanceLabel,
+    teaser: teaser,
+    tellMeMoreContext: TellMeMoreContext(
+      subject: gem.name,
+      locationId: gem.id,
+      contextKind: PlayerLocationKind.gem.name,
+      banterText: teaser,
+      distanceLabel: distanceLabel,
+      location: gem.hasCoordinates
+          ? GeoPoint(latitude: gem.latitude!, longitude: gem.longitude!)
+          : null,
     ),
   );
 }

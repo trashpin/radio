@@ -1,4 +1,5 @@
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 
@@ -8,6 +9,7 @@ import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.da
 enum ExploreCategory {
   whereHeaded,
   whereYouAre,
+  events,
   county,
   wildlife,
   nature,
@@ -20,6 +22,8 @@ enum ExploreCategory {
         return "Where You're Headed";
       case ExploreCategory.whereYouAre:
         return 'Where You Are';
+      case ExploreCategory.events:
+        return 'Events';
       case ExploreCategory.county:
         return 'Marion County';
       case ExploreCategory.wildlife:
@@ -47,6 +51,9 @@ class ExploreCandidate {
     this.audioUrl,
     this.spokenText,
     this.tellMeMoreContext,
+    this.imageUrl,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
@@ -56,8 +63,22 @@ class ExploreCandidate {
   final String? spokenText;
   final TellMeMoreContext? tellMeMoreContext;
 
+  /// The photo for whatever this candidate is about — carried on the
+  /// resulting [AudioSegment] itself (not resolved separately later) so the
+  /// image, name, narration, and NAVIGATE target can never drift apart
+  /// (spec section 11: "current subject").
+  final String? imageUrl;
+
+  /// NAVIGATE target — present only when this candidate is genuinely tied to
+  /// a physical destination (a location/event/park's own coordinates, never
+  /// invented). Null for county-wide or non-geo content, which correctly
+  /// shows no NAVIGATE button (spec section 7).
+  final double? latitude;
+  final double? longitude;
+
   bool get isPlayable =>
       (audioUrl ?? '').trim().isNotEmpty || (spokenText ?? '').trim().isNotEmpty;
+  bool get hasDestination => latitude != null && longitude != null;
 }
 
 /// A candidate that has become urgent enough to jump the rotation (spec
@@ -176,8 +197,12 @@ class ExploreRotationScheduler {
       title: c.title.isEmpty ? c.category.label : c.title,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
+      imageUrl: c.imageUrl,
       audioUrl: hasAudio ? c.audioUrl : null,
       spokenText: hasAudio ? null : c.spokenText,
+      location: c.hasDestination
+          ? GeoPoint(latitude: c.latitude!, longitude: c.longitude!)
+          : null,
       tags: ['explore', c.category.name],
       interruptible: false,
       resumeAfter: resumeAfter,

@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/location_intelligence/data/location_
 import 'package:explorer_os_mobile/features/locations/data/location_narration.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/narration/data/destination_narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
@@ -270,17 +271,43 @@ final _countyTellMeMoreProvider = FutureProvider.autoDispose
   );
 });
 
+final _gemTellMeMoreProvider = FutureProvider.autoDispose
+    .family<TellMeMoreResult?, String>((ref, gemId) async {
+  final all = await ref.watch(nearbyGemsRepositoryProvider).all();
+  for (final g in all) {
+    if (g.id != gemId) continue;
+    return TellMeMoreResult(
+      title: g.name,
+      imageUrl: g.featuredImage,
+      history: (g.longStory ?? '').trim().isNotEmpty
+          ? g.longStory!.trim()
+          : g.shortDescription,
+      website: (g.website ?? '').trim().isNotEmpty ? g.website : null,
+      latitude: g.latitude,
+      longitude: g.longitude,
+      goodToKnow: [
+        if ((g.address ?? '').trim().isNotEmpty) 'Address: ${g.address}',
+        if ((g.phone ?? '').trim().isNotEmpty) 'Phone: ${g.phone}',
+      ],
+      audioUrl: g.hasAudio ? g.narrationUrl : null,
+    );
+  }
+  return null;
+});
+
 /// The single entry point [TellMeMoreScreen] uses: routes to the right
 /// content source based on [TellMeMoreContext.contextKind] (park/spring/town
 /// via the master location, event via `events`, county via the county
-/// profile), falling back to the original DJ-banter destination-narration
-/// lookup when [TellMeMoreContext.contextKind] is null (unchanged behavior).
+/// profile, gem via `nearby_gems`), falling back to the original DJ-banter
+/// destination-narration lookup when [TellMeMoreContext.contextKind] is null
+/// (unchanged behavior).
 final tellMeMoreResultProvider = FutureProvider.autoDispose
     .family<TellMeMoreResult?, TellMeMoreContext>((ref, ctx) async {
   switch (ctx.contextKind) {
     case 'park':
     case 'spring':
     case 'town':
+    case 'attraction':
       final id = ctx.locationId;
       if (id == null || id.isEmpty) return null;
       return ref.watch(_locationTellMeMoreProvider(id).future);
@@ -288,6 +315,10 @@ final tellMeMoreResultProvider = FutureProvider.autoDispose
       final id = ctx.locationId;
       if (id == null || id.isEmpty) return null;
       return ref.watch(_eventTellMeMoreProvider(id).future);
+    case 'gem':
+      final id = ctx.locationId;
+      if (id == null || id.isEmpty) return null;
+      return ref.watch(_gemTellMeMoreProvider(id).future);
     case 'county':
       final county = ctx.subject;
       if (county == null || county.isEmpty) return null;
