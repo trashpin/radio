@@ -37,12 +37,22 @@ const _cities = MarkerCategoryStyle(
 const _other =
     MarkerCategoryStyle('other', 'Other', Color(0xFF9E9E9E), Icons.place_rounded);
 
+/// Nearby Gems and local Events — plotted from the same `nearby_gems`/
+/// `events` tables DISCOVER and MARION COUNTY EXPLORE already read (not a
+/// new data source), top-priority per the Map's simplified filter set.
+const gemsMarkerStyle = MarkerCategoryStyle(
+    'gems', 'Gems', Color(0xFFE91E8C), Icons.diamond_rounded);
+const eventsMarkerStyle = MarkerCategoryStyle(
+    'events', 'Events', Color(0xFFFF7043), Icons.event_rounded);
+
 /// A park/destination (not in the legend, but plotted on the map).
 const parkMarkerStyle =
     MarkerCategoryStyle('park', 'Park', Color(0xFF2E9E6B), Icons.forest_rounded);
 
 /// The legend, in display order.
 const markerLegend = <MarkerCategoryStyle>[
+  gemsMarkerStyle,
+  eventsMarkerStyle,
   _trailheads,
   _visitorCenters,
   _historicSites,

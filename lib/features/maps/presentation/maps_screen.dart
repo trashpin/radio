@@ -4,11 +4,15 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/destinations/providers/destinations_provider.dart';
+import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
@@ -19,9 +23,12 @@ import 'package:explorer_os_mobile/features/maps/marker_style.dart';
 import 'package:explorer_os_mobile/features/maps/models/nearby_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/map_layers_provider.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
+import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
+import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/story_studio/data/story_library_repository.dart';
 import 'package:explorer_os_mobile/features/story_studio/services/gps_story_selector.dart';
 import 'package:explorer_os_mobile/features/radio/providers/radio_session_provider.dart';
@@ -66,8 +73,13 @@ class _MapPalette {
 class MapsScreen extends ConsumerStatefulWidget {
   const MapsScreen({super.key});
 
-  /// Fallback camera target (central Florida) until a destination is available.
-  static const _fallbackCenter = LatLng(29.1872, -81.7137);
+  /// Fallback camera target — Marion County / Ocala, FL — used only until a
+  /// real GPS fix arrives (spec: default to GPS location; if GPS isn't
+  /// available yet, center on Marion County, never all of Florida).
+  static const _fallbackCenter = LatLng(29.1872, -82.1401);
+
+  /// A local/county-level zoom, not a statewide one.
+  static const double _localZoom = 11.0;
 
   @override
   ConsumerState<MapsScreen> createState() => _MapsScreenState();
@@ -433,10 +445,32 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         SnackBar(content: Text('No narration for ${sel.name} yet')));
   }
 
-  void _navigateTo(_MapSelection sel) {
-    _controller?.animateCamera(CameraUpdate.newLatLngZoom(sel.position, 15));
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Navigating to ${sel.name}')));
+  /// NAVIGATE — the same Google Maps deep link every other Navigate button in
+  /// this app already uses (radio_screen.dart, tell_me_more_screen.dart), not
+  /// a second navigation system.
+  Future<void> _navigateTo(_MapSelection sel) async {
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1'
+        '&query=${sel.position.latitude},${sel.position.longitude}');
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not open navigation')));
+    }
+  }
+
+  /// "Details" — opens the existing TELL ME MORE info page (photo, history,
+  /// hours, admission, event date/time, navigate, etc. — whatever the record
+  /// actually has) when the selection carries a [TellMeMoreContext] (Gems,
+  /// Events, and master-location places). Falls back to the lighter generic
+  /// sheet for marker types not yet wired to a structured context (legacy
+  /// stops/sightings) rather than inventing a new detail page.
+  void _openDetails(_MapSelection sel, String? distance) {
+    final ctx = sel.tellMeMoreContext;
+    if (ctx != null) {
+      context.push(AppRoute.tellMeMore.path, extra: ctx);
+      return;
+    }
+    _moreInfo(sel, distance);
   }
 
   void _moreInfo(_MapSelection sel, String? distance) {
@@ -543,15 +577,15 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     final layers = ref.watch(mapLayersProvider);
     ref.watch(playableStoriesProvider); // preload GPS-triggered stories
 
-    // Establish the user's location (device GPS on hardware; a simulated
-    // center — the first destination — on web) once, so nearby search runs.
+    // Establish the map's starting center once: [mapCenterProvider] already
+    // auto-follows the device's real GPS fix (see nearby_provider.dart), so
+    // this only ever seeds a value when no GPS fix has arrived yet — Marion
+    // County, never an arbitrary statewide destination (spec: default to
+    // GPS location; if GPS isn't available yet, center on Marion County).
     if (!_centerInitialized) {
-      final seed = mappable.isNotEmpty
-          ? LatLng(mappable.first.latitude!, mappable.first.longitude!)
-          : MapsScreen._fallbackCenter;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && ref.read(mapCenterProvider) == null) {
-          ref.read(mapCenterProvider.notifier).seed(seed);
+          ref.read(mapCenterProvider.notifier).seed(MapsScreen._fallbackCenter);
         }
       });
       _centerInitialized = true;
@@ -565,6 +599,16 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
     // Falls back to all places until the first GPS fix.
     final visible = ref.watch(visibleMapPlacesProvider);
     final catFilter = ref.watch(mapCategoryFilterProvider);
+    // Gems + Events — same providers DISCOVER and MARION COUNTY EXPLORE
+    // already read (nearbyGemsForUserProvider ranks by the user's own
+    // selected radius; nearbyEventsProvider is a flat 20mi cap), not a new
+    // map data source.
+    final gems = catFilter.contains(gemsMarkerStyle.key)
+        ? ref.watch(nearbyGemsForUserProvider)
+        : const <NearbyGemHit>[];
+    final mapEvents = catFilter.contains(eventsMarkerStyle.key)
+        ? ref.watch(nearbyEventsProvider)
+        : const <NearbyEvent>[];
     final showDetail = _zoom >= _detailZoom;
     final places = [
       for (final v in visible)
@@ -645,6 +689,45 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
               onTap: () => _openPlaceDetail(p, selection),
             );
           }(),
+      // Gems — top DISCOVER priority, always shown regardless of zoom.
+      for (final g in gems)
+        () {
+          final ctx = playerContextForGem(g.gem, distanceMeters: g.distanceMeters);
+          final selection = _MapSelection(
+            markerId: 'gem_${g.gem.id}',
+            name: g.gem.name,
+            style: gemsMarkerStyle,
+            position: LatLng(g.gem.latitude!, g.gem.longitude!),
+            imageUrl: g.gem.featuredImage,
+            audioUrl: g.gem.narrationUrl,
+            tellMeMoreContext: ctx.tellMeMoreContext,
+          );
+          return _placeMarker(
+            id: 'gem_${g.gem.id}',
+            position: LatLng(g.gem.latitude!, g.gem.longitude!),
+            style: gemsMarkerStyle,
+            selection: selection,
+          );
+        }(),
+      // Events — second DISCOVER priority, always shown regardless of zoom.
+      for (final e in mapEvents)
+        () {
+          final ctx = playerContextForEvent(e);
+          final selection = _MapSelection(
+            markerId: 'event_${e.event.id}',
+            name: e.event.name,
+            style: eventsMarkerStyle,
+            position: LatLng(e.event.latitude!, e.event.longitude!),
+            imageUrl: e.event.imageUrl,
+            tellMeMoreContext: ctx.tellMeMoreContext,
+          );
+          return _placeMarker(
+            id: 'event_${e.event.id}',
+            position: LatLng(e.event.latitude!, e.event.longitude!),
+            style: eventsMarkerStyle,
+            selection: selection,
+          );
+        }(),
       // User location (blue dot).
       if (userLocation != null)
         Marker(
@@ -660,12 +743,15 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
         '(places/POI+campgrounds=${places.length}, parks=${mappable.length}, '
         'stops=${stops.length}, sightings=${sightings.length})');
 
-    // Auto-fit the camera once so every place/park marker is in view, even if
-    // records sit outside the initial viewport (requirement #7/#8).
+    // Auto-fit the camera once so nearby markers are in view, even if some
+    // sit outside the initial viewport. Deliberately NOT including `mappable`
+    // (every Base44 destination/radio-station statewide) here — that used to
+    // zoom the camera out to fit every station in Florida, which is the
+    // "shows all of Florida" problem this update fixes. Parks still render as
+    // markers; the camera just isn't forced to include every one of them.
     if (!_fittedPlaces && _controller != null) {
       final pts = <LatLng>[
         for (final p in places) LatLng(p.latitude, p.longitude),
-        for (final d in mappable) LatLng(d.latitude!, d.longitude!),
       ];
       if (pts.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _maybeFitBounds(pts));
@@ -707,9 +793,9 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
           ),
     };
 
-    final initialTarget = mappable.isNotEmpty
-        ? LatLng(mappable.first.latitude!, mappable.first.longitude!)
-        : MapsScreen._fallbackCenter;
+    // Local by default: the user's own GPS position when known, else Marion
+    // County — never an arbitrary statewide destination (spec section 1).
+    final initialTarget = userLocation ?? MapsScreen._fallbackCenter;
 
     return Scaffold(
       backgroundColor: _MapPalette.bg,
@@ -720,8 +806,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
             child: Stack(
               children: [
                 GoogleMap(
-                  initialCameraPosition:
-                      CameraPosition(target: initialTarget, zoom: 9),
+                  initialCameraPosition: CameraPosition(
+                      target: initialTarget, zoom: MapsScreen._localZoom),
                   markers: markers,
                   circles: circles,
                   clusterManagers: {
@@ -1457,8 +1543,8 @@ class _MapsScreenState extends ConsumerState<MapsScreen> {
                       () => ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text('Saved ${sel.name}')))),
                   const Gap.h(AppSpacing.sm),
-                  _cardIconButton(Icons.info_outline_rounded, 'More Info',
-                      () => _moreInfo(sel, distance)),
+                  _cardIconButton(Icons.info_outline_rounded, 'Details',
+                      () => _openDetails(sel, distance)),
                 ],
               ),
             ],
@@ -1511,6 +1597,7 @@ class _MapSelection {
     this.imageUrl,
     this.audioUrl,
     this.park,
+    this.tellMeMoreContext,
   });
 
   final String markerId;
@@ -1520,6 +1607,11 @@ class _MapSelection {
   final String? imageUrl;
   final String? audioUrl;
   final Destination? park;
+
+  /// When set, "Details" opens the existing TELL ME MORE info page for this
+  /// exact record instead of the generic fallback sheet (spec section 7:
+  /// reuse the existing detail page, don't invent a new one).
+  final TellMeMoreContext? tellMeMoreContext;
 }
 
 /// A single map-layer toggle pill.
