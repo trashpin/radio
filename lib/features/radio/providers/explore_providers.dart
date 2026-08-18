@@ -249,10 +249,17 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
 /// [_countyCandidates] the same way, so MARION COUNTY plays real authored
 /// content even on counties whose CountyConfig (Admin → County Manager)
 /// hasn't been filled in yet.
+/// WHERE YOU ARE should only ever be about a town the traveler is actually
+/// near — a town 20 miles away is not "where you are". Larger than the
+/// player's own PARK/SPRING cap (5mi) since towns cover more ground.
+const double _kWhereYouAreTownMaxMeters = 10 * 1609.344;
+
 Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
   List<ContentItem> items,
-  List<MasterLocation> masterLocations,
-) {
+  List<MasterLocation> masterLocations, {
+  double? userLat,
+  double? userLng,
+}) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
     ExploreCategory.whereYouAre: [],
     ExploreCategory.county: [],
@@ -269,6 +276,20 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
     if ((item.audioUrl ?? '').trim().isEmpty && text.isEmpty) continue;
     final lat = item.latitude == 0 ? null : item.latitude;
     final lng = item.longitude == 0 ? null : item.longitude;
+    // WHERE YOU ARE items (town welcome/history/fun-facts/community-story)
+    // are about ONE specific town — only surface them when the traveler is
+    // actually near that town, not every Marion town regardless of position
+    // (previously every town's content played as if it were "where you
+    // are", which is both misleading and crowded out real variety).
+    if (bucket == ExploreCategory.whereYouAre &&
+        userLat != null &&
+        userLng != null &&
+        lat != null &&
+        lng != null &&
+        GeoMath.distanceMeters(userLat, userLng, lat, lng) >
+            _kWhereYouAreTownMaxMeters) {
+      continue;
+    }
     out[bucket]!.add(ExploreCandidate(
       id: 'content:${item.id}',
       category: bucket,
@@ -430,7 +451,13 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
 
 bool _isWildlifeSpeciesCategory(String category) {
   final c = category.toLowerCase();
-  return c.contains('bird') ||
+  // 'animals' is the actual, dominant category value in the live species
+  // table (126 of 182 published rows) — it was missing from this list
+  // entirely, so every mammal/general-animal species was silently invisible
+  // to Explore's WILDLIFE rotation (the single biggest cause of Explore
+  // feeling repetitive: the largest content pool wasn't being read at all).
+  return c.contains('animal') ||
+      c.contains('bird') ||
       c.contains('mammal') ||
       c.contains('reptile') ||
       c.contains('amphibian') ||
@@ -510,7 +537,16 @@ final exploreCandidatesProvider =
   final contentItems = ref.watch(locationContentItemsProvider);
   final masterLocations = ref.watch(masterLocationsProvider).value ??
       const <MasterLocation>[];
-  _mergeInto(pool, _fromLocationContent(contentItems, masterLocations));
+  final userLoc = ref.watch(gpsControllerProvider).location;
+  _mergeInto(
+    pool,
+    _fromLocationContent(
+      contentItems,
+      masterLocations,
+      userLat: userLoc?.latitude,
+      userLng: userLoc?.longitude,
+    ),
+  );
 
   // The live `destinations` table has no `county` column (a MasterDestination
   // field that's never actually populated), so "is this destination in
