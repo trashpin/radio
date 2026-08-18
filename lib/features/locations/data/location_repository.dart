@@ -98,12 +98,63 @@ class LocationRepository {
   Future<void> delete(String id) =>
       SupabaseService.client.from('locations').delete().eq('id', id);
 
+  /// Location ids that already have a pending/running job whose notes start
+  /// with [notesPrefix] — checked before every enqueue below so repeated
+  /// "Generate" clicks (or automated re-saves) while a job is still in
+  /// flight queue a duplicate instead of piling up more work behind it.
+  Future<Set<String>> _idsWithOpenJob(String jobType, String notesPrefix) async {
+    if (!SupabaseService.isConfigured) return const {};
+    try {
+      final rows =
+          await SupabaseService.client
+                  .from('generation_jobs')
+                  .select('notes')
+                  .eq('job_type', jobType)
+                  .inFilter('status', ['pending', 'running'])
+                  .like('notes', '$notesPrefix%')
+              as List;
+      final idRe = RegExp('id=([0-9a-fA-F-]{36})');
+      final out = <String>{};
+      for (final r in rows.cast<Map<String, dynamic>>()) {
+        final m = idRe.firstMatch(r['notes'] as String? ?? '');
+        if (m != null) out.add(m.group(1)!);
+      }
+      return out;
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// The id of an existing pending/running job whose notes start with
+  /// [notesPrefix], or null if none — the single-location twin of
+  /// [_idsWithOpenJob].
+  Future<String?> _existingOpenJobId(String jobType, String notesPrefix) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row =
+          await SupabaseService.client
+              .from('generation_jobs')
+              .select('id')
+              .eq('job_type', jobType)
+              .inFilter('status', ['pending', 'running'])
+              .like('notes', '$notesPrefix%')
+              .limit(1)
+              .maybeSingle();
+      return row?['id']?.toString();
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Enqueues an audio-generation job for every pending (needs-narration)
   /// location, drained by the audio tooling. Returns how many were queued.
   Future<int> enqueueMissingAudio(List<MasterLocation> pending) async {
     if (!SupabaseService.isConfigured || pending.isEmpty) return 0;
+    final already =
+        await _idsWithOpenJob('audio', 'master_location:voice;id=');
     final rows = [
       for (final l in pending)
+        if (!already.contains(l.id))
         {
           'destination': l.name,
           'job_type': 'audio',
@@ -128,6 +179,9 @@ class LocationRepository {
   /// as [enqueueMissingAudio], just for one location with its id back.
   Future<String?> enqueueAudioJob(MasterLocation location) async {
     if (!SupabaseService.isConfigured) return null;
+    final notesPrefix = 'master_location:voice;id=${location.id}';
+    final existing = await _existingOpenJobId('audio', notesPrefix);
+    if (existing != null) return existing;
     final row = {
       'destination': location.name,
       'job_type': 'audio',
@@ -137,9 +191,7 @@ class LocationRepository {
       'county': location.county,
       'radius_m': 150,
       'progress': 0,
-      'notes':
-          'master_location:voice;id=${location.id}'
-          ';code=${location.destinationCode ?? ''}',
+      'notes': '$notesPrefix;code=${location.destinationCode ?? ''}',
     };
     final inserted = await SupabaseService.client
         .from('generation_jobs')
@@ -157,8 +209,11 @@ class LocationRepository {
   /// queued.
   Future<int> enqueueMissingContent(List<MasterLocation> locations) async {
     if (!SupabaseService.isConfigured || locations.isEmpty) return 0;
+    final already =
+        await _idsWithOpenJob('audio', 'master_location:content;id=');
     final rows = [
       for (final l in locations)
+        if (!already.contains(l.id))
         {
           'destination': l.name,
           'job_type': 'audio',
@@ -178,6 +233,9 @@ class LocationRepository {
   /// job id (for polling) — the text twin of [enqueueAudioJob].
   Future<String?> enqueueContentJob(MasterLocation location) async {
     if (!SupabaseService.isConfigured) return null;
+    final notesPrefix = 'master_location:content;id=${location.id}';
+    final existing = await _existingOpenJobId('audio', notesPrefix);
+    if (existing != null) return existing;
     final inserted = await SupabaseService.client
         .from('generation_jobs')
         .insert({
@@ -188,7 +246,7 @@ class LocationRepository {
           'longitude': location.longitude,
           'county': location.county,
           'progress': 0,
-          'notes': 'master_location:content;id=${location.id}',
+          'notes': notesPrefix,
         })
         .select('id')
         .single();
@@ -230,8 +288,11 @@ class LocationRepository {
   /// how many were queued.
   Future<int> enqueueWikimediaImport(List<MasterLocation> missing) async {
     if (!SupabaseService.isConfigured || missing.isEmpty) return 0;
+    final already =
+        await _idsWithOpenJob('wikimedia_import', 'wikimedia:hero;id=');
     final rows = [
       for (final l in missing)
+        if (!already.contains(l.id))
         {
           'destination': l.name,
           'job_type': 'wikimedia_import',

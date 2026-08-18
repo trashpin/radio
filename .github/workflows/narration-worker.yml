@@ -14,7 +14,10 @@ name: Narration Worker
 on:
   workflow_dispatch: {}          # "Run workflow" button in the Actions tab
   schedule:
-    - cron: "*/15 * * * *"       # every 15 minutes
+    - cron: "*/5 * * * *"        # every 5 minutes (GitHub's practical floor) —
+                                  # tightened from 15 to clear the backlog faster;
+                                  # the concurrency group below still guarantees
+                                  # only one drain runs at a time
 
 concurrency:
   group: narration-worker
