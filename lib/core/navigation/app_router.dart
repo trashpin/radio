@@ -45,7 +45,7 @@ class AppRouter {
   const AppRouter._();
 
   static final GoRouter router = GoRouter(
-    initialLocation: AppRoute.explore.path,
+    initialLocation: AppRoute.radio.path,
     // Re-run [redirect] whenever auth state changes (sign in/out, guest).
     refreshListenable: authController,
     // Auth gate: require sign-in or guest before entering the app. When there's
@@ -64,7 +64,7 @@ class AppRouter {
         return atAuth ? null : AppRoute.welcome.path;
       }
       // Already signed in / guest — don't sit on an auth screen.
-      if (atAuth) return AppRoute.explore.path;
+      if (atAuth) return AppRoute.radio.path;
       return null;
     },
     routes: [
@@ -72,12 +72,11 @@ class AppRouter {
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
         // Branch order MUST match the nav bar in AppShell:
-        // Radio, Explore, Map, Stories, More.
+        // Radio, Map, Wildlife Guide, More.
         branches: [
           _branch(AppRoute.radio.path, const RadioScreen()),
-          _branch(AppRoute.explore.path, const ExploreHomeScreen()),
           _branch(AppRoute.map.path, const MapsScreen()),
-          _branch(AppRoute.stories.path, const StoriesScreen()),
+          _branch(AppRoute.wildlife.path, const WildlifeScreen()),
           _branch(AppRoute.more.path, const MoreScreen()),
         ],
       ),
@@ -87,7 +86,12 @@ class AppRouter {
       _route(AppRoute.createAccount.path, const CreateAccountScreen()),
       _route(AppRoute.forgotPassword.path, const ForgotPasswordScreen()),
 
-      // Pushed / full-screen routes reachable from Explore, More, and links.
+      // Pushed / full-screen routes reachable from More and links. Explore
+      // and Stories moved here from the shell branches (no longer bottom-nav
+      // tabs — spec: remove from primary nav, keep the underlying screens
+      // reachable, e.g. from the More tab).
+      _route(AppRoute.explore.path, const ExploreHomeScreen()),
+      _route(AppRoute.stories.path, const StoriesScreen()),
       _route(AppRoute.aroundMe.path, const AroundMeScreen()),
       _route(AppRoute.aiRanger.path, const AiRangerScreen()),
       _route(AppRoute.explorerMode.path, const ExplorerModeScreen()),
@@ -109,7 +113,6 @@ class AppRouter {
       _route(AppRoute.profile.path, const ProfileScreen()),
       _route(AppRoute.settings.path, const SettingsScreen()),
       _route(AppRoute.downloads.path, const DownloadsScreen()),
-      _route(AppRoute.wildlife.path, const WildlifeScreen()),
       _route(AppRoute.gps.path, const GpsDebugScreen()),
       _route(AppRoute.radioDirector.path, const RadioDirectorDebugPage()),
       _route(AppRoute.programmingDirector.path,
