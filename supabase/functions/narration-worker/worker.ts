@@ -467,14 +467,16 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
       body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
     },
   );
-  if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+  if (!tts.ok) {
+    throw new Error(`ElevenLabs ${tts.status}: ${(await tts.text()).slice(0, 300)}`);
+  }
   const bytes = new Uint8Array(await tts.arrayBuffer());
   const path = `locations/${id}.mp3`;
   const up = await fetch(
     buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
     { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
   );
-  if (!up.ok) throw new Error(`upload ${up.status}`);
+  if (!up.ok) throw new Error(`upload ${up.status}: ${(await up.text()).slice(0, 300)}`);
   const url = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
   await sbPatch(`locations?id=eq.${id}`, { audio_files: [url] });
   return { done: true, msg: `voiced ${loc.name} (${Math.round(bytes.length / 1024)} KB)` };
