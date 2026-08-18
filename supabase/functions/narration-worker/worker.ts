@@ -840,7 +840,7 @@ export async function drainQueue(
   //     drop them, so they stay pending for that tooling.
   const primary = await sbGet(
     `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full,wikimedia_import)` +
-      `&order=created_at.asc&limit=${limit}&select=*`,
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
   // Scoped to Marion County only, matching the app's current curated scope
   // (see active_location_types.dart) — this pool also carries a large
@@ -848,12 +848,12 @@ export async function drainQueue(
   // live content yet and shouldn't compete for API budget with real work.
   const locAudio = await sbGet(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.master_location*` +
-      `&county=ilike.marion&order=created_at.asc&limit=${limit}&select=*`,
+      `&county=ilike.marion&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
   // `audio` jobs that target a Nearby Gem (notes start with "nearby_gem").
   const gemAudio = await sbGet(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.nearby_gem*` +
-      `&order=created_at.asc&limit=${limit}&select=*`,
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
   // Round-robin across the three pools (gem audio, primary knowledge/script
   // types, master-location audio) instead of merging-then-taking-the-globally-
