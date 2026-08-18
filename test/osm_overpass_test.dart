@@ -55,12 +55,14 @@ void main() {
     final locs = OsmOverpass.parse(json, state: 'Florida', county: 'Marion');
     final byName = {for (final l in locs) l.name: l.type};
     expect(byName.keys.toSet(),
-        {'Belleview', 'Tuscawilla Park', 'Silver Springs'});
+        {'Belleview', 'Tuscawilla Park', 'Silver Springs', 'Appleton Museum'});
     expect(byName['Belleview'], LocationType.town);
     expect(byName['Tuscawilla Park'], LocationType.cityPark);
     expect(byName['Silver Springs'], LocationType.spring);
-    // Inactive types excluded entirely.
-    expect(byName.containsKey('Appleton Museum'), isFalse);
+    // Museum is now an active tier (see active_location_types.dart) — kept,
+    // not dropped, when tagged data reaches parse().
+    expect(byName['Appleton Museum'], LocationType.museum);
+    // Still-inactive types excluded entirely.
     expect(byName.containsKey('Corner Cafe'), isFalse);
     expect(byName.containsKey('Old Fort'), isFalse);
   });
