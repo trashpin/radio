@@ -840,9 +840,13 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full,wikimedia_import)` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
+  // Scoped to Marion County only, matching the app's current curated scope
+  // (see active_location_types.dart) — this pool also carries a large
+  // pre-seeded statewide backlog (other counties + county=null) that isn't
+  // live content yet and shouldn't compete for API budget with real work.
   const locAudio = await sbGet(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.master_location*` +
-      `&order=created_at.asc&limit=${limit}&select=*`,
+      `&county=ilike.marion&order=created_at.asc&limit=${limit}&select=*`,
   );
   // `audio` jobs that target a Nearby Gem (notes start with "nearby_gem").
   const gemAudio = await sbGet(
