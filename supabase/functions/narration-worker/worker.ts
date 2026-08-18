@@ -849,12 +849,27 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.nearby_gem*` +
       `&order=created_at.asc&limit=${limit}&select=*`,
   );
-  // User-initiated Nearby Gem narration ("Generate Narration") runs FIRST so a
-  // stale backlog of older narration/audio jobs can never starve it. The rest
-  // is processed oldest-first as before.
-  const rest = [...primary, ...locAudio]
-    .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
-  const jobs = [...gemAudio, ...rest].slice(0, limit);
+  // Round-robin across the three pools (gem audio, primary knowledge/script
+  // types, master-location audio) instead of merging-then-taking-the-globally-
+  // oldest-N: a huge, old backlog in ANY one pool (e.g. thousands of
+  // wikimedia_import rows) must never fully starve the others for run after
+  // run. Within each pool, jobs are still oldest-first (from the queries
+  // above).
+  const pools = [gemAudio, primary, locAudio];
+  const cursors = [0, 0, 0];
+  const jobs: any[] = [];
+  while (jobs.length < limit) {
+    let addedAny = false;
+    for (let p = 0; p < pools.length && jobs.length < limit; p++) {
+      const job = pools[p][cursors[p]];
+      if (job) {
+        jobs.push(job);
+        cursors[p]++;
+        addedAny = true;
+      }
+    }
+    if (!addedAny) break;
+  }
   const results: unknown[] = [];
   for (const job of jobs) {
     await processJob(job);
