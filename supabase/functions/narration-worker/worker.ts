@@ -458,7 +458,11 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
   );
   if (!text) return { done: false, msg: "empty narration text" };
 
-  const voiceId = (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+  // Per-job override (notes "...;voice=<id>"), same mechanism doGemAudio
+  // already supports — lets one location be voiced with a different
+  // ElevenLabs voice without changing the global default.
+  const voiceId = noteVoiceId(job.notes) ||
+      (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
   const tts = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
     {
