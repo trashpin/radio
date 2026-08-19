@@ -352,34 +352,44 @@ class RadioEngineService {
     discovery.tick();
 
     final due = <AudioSegment>[];
-    if (preferences.narrationsEnabled) {
-      final narration = stories.onMusicPlayed();
-      if (narration != null) due.add(narration);
-    }
-    if (preferences.announcementsEnabled) {
-      final announcement = announcements.onMusicPlayed();
-      if (announcement != null) due.add(announcement);
-    }
-    if (due.isEmpty && exploreMode) {
-      // MARION COUNTY EXPLORE: information-first — check every song boundary
-      // (no quiet-gap wait) and supersede the normal discovery/location-banter
-      // chain below so the tour doesn't compete with itself. DJ banter + plain
-      // music remain the final fallback (spec section 8 — never silent).
+    if (exploreMode) {
+      // MARION COUNTY EXPLORE gets EXCLUSIVE control of the narration slot —
+      // checked on every song boundary (no quiet-gap wait). Previously
+      // stories/announcements ran unconditionally BEFORE this check, so
+      // whenever either fired (their own cadence, unrelated to Explore's
+      // programmed format), explore.due() was skipped entirely and its
+      // cycle position never advanced — starving WILDLIFE of its guaranteed
+      // turn and letting extra songs play with nothing scheduled at all.
+      // Explore now always gets to run its own INFORMATION -> WILDLIFE ->
+      // SONG cycle without competing with Radio-mode's schedulers. DJ
+      // banter + plain music remain the final fallback (never silent).
       final exploreSegment = explore.due();
       if (exploreSegment != null) due.add(exploreSegment);
-    } else if (due.isEmpty) {
-      // Background discovery: when it's been quiet for a while, teach something
-      // about the nearby environment (before falling back to generic DJ banter).
+    } else {
       if (preferences.narrationsEnabled) {
-        final discovered = discovery.due();
-        if (discovered != null) due.add(discovered);
+        final narration = stories.onMusicPlayed();
+        if (narration != null) due.add(narration);
       }
-      // Local banter: a short narration about the park/city/county the user is
-      // in (park > city > county), reusing the location's own AI content. Sits
-      // above generic DJ banter so the station feels genuinely local.
-      if (due.isEmpty && preferences.narrationsEnabled && locationBanter != null) {
-        final local = locationBanter!.onMusicPlayed();
-        if (local != null) due.add(local);
+      if (preferences.announcementsEnabled) {
+        final announcement = announcements.onMusicPlayed();
+        if (announcement != null) due.add(announcement);
+      }
+      if (due.isEmpty) {
+        // Background discovery: when it's been quiet for a while, teach
+        // something about the nearby environment (before falling back to
+        // generic DJ banter).
+        if (preferences.narrationsEnabled) {
+          final discovered = discovery.due();
+          if (discovered != null) due.add(discovered);
+        }
+        // Local banter: a short narration about the park/city/county the user
+        // is in (park > city > county), reusing the location's own AI
+        // content. Sits above generic DJ banter so the station feels
+        // genuinely local.
+        if (due.isEmpty && preferences.narrationsEnabled && locationBanter != null) {
+          final local = locationBanter!.onMusicPlayed();
+          if (local != null) due.add(local);
+        }
       }
     }
     // DJ banter fills the space between songs when nothing else is scheduled,
