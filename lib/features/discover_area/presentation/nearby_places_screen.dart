@@ -3,116 +3,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
-import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
-import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
-import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
-import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
-import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
-import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
-import 'package:explorer_os_mobile/features/locations/location_engine.dart';
-import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
-import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
-import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
+import 'package:explorer_os_mobile/features/discover_area/providers/discover_places_provider.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/services/player_location_context.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-const Set<LocationType> _parkAndSpringTypes = {
-  LocationType.statePark,
-  LocationType.nationalPark,
-  LocationType.countyPark,
-  LocationType.spring,
-};
-const Set<LocationType> _townTypes = {LocationType.city, LocationType.community};
-const Set<LocationType> _attractionTypes = {
-  LocationType.attraction,
-  LocationType.museum,
-  LocationType.historicSite,
-  LocationType.historicDistrict,
-  LocationType.scenicOverlook,
-  LocationType.hiddenGem,
-  LocationType.pointOfInterest,
-};
-
-/// Attractions/Historical Sites aren't part of the curated
-/// [kActiveLocationTypes] allow-list `nearbyLocationsProvider` enforces (that
-/// allow-list also gates the map/GPS-narration/geofence systems, which this
-/// change must not touch) — so DISCOVER reads the master `locations` table
-/// directly for this one section and ranks it itself with the same
-/// [GeoMath] distance math every other nearby feature already uses.
-class _NearbyAttraction {
-  const _NearbyAttraction(this.location, this.distanceMeters);
-  final MasterLocation location;
-  final double distanceMeters;
-}
-
-const double _kDiscoverRadiusMeters = 20 * 1609.344;
-
-final _nearbyAttractionsProvider = Provider<List<_NearbyAttraction>>((ref) {
-  final center = ref.watch(mapCenterProvider);
-  if (center == null) return const [];
-  final all = ref.watch(masterLocationsProvider).value ?? const [];
-  final out = <_NearbyAttraction>[];
-  for (final l in all) {
-    if (!_attractionTypes.contains(l.type)) continue;
-    if (!l.active || l.hidden || !l.hasCoordinates || l.isPublishBlocked) {
-      continue;
-    }
-    final d = GeoMath.distanceMeters(
-        center.latitude, center.longitude, l.latitude!, l.longitude!);
-    if (d > _kDiscoverRadiusMeters) continue;
-    out.add(_NearbyAttraction(l, d));
-  }
-  out.sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
-  return out;
-});
-
-/// DISCOVER -- the main nearby-discovery experience, in priority order:
-/// GEMS, EVENTS, PARKS & SPRINGS, ATTRACTIONS/HISTORICAL SITES, TOWN, COUNTY.
-/// Every section reuses an existing, already-ranked provider (Gems' own
-/// featured/priority/popularity/distance ranking, the events/locations
-/// nearby lists, the county profile) -- nothing here is a new data source.
-/// Tapping a card opens the exact same TELL ME MORE info page the player's
-/// own image uses (same [playerContextForLocation]/[playerContextForEvent]/
-/// [playerContextForGem]/[playerContextForCounty] builders, same
-/// [tellMeMoreResultProvider] lookup), so the listener sees the place's
-/// photo, history, and practical info, and hears its recorded narration if
-/// one exists.
+/// DISCOVER -- "what can I discover around me?", answered county-wide: every
+/// section below is the full Marion County pool for that category (no town/
+/// city/geofence filter), sorted nearest-first via
+/// [discover_places_provider.dart]. Category ORDER is fixed and always the
+/// same regardless of location: GEMS, EVENTS, LOCAL PARKS, MUSEUMS &
+/// HISTORICAL POINTS, SPRINGS, STATE PARKS. Tapping a card opens the exact
+/// same TELL ME MORE info page the player's own image uses (same
+/// [playerContextForLocation]/[playerContextForEvent]/[playerContextForGem]
+/// builders), so the listener sees the place's photo, history, and practical
+/// info, and hears its recorded narration if one exists.
 class NearbyPlacesScreen extends ConsumerWidget {
   const NearbyPlacesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gems = ref.watch(nearbyGemsForUserProvider);
-    final events = ref.watch(nearbyEventsProvider);
-    final nearby = ref.watch(nearbyLocationsProvider);
-    final parksAndSprings = nearby
-        .where((n) => _parkAndSpringTypes.contains(n.location.type))
-        .toList()
-      ..sort((a, b) => a.distanceMeters.compareTo(b.distanceMeters));
-    final attractions = ref.watch(_nearbyAttractionsProvider);
-    final towns = nearby.where((n) => _townTypes.contains(n.location.type)).toList();
-
-    final county = ref.watch(locationContextProvider).county;
-    final countyConfigs =
-        ref.watch(countyConfigsProvider).value ?? const <CountyConfig>[];
-    CountyConfig? countyConfig;
-    if (county != null) {
-      final key = county.toLowerCase().trim();
-      for (final c in countyConfigs) {
-        if (c.key == key) {
-          countyConfig = c;
-          break;
-        }
-      }
-    }
+    final gems = ref.watch(discoverGemsProvider);
+    final events = ref.watch(discoverEventsProvider);
+    final localParks = ref.watch(discoverLocalParksProvider);
+    final museumsHistoric = ref.watch(discoverMuseumsHistoricProvider);
+    final springs = ref.watch(discoverSpringsProvider);
+    final stateParks = ref.watch(discoverStateParksProvider);
 
     final hasAnything = gems.isNotEmpty ||
         events.isNotEmpty ||
-        parksAndSprings.isNotEmpty ||
-        attractions.isNotEmpty ||
-        towns.isNotEmpty ||
-        county != null;
+        localParks.isNotEmpty ||
+        museumsHistoric.isNotEmpty ||
+        springs.isNotEmpty ||
+        stateParks.isNotEmpty;
 
     return Scaffold(
       backgroundColor: RD.bg,
@@ -154,56 +77,52 @@ class NearbyPlacesScreen extends ConsumerWidget {
                                 ),
                             ],
                           ),
-                        if (parksAndSprings.isNotEmpty)
+                        if (localParks.isNotEmpty)
                           _Section(
-                            label: 'PARKS & SPRINGS',
+                            label: 'LOCAL PARKS',
                             children: [
-                              for (final n in parksAndSprings)
+                              for (final n in localParks)
                                 _PlaceCard(
                                   placeContext: playerContextForLocation(
-                                      n.location.type == LocationType.spring
-                                          ? PlayerLocationKind.spring
-                                          : PlayerLocationKind.park,
-                                      n),
+                                      PlayerLocationKind.park, n),
                                   category: n.location.type.label,
                                 ),
                             ],
                           ),
-                        if (attractions.isNotEmpty)
+                        if (museumsHistoric.isNotEmpty)
                           _Section(
-                            label: 'ATTRACTIONS & HISTORICAL SITES',
+                            label: 'MUSEUMS & HISTORICAL POINTS',
                             children: [
-                              for (final a in attractions)
+                              for (final n in museumsHistoric)
                                 _PlaceCard(
                                   placeContext: playerContextForLocation(
-                                      PlayerLocationKind.attraction,
-                                      NearbyLocation(
-                                          a.location, a.distanceMeters, 0)),
-                                  category: a.location.type.label,
+                                      PlayerLocationKind.attraction, n),
+                                  category: n.location.type.label,
                                 ),
                             ],
                           ),
-                        if (towns.isNotEmpty)
+                        if (springs.isNotEmpty)
                           _Section(
-                            label: 'TOWNS',
+                            label: 'SPRINGS',
                             children: [
-                              for (final n in towns)
+                              for (final n in springs)
                                 _PlaceCard(
                                   placeContext: playerContextForLocation(
-                                      PlayerLocationKind.town, n),
-                                  category: 'Town',
+                                      PlayerLocationKind.spring, n),
+                                  category: n.location.type.label,
                                 ),
                             ],
                           ),
-                        if (county != null)
+                        if (stateParks.isNotEmpty)
                           _Section(
-                            label: 'COUNTY',
+                            label: 'STATE PARKS',
                             children: [
-                              _PlaceCard(
-                                placeContext: playerContextForCounty(
-                                    county, countyConfig),
-                                category: 'County',
-                              ),
+                              for (final n in stateParks)
+                                _PlaceCard(
+                                  placeContext: playerContextForLocation(
+                                      PlayerLocationKind.park, n),
+                                  category: n.location.type.label,
+                                ),
                             ],
                           ),
                       ],
@@ -280,14 +199,15 @@ class _EmptyState extends StatelessWidget {
             const Icon(Icons.explore_off_rounded, size: 56, color: RD.textSecondary),
             const SizedBox(height: RD.lg),
             Text(
-              'Nothing nearby yet',
+              'Nothing to discover yet',
               textAlign: TextAlign.center,
               style: RD.title.copyWith(fontSize: 20),
             ),
             const SizedBox(height: RD.sm),
             Text(
-              'Keep driving -- gems, events, parks, springs, attractions, '
-              'and towns will show up here as you get near them.',
+              "We're still waiting on a GPS fix -- gems, events, parks, "
+              'museums, springs, and state parks across Marion County will '
+              'show up here once your location is known.',
               textAlign: TextAlign.center,
               style: RD.body,
             ),
