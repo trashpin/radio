@@ -86,6 +86,8 @@ ExploreCandidate? _whereYouAreCandidate(Ref ref) {
     imageUrl: ctx.imageUrl,
     latitude: loc?.latitude,
     longitude: loc?.longitude,
+    distanceMeters: 0, // literally where the traveler is right now
+    aheadPriority: 0, // most-local content there is — always tried first
   );
 }
 
@@ -98,9 +100,24 @@ ExploreCandidate? _whereYouAreCandidate(Ref ref) {
 /// stationary stretches. Reuses the same eligible-type set and
 /// `LocationEngine.nearby` call already used for "what's ahead" — no new
 /// content source, just a wider (non-directional) read of the same table.
+///
+/// Carries [ExploreCandidate.distanceMeters] and a type-based
+/// [ExploreCandidate.aheadPriority] (parks/springs before attractions
+/// before historic sites before towns — same ranking `_aheadCandidates`
+/// uses) so the scheduler's distance+type sort naturally tries the
+/// CURRENT town/area's parks and springs before reaching into farther
+/// nearby towns, without needing separate categories per distance band
+/// (local-first "LOCAL FIRST → NEARBY SECOND" spec).
+///
+/// [excludeLocationIds] skips anything already surfaced as a genuine
+/// ahead-of-travel candidate (by [_aheadCandidates]) so the same physical
+/// place is never represented twice under two different ids/categories —
+/// which would otherwise let it "repeat" once each copy's own no-repeat
+/// tracking independently allowed it through.
 List<ExploreCandidate> _nearbyLocationCandidates(
   Ref ref,
   ExploreCandidate? whereYouAre,
+  Set<String> excludeLocationIds,
 ) {
   final userLoc = ref.watch(gpsControllerProvider).location;
   if (userLoc == null) return const [];
@@ -114,13 +131,14 @@ List<ExploreCandidate> _nearbyLocationCandidates(
     userLoc.latitude,
     userLoc.longitude,
     allLocations,
-    maxMiles: 15,
+    maxMiles: 20, // matches _aheadCandidates' outer bound
     types: _kEligibleHeadedTypes,
   );
 
   final out = <ExploreCandidate>[];
   for (final n in nearby) {
     if (n.location.id == currentId) continue; // already covered above
+    if (excludeLocationIds.contains(n.location.id)) continue;
     if (!n.location.hasCoordinates) continue;
     final kind = _kindFor(n.location.type);
     if (kind == null) continue;
@@ -136,6 +154,41 @@ List<ExploreCandidate> _nearbyLocationCandidates(
       imageUrl: ctx.imageUrl,
       latitude: n.location.latitude,
       longitude: n.location.longitude,
+      distanceMeters: n.distanceMeters,
+      aheadPriority: _aheadTypePriority(n.location.type),
+    ));
+  }
+  return out;
+}
+
+/// EVENTS, current-town-first — the non-directional twin of the ahead-cone
+/// events already surfaced by [_aheadCandidates]. Reuses
+/// [nearbyEventsProvider] (already distance-sorted, the exact list the
+/// player's own EVENT tier reads) so the scheduler's distance sort tries
+/// the closest event first regardless of travel direction. [excludeEventIds]
+/// avoids double-representing an event already covered as an ahead-cone
+/// candidate, for the same reason [_nearbyLocationCandidates] excludes
+/// covered locations.
+List<ExploreCandidate> _nearbyEventCandidates(
+  Ref ref,
+  Set<String> excludeEventIds,
+) {
+  final out = <ExploreCandidate>[];
+  for (final e in ref.watch(nearbyEventsProvider)) {
+    if (excludeEventIds.contains(e.event.id)) continue;
+    final ctx = playerContextForEvent(e);
+    final teaser = (ctx.teaser ?? '').trim();
+    if (teaser.isEmpty) continue;
+    out.add(ExploreCandidate(
+      id: 'event:${e.event.id}',
+      category: ExploreCategory.events,
+      title: ctx.title,
+      spokenText: teaser,
+      tellMeMoreContext: ctx.tellMeMoreContext,
+      imageUrl: ctx.imageUrl,
+      latitude: e.event.latitude,
+      longitude: e.event.longitude,
+      distanceMeters: e.distanceMeters,
     ));
   }
   return out;
@@ -216,11 +269,24 @@ const Duration _kFullRevealMaxEta = Duration(minutes: 8);
 /// GPS fix or no reliable heading there is nothing genuinely ahead yet, and
 /// the rotation falls through to WILDLIFE/NATURE instead. A location behind
 /// the user must never be treated as What's Ahead.
-List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
+///
+/// Also returns which underlying location/event ids it covered, so the
+/// non-directional local-first sources ([_nearbyLocationCandidates],
+/// [_nearbyEventCandidates]) can skip them — the same physical place should
+/// never be represented twice under two different ids/categories.
+typedef _AheadResult = ({
+  List<ExploreCandidate> candidates,
+  Set<String> locationIds,
+  Set<String> eventIds,
+});
+
+_AheadResult _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
   final travel = ref.watch(gpsControllerProvider);
   final userLoc = travel.location;
   final headingDeg = travel.heading?.degrees ?? travel.bearingDegrees;
-  if (userLoc == null || headingDeg == null) return const [];
+  if (userLoc == null || headingDeg == null) {
+    return (candidates: const <ExploreCandidate>[], locationIds: const {}, eventIds: const {});
+  }
 
   final allLocations =
       ref.watch(masterLocationsProvider).value ?? const <MasterLocation>[];
@@ -266,7 +332,9 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
     ));
     byId[id] = e;
   }
-  if (points.isEmpty) return const [];
+  if (points.isEmpty) {
+    return (candidates: const <ExploreCandidate>[], locationIds: const {}, eventIds: const {});
+  }
 
   final results = const UpcomingDestinationService().search(
     points,
@@ -279,6 +347,8 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
   );
 
   final out = <ExploreCandidate>[];
+  final coveredLocationIds = <String>{};
+  final coveredEventIds = <String>{};
   for (final r in results) {
     final source = byId[r.id];
     final PlayerLocationContext ctx;
@@ -299,6 +369,12 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
     }
     final teaser = (ctx.teaser ?? '').trim();
     if (teaser.isEmpty) continue; // never invent content — same guard as before
+
+    if (source is NearbyLocation) {
+      coveredLocationIds.add(source.location.id);
+    } else if (source is NearbyEvent) {
+      coveredEventIds.add(source.event.id);
+    }
 
     final closeEnoughToReveal = r.distanceMeters <= _kFullRevealMaxMeters ||
         (r.eta != null && r.eta! <= _kFullRevealMaxEta);
@@ -341,7 +417,7 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
       ));
     }
   }
-  return out;
+  return (candidates: out, locationIds: coveredLocationIds, eventIds: coveredEventIds);
 }
 
 /// MARION COUNTY — CountyConfig's history/overview/facts (Admin → County
@@ -691,14 +767,17 @@ final exploreCandidatesProvider =
     Provider<Map<ExploreCategory, List<ExploreCandidate>>>((ref) {
   final whereYouAre = _whereYouAreCandidate(ref);
   final ahead = _aheadCandidates(ref, whereYouAre);
-  final nearby = _nearbyLocationCandidates(ref, whereYouAre);
+  final nearbyLocations =
+      _nearbyLocationCandidates(ref, whereYouAre, ahead.locationIds);
+  final nearbyEvents = _nearbyEventCandidates(ref, ahead.eventIds);
 
   final pool = <ExploreCategory, List<ExploreCandidate>>{
     for (final c in ExploreCategory.values) c: [],
   };
   if (whereYouAre != null) pool[ExploreCategory.whereYouAre]!.add(whereYouAre);
-  pool[ExploreCategory.whereYouAre]!.addAll(nearby);
-  for (final c in ahead) {
+  pool[ExploreCategory.whereYouAre]!.addAll(nearbyLocations);
+  pool[ExploreCategory.events]!.addAll(nearbyEvents);
+  for (final c in ahead.candidates) {
     pool[c.category]!.add(c);
   }
   pool[ExploreCategory.county]!.addAll(_countyCandidates(ref));
