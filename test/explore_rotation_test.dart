@@ -29,16 +29,34 @@ ExploreCandidate _c(
     );
 
 void main() {
-  group('ExploreRotationScheduler.select (fixed order, skip-if-empty)', () {
-    test('rotates WHERE HEADED > WHERE YOU ARE > COUNTY > WILDLIFE > NATURE '
-        '> GEOLOGY > HISTORY, in that order', () {
+  group('ExploreRotationScheduler.select (fixed tier order, skip-if-empty)', () {
+    test('tier 1 WHAT\'S AHEAD beats every other tier', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
           ExploreCategory.history: [_c('b', ExploreCategory.history)],
         });
-      // whereHeaded comes first even though history is also available.
       expect(s.select()!.id, 'a');
+    });
+
+    test('tier 2 WILDLIFE/NATURE beats tier 3 WHERE YOU ARE — the actual '
+        'behavior change from the old enum-order rotation', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.wildlife: [_c('w', ExploreCategory.wildlife)],
+          ExploreCategory.whereYouAre: [_c('y', ExploreCategory.whereYouAre)],
+          ExploreCategory.history: [_c('h', ExploreCategory.history)],
+        });
+      expect(s.select()!.id, 'w');
+    });
+
+    test('within tier 3, WHERE YOU ARE beats the broader COUNTY fallback', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [_c('y', ExploreCategory.whereYouAre)],
+          ExploreCategory.county: [_c('c', ExploreCategory.county)],
+        });
+      expect(s.select()!.id, 'y');
     });
 
     test('skips a category with no usable content and moves to the next', () {
@@ -69,21 +87,25 @@ void main() {
     });
   });
 
-  group('ExploreRotationScheduler.due (continues rotation, anti-repeat)', () {
-    test('after playing WHERE HEADED, the next due() continues from WHERE '
-        'YOU ARE rather than restarting the rotation', () {
+  group('ExploreRotationScheduler.due (tier re-checked every call, anti-repeat)', () {
+    test('WHAT\'S AHEAD is re-checked on EVERY call, not once per lap — the '
+        'direct regression test for the old "1 turn in 8" cursor bug', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
-          ExploreCategory.whereHeaded: [_c('headed', ExploreCategory.whereHeaded)],
-          ExploreCategory.whereYouAre: [_c('here', ExploreCategory.whereYouAre)],
+          ExploreCategory.whereHeaded: [
+            _c('headed-1', ExploreCategory.whereHeaded),
+            _c('headed-2', ExploreCategory.whereHeaded),
+          ],
         });
-      expect(s.due()!.id.contains('headed'), isTrue);
-      expect(s.due()!.id.contains('here'), isTrue);
+      expect(s.due()!.id, contains('headed'));
+      // Still WHAT'S AHEAD, not skipped to a lower tier just because one
+      // ahead item already aired this call.
+      expect(s.due()!.id, contains('headed'));
     });
 
-    test('does not repeat a recently played item; prefers another in the '
+    test('does not repeat a played item; prefers another unused item in the '
         'same category', () {
-      final s = ExploreRotationScheduler(cooldownPlays: 5)
+      final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.wildlife: [
             _c('black-bear', ExploreCategory.wildlife),
@@ -92,21 +114,53 @@ void main() {
         });
       final first = s.due();
       expect(first!.id, contains('black-bear'));
-      expect(s.recentlyPlayed('black-bear'), isTrue);
+      expect(s.hasPlayed(ExploreCategory.wildlife, 'black-bear'), isTrue);
 
       final second = s.due();
       expect(second!.id, contains('alligator'),
-          reason: 'black-bear is on cooldown; the other wildlife item plays');
+          reason: 'black-bear already aired; the other wildlife item plays');
     });
 
-    test('a full lap with only one candidate returns null once it is on '
-        'cooldown, rather than repeating immediately', () {
-      final s = ExploreRotationScheduler(cooldownPlays: 5)
+    test('a non-sticky category with only one candidate repeats it once the '
+        'pool is exhausted, rather than going quiet (literal "don\'t repeat '
+        'while other unused content exists" — there is no other content)', () {
+      final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.history: [_c('only', ExploreCategory.history)],
         });
       expect(s.due()!.id, contains('only'));
-      expect(s.due(), isNull);
+      expect(s.due()!.id, contains('only'),
+          reason: 'the whole (one-item) pool was exhausted, so it resets');
+    });
+
+    test('a full non-sticky category (3 items) plays each exactly once, then '
+        'resets and repeats the first — CONTENT POOL RESET only once '
+        'genuinely exhausted, never prematurely', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.history: [
+            _c('h1', ExploreCategory.history),
+            _c('h2', ExploreCategory.history),
+            _c('h3', ExploreCategory.history),
+          ],
+        });
+      final ids = [s.due()!.id, s.due()!.id, s.due()!.id];
+      expect(ids.map((i) => i.contains('h1') ? 'h1' : i.contains('h2') ? 'h2' : 'h3'),
+          containsAll(['h1', 'h2', 'h3']));
+      expect(s.due()!.id, contains('h1'),
+          reason: 'pool exhausted after 3 plays; resets and repeats the first');
+    });
+
+    test('a STICKY category (whereHeaded) does NOT reset — once its single '
+        'item has aired, it stays quiet rather than re-triggering while '
+        'still being approached', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
+        });
+      expect(s.due()!.id, contains('a'));
+      expect(s.due(), isNull,
+          reason: 'whereHeaded is sticky — exhausted, but must not reset');
     });
 
     test('emits recorded audio when present, else spoken text, and carries '
@@ -143,27 +197,39 @@ void main() {
       expect(s.urgent(candidate, isCloseEnough: false), isNull);
     });
 
-    test('does not disturb the normal rotation cursor', () {
+    test('an urgent cue for a candidate NOT in the pool does not disturb the '
+        'normal tier scan', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [_c('headed', ExploreCategory.whereHeaded)],
           ExploreCategory.whereYouAre: [_c('here', ExploreCategory.whereYouAre)],
         });
       s.urgent(_c('urgent-stop', ExploreCategory.whereHeaded), isCloseEnough: true);
-      // The normal rotation still starts at WHERE HEADED, unaffected.
+      // Tier 1 still wins on the next due() call, unaffected.
       expect(s.due()!.id, contains('headed'));
+    });
+
+    test('firing urgent() on a candidate that IS in the pool marks it played, '
+        'so due() does not immediately re-pick it', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
+        });
+      s.urgent(_c('a', ExploreCategory.whereHeaded), isCloseEnough: true);
+      expect(s.due(), isNull,
+          reason: 'a already aired via urgent(); whereHeaded is sticky');
     });
   });
 
   group('ExploreRotationScheduler.reset', () {
-    test('clears rotation position, play history, and urgent memory', () {
+    test('clears play history and urgent memory', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
         });
       s.due();
       s.reset();
-      expect(s.recentlyPlayed('a'), isFalse);
+      expect(s.hasPlayed(ExploreCategory.whereHeaded, 'a'), isFalse);
       expect(s.due(), isNotNull);
     });
   });
