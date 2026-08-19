@@ -20,6 +20,7 @@ ExploreCandidate _c(
   String? audioUrl,
   String? spokenText = 'A short fact.',
   int aheadPriority = 1000,
+  double? distanceMeters,
 }) =>
     ExploreCandidate(
       id: id,
@@ -28,6 +29,7 @@ ExploreCandidate _c(
       audioUrl: audioUrl,
       spokenText: spokenText,
       aheadPriority: aheadPriority,
+      distanceMeters: distanceMeters,
     );
 
 void main() {
@@ -118,6 +120,34 @@ void main() {
           ],
         });
       expect(s.select()!.id, 'festival');
+    });
+
+    test('LOCAL FIRST: within WHERE YOU ARE, a closer same-priority '
+        'candidate is tried before a farther one — current town/area before '
+        'a farther nearby town, with no separate distance-band category', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('far-town-park', ExploreCategory.whereYouAre,
+                aheadPriority: 0, distanceMeters: 30000),
+            _c('current-area-park', ExploreCategory.whereYouAre,
+                aheadPriority: 0, distanceMeters: 2000),
+          ],
+        });
+      expect(s.select()!.id, 'current-area-park');
+    });
+
+    test('EVENTS is an explicit INFORMATION fallback tier, after WHERE YOU '
+        'ARE and before COUNTY — current/nearby-town events considered '
+        'ahead of county-wide content', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.events: [
+            _c('town-fair', ExploreCategory.events, distanceMeters: 3000),
+          ],
+          ExploreCategory.county: [_c('county-fact', ExploreCategory.county)],
+        });
+      expect(s.select()!.id, 'town-fair');
     });
   });
 

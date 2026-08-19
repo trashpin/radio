@@ -202,24 +202,41 @@ class ExploreRotationScheduler {
     }
   }
 
+  /// LOCAL FIRST → NEARBY SECOND: ranks by type-based
+  /// [ExploreCandidate.aheadPriority] first (e.g. a park outranks a town),
+  /// then by [ExploreCandidate.distanceMeters] (closer wins) as the
+  /// tiebreak — so within a category/tier, content in the traveler's
+  /// current area is always tried before content from a farther-out nearby
+  /// town, which is tried before non-geographic content (no distance set,
+  /// sorts last). Candidates with the default (not-applicable) priority
+  /// compare equal and fall straight through to the distance comparison.
+  static int _compareLocalFirst(ExploreCandidate a, ExploreCandidate b) {
+    final byPriority = a.aheadPriority.compareTo(b.aheadPriority);
+    if (byPriority != 0) return byPriority;
+    final ad = a.distanceMeters ?? double.infinity;
+    final bd = b.distanceMeters ?? double.infinity;
+    return ad.compareTo(bd);
+  }
+
   ExploreCandidate? _pick(ExploreCategory cat) {
     final all = (_pool[cat] ?? const []).where((c) => c.isPlayable).toList();
     if (all.isEmpty) return null;
     final played = _played[cat] ?? const <String>{};
-    final unseen = all.where((c) => !played.contains(c.id)).toList();
+    final unseen = all.where((c) => !played.contains(c.id)).toList()
+      ..sort(_compareLocalFirst);
     if (unseen.isNotEmpty) return unseen.first;
     // Every item in this category has aired. Sticky (ahead-of-travel)
     // categories stay quiet rather than repeat; everything else may loop
     // back now that the whole pool has genuinely been exhausted.
     if (_kStickyNoReset.contains(cat)) return null;
-    return all.first;
+    return (all..sort(_compareLocalFirst)).first;
   }
 
-  /// Like [_pick], but ranks UNSEEN candidates across several categories by
-  /// [ExploreCandidate.aheadPriority] (type-based — e.g. a State Park beats a
-  /// Town even when farther) rather than trying one category to exhaustion
-  /// before the next. Only used for the sticky ahead-of-travel groups, which
-  /// never reset, so there's no exhaustion-reset branch here.
+  /// Like [_pick], but ranks UNSEEN candidates across several categories
+  /// together (local-first, per [_compareLocalFirst]) rather than trying one
+  /// category to exhaustion before the next. Only used for the sticky
+  /// ahead-of-travel groups, which never reset, so there's no
+  /// exhaustion-reset branch here.
   ExploreCandidate? _pickAheadAcross(List<ExploreCategory> cats) {
     final unseen = <ExploreCandidate>[];
     for (final cat in cats) {
@@ -228,7 +245,7 @@ class ExploreRotationScheduler {
       unseen.addAll(all.where((c) => !played.contains(c.id)));
     }
     if (unseen.isEmpty) return null;
-    unseen.sort((a, b) => a.aheadPriority.compareTo(b.aheadPriority));
+    unseen.sort(_compareLocalFirst);
     return unseen.first;
   }
 
@@ -272,6 +289,19 @@ class ExploreRotationScheduler {
     }
   }
 
+  /// LOCAL FIRST → NEARBY SECOND → COUNTY LAST:
+  ///   1. teaser — a significant destination ahead but not yet close.
+  ///   2. genuinely ahead-of-travel + close enough to fully reveal (ranked
+  ///      local-first among themselves — see [_pickAheadAcross]).
+  ///   3. WHERE YOU ARE — the current park/spring/town PLUS other nearby
+  ///      parks/springs/attractions/historic sites, closest (and highest
+  ///      type-priority) first — so the current town/area is exhausted
+  ///      before farther nearby towns are ever reached (emergent from
+  ///      [_compareLocalFirst]'s sort, not a separate category per band).
+  ///   4. EVENTS — current-town events before farther nearby-town events,
+  ///      same local-first distance sort.
+  ///   5. COUNTY — county-wide facts/history, the true last resort.
+  ///   6. HISTORY — broader, non-town-specific history content.
   ExploreCandidate? _selectInformation() {
     final teaser = _pickAheadAcross([ExploreCategory.teaser]);
     if (teaser != null) return teaser;
@@ -280,6 +310,7 @@ class ExploreRotationScheduler {
     if (reveal != null) return reveal;
     for (final cat in [
       ExploreCategory.whereYouAre,
+      ExploreCategory.events,
       ExploreCategory.county,
       ExploreCategory.history,
     ]) {
