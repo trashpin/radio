@@ -89,6 +89,58 @@ ExploreCandidate? _whereYouAreCandidate(Ref ref) {
   );
 }
 
+/// Supplements WHERE YOU ARE with OTHER nearby parks/springs/historic
+/// sites/attractions — not just the traveler's single current tier —
+/// regardless of travel direction (unlike [_aheadCandidates], which is
+/// cone-gated). Without this, the INFORMATION fallback (when nothing is
+/// directionally ahead) only had the current town/park/spring plus a
+/// handful of county facts to draw from, so it repeated quickly on longer
+/// stationary stretches. Reuses the same eligible-type set and
+/// `LocationEngine.nearby` call already used for "what's ahead" — no new
+/// content source, just a wider (non-directional) read of the same table.
+List<ExploreCandidate> _nearbyLocationCandidates(
+  Ref ref,
+  ExploreCandidate? whereYouAre,
+) {
+  final userLoc = ref.watch(gpsControllerProvider).location;
+  if (userLoc == null) return const [];
+
+  final allLocations =
+      ref.watch(masterLocationsProvider).value ?? const <MasterLocation>[];
+  final engine = ref.watch(locationEngineProvider);
+  final currentId = whereYouAre?.tellMeMoreContext?.locationId;
+
+  final nearby = engine.nearby(
+    userLoc.latitude,
+    userLoc.longitude,
+    allLocations,
+    maxMiles: 15,
+    types: _kEligibleHeadedTypes,
+  );
+
+  final out = <ExploreCandidate>[];
+  for (final n in nearby) {
+    if (n.location.id == currentId) continue; // already covered above
+    if (!n.location.hasCoordinates) continue;
+    final kind = _kindFor(n.location.type);
+    if (kind == null) continue;
+    final ctx = playerContextForLocation(kind, n);
+    final teaser = (ctx.teaser ?? '').trim();
+    if (teaser.isEmpty) continue; // never invent content
+    out.add(ExploreCandidate(
+      id: 'nearby:${n.location.id}',
+      category: ExploreCategory.whereYouAre,
+      title: ctx.title,
+      spokenText: teaser,
+      tellMeMoreContext: ctx.tellMeMoreContext,
+      imageUrl: ctx.imageUrl,
+      latitude: n.location.latitude,
+      longitude: n.location.longitude,
+    ));
+  }
+  return out;
+}
+
 PlayerLocationKind? _kindFor(LocationType t) {
   switch (t) {
     case LocationType.statePark:
@@ -639,11 +691,13 @@ final exploreCandidatesProvider =
     Provider<Map<ExploreCategory, List<ExploreCandidate>>>((ref) {
   final whereYouAre = _whereYouAreCandidate(ref);
   final ahead = _aheadCandidates(ref, whereYouAre);
+  final nearby = _nearbyLocationCandidates(ref, whereYouAre);
 
   final pool = <ExploreCategory, List<ExploreCandidate>>{
     for (final c in ExploreCategory.values) c: [],
   };
   if (whereYouAre != null) pool[ExploreCategory.whereYouAre]!.add(whereYouAre);
+  pool[ExploreCategory.whereYouAre]!.addAll(nearby);
   for (final c in ahead) {
     pool[c.category]!.add(c);
   }
