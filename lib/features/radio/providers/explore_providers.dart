@@ -8,6 +8,8 @@ import 'package:explorer_os_mobile/features/discovery/data/species_repository.da
 import 'package:explorer_os_mobile/features/discovery/models/species.dart';
 import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/models/attraction_point.dart';
+import 'package:explorer_os_mobile/features/gps/services/upcoming_destination_service.dart';
 import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/data/location_content_repository.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
@@ -63,6 +65,8 @@ const _kEligibleHeadedTypes = {
   LocationType.spring,
   LocationType.city,
   LocationType.community,
+  LocationType.historicSite,
+  LocationType.museum,
 };
 
 /// WHERE YOU ARE — the same EVENT>PARK>SPRING>TOWN>COUNTY tier the player
@@ -84,27 +88,6 @@ ExploreCandidate? _whereYouAreCandidate(Ref ref) {
   );
 }
 
-/// EVENTS — reuses [nearbyEventsProvider] (the exact list DISCOVER and the
-/// player's own EVENT tier already read), nearest-first.
-ExploreCandidate? _eventsCandidate(Ref ref) {
-  final events = ref.watch(nearbyEventsProvider);
-  if (events.isEmpty) return null;
-  final ctx = playerContextForEvent(events.first);
-  final text = (ctx.teaser ?? '').trim();
-  if (text.isEmpty) return null;
-  final loc = ctx.tellMeMoreContext.location;
-  return ExploreCandidate(
-    id: 'event:${events.first.event.id}',
-    category: ExploreCategory.events,
-    title: ctx.title,
-    spokenText: text,
-    tellMeMoreContext: ctx.tellMeMoreContext,
-    imageUrl: ctx.imageUrl,
-    latitude: loc?.latitude,
-    longitude: loc?.longitude,
-  );
-}
-
 PlayerLocationKind? _kindFor(LocationType t) {
   switch (t) {
     case LocationType.statePark:
@@ -116,65 +99,125 @@ PlayerLocationKind? _kindFor(LocationType t) {
     case LocationType.city:
     case LocationType.community:
       return PlayerLocationKind.town;
+    case LocationType.historicSite:
+    case LocationType.museum:
+      return PlayerLocationKind.attraction;
     default:
       return null;
   }
 }
 
-/// WHERE YOU'RE HEADED — reuses [nearbyLocationsProvider] (the same ranked
-/// list Radio/DISCOVER already read) and the existing heading/bearing math
-/// ([GeoMath]) to find the next park/spring/town ahead of the current
-/// heading, excluding whatever WHERE YOU ARE is already covering. Falls back
-/// to the next-nearest such place when heading isn't reliable — never
-/// guesses (spec section 4.1).
-ExploreCandidate? _whereHeadedCandidate(Ref ref, ExploreCandidate? whereYouAre) {
-  final nearby = ref.watch(nearbyLocationsProvider);
-  if (nearby.isEmpty) return null;
+/// WHAT'S AHEAD — merges eligible master locations (parks/springs/towns/
+/// historic sites/museums) and nearby events into ONE directional search via
+/// the existing [UpcomingDestinationService] (the same cone + radius + ETA
+/// detector the GPS engine already uses elsewhere for "what's coming up on
+/// my route"), excluding whatever WHERE YOU ARE already covers. Returns up
+/// to 5 nearest-in-cone candidates (not just the first) so the scheduler's
+/// per-category no-repeat can move on to the next-nearest still-ahead place
+/// once the nearest one has aired, instead of the tier going empty.
+///
+/// Deliberately NO fallback to "nearest regardless of heading" — with no
+/// GPS fix or no reliable heading there is nothing genuinely ahead yet, and
+/// the rotation falls through to WILDLIFE/NATURE instead. A location behind
+/// the user must never be treated as What's Ahead.
+List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
   final travel = ref.watch(gpsControllerProvider);
-  final headingDeg = travel.heading?.degrees ?? travel.bearingDegrees;
   final userLoc = travel.location;
+  final headingDeg = travel.heading?.degrees ?? travel.bearingDegrees;
+  if (userLoc == null || headingDeg == null) return const [];
+
+  final allLocations =
+      ref.watch(masterLocationsProvider).value ?? const <MasterLocation>[];
+  final engine = ref.watch(locationEngineProvider);
   final currentId = whereYouAre?.tellMeMoreContext?.locationId;
 
-  NearbyLocation? eligible(bool Function(NearbyLocation) test) {
-    for (final n in nearby) {
-      if (!_kEligibleHeadedTypes.contains(n.location.type)) continue;
-      if (n.location.id == currentId) continue;
-      if (!n.location.hasCoordinates) continue;
-      if (test(n)) return n;
-    }
-    return null;
-  }
-
-  NearbyLocation? picked;
-  if (headingDeg != null && userLoc != null) {
-    picked = eligible((n) {
-      final bearingTo = GeoMath.bearingDegrees(
-        userLoc.latitude,
-        userLoc.longitude,
-        n.location.latitude!,
-        n.location.longitude!,
-      );
-      return GeoMath.angularDifference(bearingTo, headingDeg) <= 70;
-    });
-  }
-  picked ??= eligible((_) => true);
-  if (picked == null) return null;
-
-  final kind = _kindFor(picked.location.type);
-  if (kind == null) return null;
-  final ctx = playerContextForLocation(kind, picked);
-  final teaser = (ctx.teaser ?? '').trim();
-  if (teaser.isEmpty) return null;
-  return ExploreCandidate(
-    id: 'whereheaded:${picked.location.id}',
-    category: ExploreCategory.whereHeaded,
-    title: ctx.title,
-    spokenText: "Coming up ahead: ${ctx.title}. $teaser",
-    tellMeMoreContext: ctx.tellMeMoreContext,
-    imageUrl: ctx.imageUrl,
-    latitude: picked.location.latitude,
-    longitude: picked.location.longitude,
+  // Sources directly from the master locations dataset with Explore's OWN
+  // type filter — deliberately bypasses nearbyLocationsProvider's
+  // onlyActiveTypes() gate (a separate, global allow-list this feature must
+  // not widen) so historic sites/museums can be considered here.
+  final nearby = engine.nearby(
+    userLoc.latitude,
+    userLoc.longitude,
+    allLocations,
+    maxMiles: 20,
+    types: _kEligibleHeadedTypes,
   );
+
+  final points = <AttractionPoint>[];
+  final byId = <String, Object>{};
+  for (final n in nearby) {
+    if (n.location.id == currentId) continue;
+    if (!n.location.hasCoordinates) continue;
+    final id = 'loc:${n.location.id}';
+    points.add(AttractionPoint(
+      id: id,
+      name: n.location.name,
+      latitude: n.location.latitude!,
+      longitude: n.location.longitude!,
+    ));
+    byId[id] = n;
+  }
+  for (final e in ref.watch(nearbyEventsProvider)) {
+    final lat = e.event.latitude;
+    final lng = e.event.longitude;
+    if (lat == null || lng == null) continue;
+    final id = 'evt:${e.event.id}';
+    points.add(AttractionPoint(
+      id: id,
+      name: e.event.name,
+      latitude: lat,
+      longitude: lng,
+    ));
+    byId[id] = e;
+  }
+  if (points.isEmpty) return const [];
+
+  final results = const UpcomingDestinationService().search(
+    points,
+    userLoc,
+    headingDeg,
+    coneDegrees: 60,
+    radiusMeters: 20000,
+    speedMps: userLoc.speedMps,
+    limit: 5,
+  );
+
+  final out = <ExploreCandidate>[];
+  for (final r in results) {
+    final source = byId[r.id];
+    final PlayerLocationContext ctx;
+    final ExploreCategory category;
+    if (source is NearbyLocation) {
+      final kind = _kindFor(source.location.type);
+      if (kind == null) continue;
+      ctx = playerContextForLocation(kind, source);
+      category = ExploreCategory.whereHeaded;
+    } else if (source is NearbyEvent) {
+      ctx = playerContextForEvent(source);
+      category = ExploreCategory.events;
+    } else {
+      continue;
+    }
+    final teaser = (ctx.teaser ?? '').trim();
+    if (teaser.isEmpty) continue; // never invent content — same guard as before
+    final miles = r.distanceMeters / 1609.344;
+    final leadPhrase =
+        "You're about ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} "
+        "miles from ${ctx.title}.";
+    out.add(ExploreCandidate(
+      id: 'ahead:${r.id}',
+      category: category,
+      title: ctx.title,
+      spokenText: '$leadPhrase $teaser',
+      tellMeMoreContext: ctx.tellMeMoreContext,
+      imageUrl: ctx.imageUrl,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      distanceMeters: r.distanceMeters,
+      eta: r.eta,
+    ));
+  }
+  return out;
 }
 
 /// MARION COUNTY — CountyConfig's history/overview/facts (Admin → County
@@ -523,15 +566,15 @@ void _mergeInto(
 final exploreCandidatesProvider =
     Provider<Map<ExploreCategory, List<ExploreCandidate>>>((ref) {
   final whereYouAre = _whereYouAreCandidate(ref);
-  final whereHeaded = _whereHeadedCandidate(ref, whereYouAre);
-  final event = _eventsCandidate(ref);
+  final ahead = _aheadCandidates(ref, whereYouAre);
 
   final pool = <ExploreCategory, List<ExploreCandidate>>{
     for (final c in ExploreCategory.values) c: [],
   };
   if (whereYouAre != null) pool[ExploreCategory.whereYouAre]!.add(whereYouAre);
-  if (whereHeaded != null) pool[ExploreCategory.whereHeaded]!.add(whereHeaded);
-  if (event != null) pool[ExploreCategory.events]!.add(event);
+  for (final c in ahead) {
+    pool[c.category]!.add(c);
+  }
   pool[ExploreCategory.county]!.addAll(_countyCandidates(ref));
 
   final contentItems = ref.watch(locationContentItemsProvider);

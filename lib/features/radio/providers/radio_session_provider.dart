@@ -726,13 +726,23 @@ void _attachExplore(Ref ref, RadioEngineService engine) {
 
   void checkUrgent() {
     if (!ref.read(exploreActiveProvider)) return;
-    final headed = ref.read(exploreCandidatesProvider)[ExploreCategory.whereHeaded];
-    if (headed == null || headed.isEmpty) return;
-    final next = ref.read(gpsControllerProvider).nextAttraction;
-    final closeEnough = next != null &&
-        (next.distanceMeters <= 1609.344 ||
-            (next.eta != null && next.eta! <= const Duration(minutes: 3)));
-    final seg = engine.explore.urgent(headed.first, isCloseEnough: closeEnough);
+    // Reads distance/ETA straight off Explore's OWN ahead-of-travel
+    // candidates (not gpsControllerProvider.nextAttraction, a separate
+    // candidate pool that in production is never populated) so the
+    // "close enough to interrupt for" check and the candidate actually
+    // narrated are always about the same place.
+    final pool = ref.read(exploreCandidatesProvider);
+    final ahead = <ExploreCandidate>[
+      ...?pool[ExploreCategory.whereHeaded],
+      ...?pool[ExploreCategory.events],
+    ]..sort((a, b) => (a.distanceMeters ?? double.infinity)
+        .compareTo(b.distanceMeters ?? double.infinity));
+    if (ahead.isEmpty) return;
+    final nearest = ahead.first;
+    final closeEnough = (nearest.distanceMeters != null &&
+            nearest.distanceMeters! <= 1609.344) ||
+        (nearest.eta != null && nearest.eta! <= const Duration(minutes: 3));
+    final seg = engine.explore.urgent(nearest, isCloseEnough: closeEnough);
     if (seg != null) {
       ref.read(radioEngineControllerProvider.notifier).requestInterruption(seg);
     }

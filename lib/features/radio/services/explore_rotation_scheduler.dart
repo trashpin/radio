@@ -54,6 +54,8 @@ class ExploreCandidate {
     this.imageUrl,
     this.latitude,
     this.longitude,
+    this.distanceMeters,
+    this.eta,
   });
 
   final String id;
@@ -76,6 +78,13 @@ class ExploreCandidate {
   final double? latitude;
   final double? longitude;
 
+  /// Distance/ETA from the traveler, when this candidate came from the
+  /// ahead-of-travel search — carried on the candidate itself (not
+  /// recomputed separately) so the "close enough to interrupt for" check
+  /// always agrees with what's actually being narrated.
+  final double? distanceMeters;
+  final Duration? eta;
+
   bool get isPlayable =>
       (audioUrl ?? '').trim().isNotEmpty || (spokenText ?? '').trim().isNotEmpty;
   bool get hasDestination => latitude != null && longitude != null;
@@ -95,93 +104,127 @@ class ExploreUrgentCandidate {
 /// Pure and synchronous (no I/O), exactly like [BackgroundDiscoveryScheduler]:
 /// the runtime pushes fresh candidate pools in via [updateCandidates] as GPS/
 /// content change, and calls [due] after each song to ask what (if anything)
-/// should play next. Rotates WHERE YOU'RE HEADED → WHERE YOU ARE → MARION
-/// COUNTY → WILDLIFE → NATURE → GEOLOGY → HISTORY → repeat, skipping any
-/// category with no usable content right now, and never repeating an item
-/// until [cooldownPlays] other Explore items have aired. Returns null when
-/// there is truly nothing to say anywhere — the caller falls back to normal
-/// content/music, exactly like [BackgroundDiscoveryScheduler.due].
+/// should play next.
+///
+/// Fixed priority TIERS, scanned fresh on every call (no persisted cursor —
+/// a category doesn't get "its turn" once per lap, it's simply the
+/// highest-priority tier with something unused to say, every time):
+///   1. WHAT'S AHEAD    (whereHeaded, events)
+///   2. WILDLIFE/NATURE (wildlife, nature, geology)
+///   3. WHERE YOU ARE   (whereYouAre, county)
+///   4. HISTORY         (history)
+/// Within a tier, categories are tried in the order listed (e.g. a specific
+/// WHERE YOU ARE beats the broader county fallback).
+///
+/// No-repeat is exhaustion-based per category, not a play-count cooldown: an
+/// item won't repeat while another unused item exists in its category: once
+/// every item in a category has aired, that category's played history
+/// resets and it may repeat — EXCEPT the ahead-of-travel categories
+/// (whereHeaded/events), which are GPS-relative and refreshed every tick, so
+/// they never auto-reset (a passed destination simply drops out of the pool
+/// once it's no longer ahead, rather than being eligible to replay while
+/// still being approached).
+///
+/// Returns null when there is truly nothing to say anywhere — the caller
+/// falls back to normal content/music, exactly like
+/// [BackgroundDiscoveryScheduler.due].
 class ExploreRotationScheduler {
-  ExploreRotationScheduler({this.cooldownPlays = 6});
+  ExploreRotationScheduler();
 
-  /// An Explore item won't repeat until this many other Explore items have
-  /// played.
-  int cooldownPlays;
+  static const List<List<ExploreCategory>> _kTiers = [
+    [ExploreCategory.whereHeaded, ExploreCategory.events],
+    [ExploreCategory.wildlife, ExploreCategory.nature, ExploreCategory.geology],
+    [ExploreCategory.whereYouAre, ExploreCategory.county],
+    [ExploreCategory.history],
+  ];
+
+  static const Set<ExploreCategory> _kStickyNoReset = {
+    ExploreCategory.whereHeaded,
+    ExploreCategory.events,
+  };
 
   Map<ExploreCategory, List<ExploreCandidate>> _pool = const {};
-  int _categoryCursor = 0;
-  int _playIndex = 0;
-  final Map<String, int> _lastPlayedAt = {};
+  final Map<ExploreCategory, Set<String>> _played = {};
 
   /// IDs already surfaced as an urgent interruption this trip — an urgent cue
   /// fires once, not on every tick while it stays close.
   final Set<String> _urgentFired = {};
 
   /// Replaces the candidate pool per category (runtime pushes as GPS/content
-  /// change). Does not touch rotation position or play history.
+  /// change). Does not touch play history.
   void updateCandidates(Map<ExploreCategory, List<ExploreCandidate>> pool) {
     _pool = pool;
   }
 
-  bool recentlyPlayed(String id) {
-    final at = _lastPlayedAt[id];
-    if (at == null) return false;
-    return (_playIndex - at) < cooldownPlays;
+  /// Whether [id] has already aired in [category] since the last reset —
+  /// exposed for tests/telemetry.
+  bool hasPlayed(ExploreCategory category, String id) =>
+      (_played[category] ?? const {}).contains(id);
+
+  ExploreCandidate? _pick(ExploreCategory cat) {
+    final all = (_pool[cat] ?? const []).where((c) => c.isPlayable).toList();
+    if (all.isEmpty) return null;
+    final played = _played[cat] ?? const <String>{};
+    final unseen = all.where((c) => !played.contains(c.id)).toList();
+    if (unseen.isNotEmpty) return unseen.first;
+    // Every item in this category has aired. Sticky (ahead-of-travel)
+    // categories stay quiet rather than repeat; everything else may loop
+    // back now that the whole pool has genuinely been exhausted.
+    if (_kStickyNoReset.contains(cat)) return null;
+    return all.first;
   }
 
-  void _markPlayed(String id) {
-    _playIndex++;
-    _lastPlayedAt[id] = _playIndex;
+  void _markPlayed(ExploreCandidate c) {
+    final played = _played[c.category] ??= {};
+    final all = (_pool[c.category] ?? const []).where((x) => x.isPlayable);
+    final allAlreadyPlayed =
+        all.every((x) => played.contains(x.id) || x.id == c.id);
+    if (allAlreadyPlayed && !_kStickyNoReset.contains(c.category)) {
+      played.clear();
+    }
+    played.add(c.id);
   }
 
-  /// The next rotation segment, in category order, continuing from wherever
-  /// the cursor left off (spec section 7 — a location-priority interruption
-  /// must not restart the whole rotation). Null when every category is
-  /// either empty or fully on cooldown right now.
+  /// The next segment, in strict tier priority, re-evaluated from the top
+  /// every call. Null when every tier is either empty or fully exhausted
+  /// (sticky) right now.
   AudioSegment? due() {
     final pick = select();
     if (pick == null) return null;
-    _markPlayed(pick.id);
-    // Resume the rotation from the NEXT category after this one next time.
-    _categoryCursor =
-        (ExploreCategory.values.indexOf(pick.category) + 1) %
-            ExploreCategory.values.length;
+    _markPlayed(pick);
     return _toSegment(pick, resumeAfter: true);
   }
 
   /// The candidate [due] would pick right now, without mutating any state —
   /// exposed for tests/telemetry.
   ExploreCandidate? select() {
-    final categories = ExploreCategory.values;
-    for (var i = 0; i < categories.length; i++) {
-      final cat = categories[(_categoryCursor + i) % categories.length];
-      final eligible = (_pool[cat] ?? const [])
-          .where((c) => c.isPlayable && !recentlyPlayed(c.id))
-          .toList();
-      if (eligible.isNotEmpty) return eligible.first;
+    for (final tier in _kTiers) {
+      for (final cat in tier) {
+        final pick = _pick(cat);
+        if (pick != null) return pick;
+      }
     }
     return null;
   }
 
   /// Checks whether an important location just became relevant enough to
-  /// jump the queue (spec section 7). [candidate] is the current
-  /// WHERE YOU'RE HEADED item, already resolved by the runtime;
-  /// [isCloseEnough] is the runtime's own "worth interrupting for" test
-  /// (e.g. under a mile, or a couple of minutes out) so this class stays
-  /// free of GPS/ETA math. Fires at most once per candidate id per trip.
+  /// jump the queue (spec section 7). [candidate] is the nearest current
+  /// WHAT'S AHEAD item, already resolved by the runtime; [isCloseEnough] is
+  /// the runtime's own "worth interrupting for" test (e.g. under a mile, or
+  /// a couple of minutes out) so this class stays free of GPS/ETA math.
+  /// Fires at most once per candidate id per trip, and marks it played so a
+  /// later [due] call in the same category won't immediately repeat it.
   AudioSegment? urgent(ExploreCandidate? candidate, {required bool isCloseEnough}) {
     if (candidate == null || !candidate.isPlayable || !isCloseEnough) return null;
     if (_urgentFired.contains(candidate.id)) return null;
     _urgentFired.add(candidate.id);
-    _markPlayed(candidate.id);
+    _markPlayed(candidate);
     return _toSegment(candidate, resumeAfter: true, urgent: true);
   }
 
-  /// New trip — clears rotation position, play history, and urgent memory.
+  /// New trip — clears play history and urgent memory.
   void reset() {
-    _categoryCursor = 0;
-    _playIndex = 0;
-    _lastPlayedAt.clear();
+    _played.clear();
     _urgentFired.clear();
   }
 
