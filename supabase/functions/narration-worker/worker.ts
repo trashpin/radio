@@ -472,9 +472,13 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
     },
   );
   if (!tts.ok) {
+    const body = await tts.text();
+    // Text preview comes first (message is truncated to 300 chars upstream) —
+    // this is the one variable never actually inspected across several
+    // identical-error retries with different keys/voices.
     throw new Error(
-      `ElevenLabs ${tts.status} (voiceId=${voiceId}, textLen=${text.length}): ` +
-        `${(await tts.text()).slice(0, 300)}`,
+      `ElevenLabs ${tts.status} voice=${voiceId} len=${text.length} ` +
+        `text="${text.slice(0, 150)}" body=${body.slice(0, 100)}`,
     );
   }
   const bytes = new Uint8Array(await tts.arrayBuffer());
