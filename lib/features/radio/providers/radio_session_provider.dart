@@ -767,6 +767,7 @@ List<TriggerableLocation> geofenceTriggerCandidates({
   required double userLat,
   required double userLng,
   int? Function(String locationId)? cooldownForLocation,
+  bool Function(String locationId)? playOnceForLocation,
 }) {
   const anchorRadius = 1000.0;
   final farLat = (userLat + 1.0).clamp(-89.0, 89.0); // ~111 km away → outside
@@ -780,7 +781,10 @@ List<TriggerableLocation> geofenceTriggerCandidates({
         radiusMeters: anchorRadius,
         arrivalTrigger: true,
         departureTrigger: false, // geofence ENTER narrates; exit has no content
-        playOnce: false,
+        // Previously hardcoded false, ignoring the location's own play_once
+        // setting entirely — a location an admin marked play-once could still
+        // re-narrate every time the geofence was re-entered.
+        playOnce: playOnceForLocation?.call(id) ?? false,
         cooldownSeconds: cooldownForLocation?.call(id),
       ),
   ];
@@ -912,6 +916,7 @@ Future<AudioSegment?> geofenceRadioTick({
     userLat: lat,
     userLng: lng,
     cooldownForLocation: (id) => locationById?.call(id)?.cooldownSeconds,
+    playOnceForLocation: (id) => locationById?.call(id)?.playOnce ?? false,
   );
   final fired = engine.evaluate(lat, lng, candidates, now: now);
   state.insidePrev = insideIds;

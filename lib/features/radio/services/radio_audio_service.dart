@@ -102,6 +102,15 @@ class RadioAudioService {
         // then advance the engine when the speech ends.
         final text = segment.spokenText;
         if (text != null && text.trim().isNotEmpty) {
+          // TTS runs on a completely separate audio session from `port` — it
+          // never stops the music player just by starting, unlike
+          // `port.play()` (which reloads the shared player and so stops
+          // whatever it was playing incidentally). Music and narration must
+          // never audibly overlap, so pause explicitly here; the existing
+          // resumeAfter/MusicResumed pipeline brings it back afterward when
+          // this was a real interruption, and pausing an already-idle player
+          // (a narration slotted into a natural song gap) is a harmless no-op.
+          await port.pause();
           await _speak(text);
           return;
         }
@@ -155,6 +164,18 @@ class RadioAudioService {
   /// completion handler, so the broadcast never stalls.
   Future<void> _speak(String text) async {
     _speakFallback?.cancel();
+    if (_speaking) {
+      // A new segment pre-empted one that was still being spoken (e.g. a
+      // duplicate/near-simultaneous location trigger arriving before the
+      // previous utterance finished — the actual cause of narration
+      // audibly "restarting"/repeating: two speak() calls racing the same
+      // TTS engine). Stop the in-flight utterance cleanly first so at most
+      // one plays at a time, instead of letting them overlap or garble.
+      _speaking = false;
+      try {
+        await _speaker.stop();
+      } catch (_) {}
+    }
     _speaking = true;
     // ~2 words/sec speaking rate → a safe upper bound to auto-advance.
     final words = text.split(RegExp(r'\s+')).length;
