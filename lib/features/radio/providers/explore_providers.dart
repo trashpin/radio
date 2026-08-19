@@ -67,6 +67,7 @@ const _kEligibleHeadedTypes = {
   LocationType.community,
   LocationType.historicSite,
   LocationType.museum,
+  LocationType.attraction,
 };
 
 /// WHERE YOU ARE — the same EVENT>PARK>SPRING>TOWN>COUNTY tier the player
@@ -101,11 +102,54 @@ PlayerLocationKind? _kindFor(LocationType t) {
       return PlayerLocationKind.town;
     case LocationType.historicSite:
     case LocationType.museum:
+    case LocationType.attraction:
       return PlayerLocationKind.attraction;
     default:
       return null;
   }
 }
+
+/// Type-based "what's ahead" priority (spec: Park > State Park > Attraction >
+/// Historical Site > Event > Town > County — lower wins) used to rank several
+/// SIMULTANEOUSLY-qualifying ahead candidates against each other, distinct
+/// from the distance/cone filtering that decides whether a candidate
+/// qualifies at all. State Park and Spring are tied at the top (both
+/// flagship destinations in this app); city/county Park sits just below.
+int _aheadTypePriority(LocationType t) {
+  switch (t) {
+    case LocationType.statePark:
+    case LocationType.nationalPark:
+    case LocationType.spring:
+      return 0;
+    case LocationType.countyPark:
+    case LocationType.cityPark:
+      return 1;
+    case LocationType.attraction:
+    case LocationType.museum:
+    case LocationType.pointOfInterest:
+      return 2;
+    case LocationType.historicSite:
+    case LocationType.historicDistrict:
+      return 3;
+    case LocationType.city:
+    case LocationType.community:
+    case LocationType.town:
+    case LocationType.village:
+      return 5;
+    default:
+      return 6;
+  }
+}
+
+const _kEventAheadPriority = 4; // between Historical Site and Town
+
+/// Full reveal (distance + story) once genuinely close; a vague teaser
+/// beyond that but still in-cone/in-range. Nests inside the urgent-interrupt
+/// threshold (≤1mi/3min, in `radio_session_provider.dart`'s `checkUrgent`) so
+/// anything urgent is always already a full-reveal candidate by the time it
+/// crosses that closer threshold.
+const double _kFullRevealMaxMeters = 5 * 1609.344; // ~5 miles
+const Duration _kFullRevealMaxEta = Duration(minutes: 8);
 
 /// WHAT'S AHEAD — merges eligible master locations (parks/springs/towns/
 /// historic sites/museums) and nearby events into ONE directional search via
@@ -179,7 +223,7 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
     coneDegrees: 60,
     radiusMeters: 20000,
     speedMps: userLoc.speedMps,
-    limit: 5,
+    limit: 10, // headroom for type-priority ranking, not just nearest-5
   );
 
   final out = <ExploreCandidate>[];
@@ -187,35 +231,63 @@ List<ExploreCandidate> _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) 
     final source = byId[r.id];
     final PlayerLocationContext ctx;
     final ExploreCategory category;
+    final int aheadPriority;
     if (source is NearbyLocation) {
       final kind = _kindFor(source.location.type);
       if (kind == null) continue;
       ctx = playerContextForLocation(kind, source);
       category = ExploreCategory.whereHeaded;
+      aheadPriority = _aheadTypePriority(source.location.type);
     } else if (source is NearbyEvent) {
       ctx = playerContextForEvent(source);
       category = ExploreCategory.events;
+      aheadPriority = _kEventAheadPriority;
     } else {
       continue;
     }
     final teaser = (ctx.teaser ?? '').trim();
     if (teaser.isEmpty) continue; // never invent content — same guard as before
-    final miles = r.distanceMeters / 1609.344;
-    final leadPhrase =
-        "You're about ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} "
-        "miles from ${ctx.title}.";
-    out.add(ExploreCandidate(
-      id: 'ahead:${r.id}',
-      category: category,
-      title: ctx.title,
-      spokenText: '$leadPhrase $teaser',
-      tellMeMoreContext: ctx.tellMeMoreContext,
-      imageUrl: ctx.imageUrl,
-      latitude: r.latitude,
-      longitude: r.longitude,
-      distanceMeters: r.distanceMeters,
-      eta: r.eta,
-    ));
+
+    final closeEnoughToReveal = r.distanceMeters <= _kFullRevealMaxMeters ||
+        (r.eta != null && r.eta! <= _kFullRevealMaxEta);
+    if (closeEnoughToReveal) {
+      final miles = r.distanceMeters / 1609.344;
+      final leadPhrase =
+          "You're about ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} "
+          "miles from ${ctx.title}.";
+      out.add(ExploreCandidate(
+        id: 'ahead:${r.id}',
+        category: category,
+        title: ctx.title,
+        spokenText: '$leadPhrase $teaser',
+        tellMeMoreContext: ctx.tellMeMoreContext,
+        imageUrl: ctx.imageUrl,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        distanceMeters: r.distanceMeters,
+        eta: r.eta,
+        aheadPriority: aheadPriority,
+      ));
+    } else {
+      // Still too far for the full story — a vague pre-arrival teaser
+      // instead. Carries the SAME image/nav/location as the real place (so
+      // NAVIGATE and the hero image stay meaningful) but the scheduler
+      // always overrides spokenText with varied, non-specific phrasing —
+      // this placeholder only exists to satisfy ExploreCandidate.isPlayable.
+      out.add(ExploreCandidate(
+        id: 'tease:${r.id}',
+        category: ExploreCategory.teaser,
+        title: ctx.title,
+        spokenText: 'Something interesting is coming up ahead.',
+        tellMeMoreContext: ctx.tellMeMoreContext,
+        imageUrl: ctx.imageUrl,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        distanceMeters: r.distanceMeters,
+        eta: r.eta,
+        aheadPriority: aheadPriority,
+      ));
+    }
   }
   return out;
 }

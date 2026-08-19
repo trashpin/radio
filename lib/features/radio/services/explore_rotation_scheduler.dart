@@ -14,7 +14,8 @@ enum ExploreCategory {
   wildlife,
   nature,
   geology,
-  history;
+  history,
+  teaser;
 
   String get label {
     switch (this) {
@@ -34,6 +35,8 @@ enum ExploreCategory {
         return 'Geology';
       case ExploreCategory.history:
         return 'History';
+      case ExploreCategory.teaser:
+        return 'Coming Up';
     }
   }
 }
@@ -56,6 +59,7 @@ class ExploreCandidate {
     this.longitude,
     this.distanceMeters,
     this.eta,
+    this.aheadPriority = 1000,
   });
 
   final String id;
@@ -64,6 +68,13 @@ class ExploreCandidate {
   final String? audioUrl;
   final String? spokenText;
   final TellMeMoreContext? tellMeMoreContext;
+
+  /// Type-based priority among simultaneously-qualifying "what's ahead"
+  /// candidates (lower wins) — e.g. a State Park outranks a Town even when
+  /// the Town is nearer. Only meaningful for [ExploreCategory.whereHeaded]/
+  /// [ExploreCategory.events]/[ExploreCategory.teaser] candidates; the
+  /// default (1000) means "not applicable" for every other category.
+  final int aheadPriority;
 
   /// The photo for whatever this candidate is about — carried on the
   /// resulting [AudioSegment] itself (not resolved separately later) so the
@@ -106,24 +117,26 @@ class ExploreUrgentCandidate {
 /// content change, and calls [due] after each song to ask what (if anything)
 /// should play next.
 ///
-/// Fixed priority TIERS, scanned fresh on every call (no persisted cursor —
-/// a category doesn't get "its turn" once per lap, it's simply the
-/// highest-priority tier with something unused to say, every time):
-///   1. WHAT'S AHEAD    (whereHeaded, events)
-///   2. WILDLIFE/NATURE (wildlife, nature, geology)
-///   3. WHERE YOU ARE   (whereYouAre, county)
-///   4. HISTORY         (history)
-/// Within a tier, categories are tried in the order listed (e.g. a specific
-/// WHERE YOU ARE beats the broader county fallback).
+/// Fixed 3-step CYCLE, not a priority scan: every call to [due] advances one
+/// position, wrapping around —
+///   0. INFORMATION (a teaser, an ahead-of-travel reveal, or a general local
+///      story — whichever is available)
+///   1. WILDLIFE/ANIMAL (a guaranteed slot every cycle, not conditional on
+///      whether anything was ahead)
+///   2. SONG GAP — [due] returns null so the caller's normal music fallback
+///      plays exactly one song, then the cycle resumes at INFORMATION.
+/// An empty INFORMATION or WILDLIFE slot silently becomes "one extra song"
+/// rather than blocking or borrowing from a later position — the cycle
+/// position always advances regardless of what (if anything) was found.
 ///
 /// No-repeat is exhaustion-based per category, not a play-count cooldown: an
 /// item won't repeat while another unused item exists in its category: once
 /// every item in a category has aired, that category's played history
 /// resets and it may repeat — EXCEPT the ahead-of-travel categories
-/// (whereHeaded/events), which are GPS-relative and refreshed every tick, so
-/// they never auto-reset (a passed destination simply drops out of the pool
-/// once it's no longer ahead, rather than being eligible to replay while
-/// still being approached).
+/// (whereHeaded/events/teaser), which are GPS-relative and refreshed every
+/// tick, so they never auto-reset (a passed destination simply drops out of
+/// the pool once it's no longer ahead, rather than being eligible to replay
+/// while still being approached).
 ///
 /// Returns null when there is truly nothing to say anywhere — the caller
 /// falls back to normal content/music, exactly like
@@ -131,17 +144,30 @@ class ExploreUrgentCandidate {
 class ExploreRotationScheduler {
   ExploreRotationScheduler();
 
-  static const List<List<ExploreCategory>> _kTiers = [
-    [ExploreCategory.whereHeaded, ExploreCategory.events],
-    [ExploreCategory.wildlife, ExploreCategory.nature, ExploreCategory.geology],
-    [ExploreCategory.whereYouAre, ExploreCategory.county],
-    [ExploreCategory.history],
-  ];
-
   static const Set<ExploreCategory> _kStickyNoReset = {
     ExploreCategory.whereHeaded,
     ExploreCategory.events,
+    ExploreCategory.teaser,
   };
+
+  /// Varied pre-arrival teaser phrasing (spec: "do not use the exact same
+  /// teaser every time") — a plain round-robin, no [Random], so it stays
+  /// deterministic and unit-testable. Which destination is being teased is
+  /// carried by the candidate itself (image/nav still point at the real
+  /// place); only the WORDING cycles here.
+  static const List<String> _kTeaserPhrases = [
+    "Something interesting is coming up ahead.",
+    "You're heading toward a place worth knowing about.",
+    "There's a story coming up worth slowing down for.",
+    "Up ahead is somewhere with a story behind it.",
+    "Keep going — something worth stopping for is coming up.",
+    "There's more to discover a little further down the road.",
+    "Coming up: somewhere with its own story to tell.",
+    "You're getting closer to somewhere worth knowing about.",
+  ];
+
+  int _cyclePosition = 0; // 0=INFORMATION, 1=WILDLIFE, 2=SONG GAP
+  int _teaserPhraseCursor = 0;
 
   Map<ExploreCategory, List<ExploreCandidate>> _pool = const {};
   final Map<ExploreCategory, Set<String>> _played = {};
@@ -151,7 +177,7 @@ class ExploreRotationScheduler {
   final Set<String> _urgentFired = {};
 
   /// Replaces the candidate pool per category (runtime pushes as GPS/content
-  /// change). Does not touch play history.
+  /// change). Does not touch play history or cycle position.
   void updateCandidates(Map<ExploreCategory, List<ExploreCandidate>> pool) {
     _pool = pool;
   }
@@ -160,6 +186,21 @@ class ExploreRotationScheduler {
   /// exposed for tests/telemetry.
   bool hasPlayed(ExploreCategory category, String id) =>
       (_played[category] ?? const {}).contains(id);
+
+  /// A defensive copy of everything played so far, per category — persisted
+  /// by the runtime (SharedPreferences) so history survives an app restart.
+  /// This class itself stays pure/synchronous; it never touches storage.
+  Map<ExploreCategory, Set<String>> snapshotPlayed() => {
+        for (final e in _played.entries) e.key: Set<String>.from(e.value),
+      };
+
+  /// Seeds already-played history from a previous session (merges, does not
+  /// overwrite) — called once at startup, before the first [due]/[urgent].
+  void restorePlayed(Map<ExploreCategory, Set<String>> seed) {
+    for (final entry in seed.entries) {
+      (_played[entry.key] ??= {}).addAll(entry.value);
+    }
+  }
 
   ExploreCandidate? _pick(ExploreCategory cat) {
     final all = (_pool[cat] ?? const []).where((c) => c.isPlayable).toList();
@@ -174,6 +215,23 @@ class ExploreRotationScheduler {
     return all.first;
   }
 
+  /// Like [_pick], but ranks UNSEEN candidates across several categories by
+  /// [ExploreCandidate.aheadPriority] (type-based — e.g. a State Park beats a
+  /// Town even when farther) rather than trying one category to exhaustion
+  /// before the next. Only used for the sticky ahead-of-travel groups, which
+  /// never reset, so there's no exhaustion-reset branch here.
+  ExploreCandidate? _pickAheadAcross(List<ExploreCategory> cats) {
+    final unseen = <ExploreCandidate>[];
+    for (final cat in cats) {
+      final all = (_pool[cat] ?? const []).where((c) => c.isPlayable);
+      final played = _played[cat] ?? const <String>{};
+      unseen.addAll(all.where((c) => !played.contains(c.id)));
+    }
+    if (unseen.isEmpty) return null;
+    unseen.sort((a, b) => a.aheadPriority.compareTo(b.aheadPriority));
+    return unseen.first;
+  }
+
   void _markPlayed(ExploreCandidate c) {
     final played = _played[c.category] ??= {};
     final all = (_pool[c.category] ?? const []).where((x) => x.isPlayable);
@@ -183,26 +241,62 @@ class ExploreRotationScheduler {
       played.clear();
     }
     played.add(c.id);
+    if (c.category == ExploreCategory.teaser) _teaserPhraseCursor++;
   }
 
-  /// The next segment, in strict tier priority, re-evaluated from the top
-  /// every call. Null when every tier is either empty or fully exhausted
-  /// (sticky) right now.
+  /// The next segment for the CURRENT cycle position, then advances to the
+  /// next position regardless of whether anything was found (an empty
+  /// INFORMATION/WILDLIFE slot silently becomes one extra song).
   AudioSegment? due() {
     final pick = select();
+    _cyclePosition = (_cyclePosition + 1) % 3;
     if (pick == null) return null;
+    // Build the segment (reads the teaser cursor) BEFORE _markPlayed
+    // advances that same cursor, so the phrase just spoken is the one
+    // actually returned, not the next one in line.
+    final segment = _toSegment(pick, resumeAfter: true);
     _markPlayed(pick);
-    return _toSegment(pick, resumeAfter: true);
+    return segment;
   }
 
   /// The candidate [due] would pick right now, without mutating any state —
   /// exposed for tests/telemetry.
   ExploreCandidate? select() {
-    for (final tier in _kTiers) {
-      for (final cat in tier) {
-        final pick = _pick(cat);
-        if (pick != null) return pick;
-      }
+    switch (_cyclePosition) {
+      case 0:
+        return _selectInformation();
+      case 1:
+        return _selectWildlife();
+      default:
+        return null; // song gap
+    }
+  }
+
+  ExploreCandidate? _selectInformation() {
+    final teaser = _pickAheadAcross([ExploreCategory.teaser]);
+    if (teaser != null) return teaser;
+    final reveal = _pickAheadAcross(
+        [ExploreCategory.whereHeaded, ExploreCategory.events]);
+    if (reveal != null) return reveal;
+    for (final cat in [
+      ExploreCategory.whereYouAre,
+      ExploreCategory.county,
+      ExploreCategory.history,
+    ]) {
+      final pick = _pick(cat);
+      if (pick != null) return pick;
+    }
+    return null;
+  }
+
+  ExploreCandidate? _selectWildlife() {
+    for (final cat in [
+      ExploreCategory.wildlife,
+      ExploreCategory.nature,
+      ExploreCategory.geology,
+    ]) {
+      final pick = _pick(cat);
+      if (pick != null) return pick;
     }
     return null;
   }
@@ -218,14 +312,20 @@ class ExploreRotationScheduler {
     if (candidate == null || !candidate.isPlayable || !isCloseEnough) return null;
     if (_urgentFired.contains(candidate.id)) return null;
     _urgentFired.add(candidate.id);
+    final segment = _toSegment(candidate, resumeAfter: true, urgent: true);
     _markPlayed(candidate);
-    return _toSegment(candidate, resumeAfter: true, urgent: true);
+    return segment;
   }
 
-  /// New trip — clears play history and urgent memory.
+  /// New trip — clears play history, urgent memory, and cycle position (a
+  /// fresh trip always restarts at INFORMATION). Does NOT clear anything
+  /// persisted by the runtime — that's [snapshotPlayed]/[restorePlayed]'s
+  /// concern, outside this class.
   void reset() {
     _played.clear();
     _urgentFired.clear();
+    _cyclePosition = 0;
+    _teaserPhraseCursor = 0;
   }
 
   AudioSegment _toSegment(
@@ -234,6 +334,12 @@ class ExploreRotationScheduler {
     bool urgent = false,
   }) {
     final hasAudio = (c.audioUrl ?? '').trim().isNotEmpty;
+    // Teasers never speak the candidate's own spokenText (a placeholder just
+    // to satisfy isPlayable) — always the varied phrasing, so the same
+    // wording doesn't repeat while other phrases are unused.
+    final spokenText = c.category == ExploreCategory.teaser
+        ? _kTeaserPhrases[_teaserPhraseCursor % _kTeaserPhrases.length]
+        : c.spokenText;
     return AudioSegment(
       id: 'explore:${urgent ? 'urgent:' : ''}${c.category.name}:${c.id}:'
           '${DateTime.now().microsecondsSinceEpoch}',
@@ -242,7 +348,7 @@ class ExploreRotationScheduler {
       priority: PlaybackPriority.scheduledAnnouncement,
       imageUrl: c.imageUrl,
       audioUrl: hasAudio ? c.audioUrl : null,
-      spokenText: hasAudio ? null : c.spokenText,
+      spokenText: hasAudio ? null : spokenText,
       location: c.hasDestination
           ? GeoPoint(latitude: c.latitude!, longitude: c.longitude!)
           : null,

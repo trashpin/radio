@@ -29,6 +29,8 @@ import 'package:explorer_os_mobile/features/radio/discovery/community_welcome_di
 import 'package:explorer_os_mobile/features/location_intelligence/location_intelligence.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
 import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart';
+import 'package:explorer_os_mobile/features/radio/data/explore_play_history.dart';
+import 'package:explorer_os_mobile/features/radio/events/radio_event.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/providers/explore_providers.dart';
@@ -708,14 +710,35 @@ void _attachLocationTriggers(Ref ref) {
 ///    close enough to jump the rotation (spec section 7), reusing the
 ///    existing [TravelContext.nextAttraction] distance/ETA the GPS engine
 ///    already computes as the "worth interrupting for" signal, and firing it
-///    through the SAME `requestInterruption` path every other director uses.
+///    through the SAME `requestInterruption` path every other director uses;
+///  - loads previously-played content IDs from disk (fire-and-forget, same
+///    as every other SharedPreferences-backed preference in this app — see
+///    [StationPreference] — never gating app/radio startup on disk I/O) and
+///    persists them again after every segment Explore actually plays, so a
+///    story already heard doesn't repeat just because the app was closed and
+///    reopened. [ExploreRotationScheduler] itself stays pure/synchronous —
+///    all the I/O lives here.
 void _attachExplore(Ref ref, RadioEngineService engine) {
+  final history = ref.read(explorePlayHistoryStoreProvider);
+  history.load().then(engine.explore.restorePlayed);
+
   void pushCandidates() {
     engine.explore.updateCandidates(ref.read(exploreCandidatesProvider));
   }
 
   pushCandidates();
   ref.listen(exploreCandidatesProvider, (_, _) => pushCandidates());
+
+  // Fire-and-forget: persist the updated played-history snapshot every time
+  // Explore actually schedules something. By the time SegmentStarted fires,
+  // the scheduler has already marked the pick played, so the snapshot here
+  // is already current — no need to parse AudioSegment.id (which itself
+  // contains colons and would be ambiguous to split).
+  engine.events.listen((event) {
+    if (event is SegmentStarted && event.segment.tags.contains('explore')) {
+      history.save(engine.explore.snapshotPlayed());
+    }
+  });
 
   void syncMode() {
     engine.setExploreMode(ref.read(exploreActiveProvider));
