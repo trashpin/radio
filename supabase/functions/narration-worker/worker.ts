@@ -468,7 +468,10 @@ export async function doLocationAudio(job: any): Promise<{ done: boolean; msg: s
     },
   );
   if (!tts.ok) {
-    throw new Error(`ElevenLabs ${tts.status}: ${(await tts.text()).slice(0, 300)}`);
+    throw new Error(
+      `ElevenLabs ${tts.status} (voiceId=${voiceId}, textLen=${text.length}): ` +
+        `${(await tts.text()).slice(0, 300)}`,
+    );
   }
   const bytes = new Uint8Array(await tts.arrayBuffer());
   const path = `locations/${id}.mp3`;
