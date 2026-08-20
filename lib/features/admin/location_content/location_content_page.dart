@@ -331,6 +331,10 @@ class _Row extends ConsumerWidget {
                   await showDialog<void>(
                       context: context,
                       builder: (_) => _PreviewDialog(item: item));
+                case 'generate_audio':
+                  final queued = await repo.enqueueContentAudio(item.id);
+                  if (queued) await repo.triggerNarrationWorker();
+                  refresh();
                 case 'revoice':
                   await repo.clearAudio(item.id);
                   refresh();
@@ -342,6 +346,9 @@ class _Row extends ConsumerWidget {
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'edit', child: Text('Edit')),
               const PopupMenuItem(value: 'preview', child: Text('Preview')),
+              if (!hasAudio)
+                const PopupMenuItem(
+                    value: 'generate_audio', child: Text('Generate Audio')),
               if (hasAudio)
                 const PopupMenuItem(
                     value: 'revoice', child: Text('Clear audio (re-voice)')),

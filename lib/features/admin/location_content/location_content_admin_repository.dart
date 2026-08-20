@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
-import 'package:explorer_os_mobile/features/content_generator/models/content_models.dart';
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
 
 /// A named collection in the admin — a group of [ContentCategory]s that share a
@@ -102,17 +101,53 @@ class LocationContentAdminRepository {
   /// audio_url).
   Future<void> clearAudio(String id) => update(id, {'audio_url': null});
 
-  /// Enqueues a bulk audio-generation job for a county (drained by the audio
-  /// tooling), consistent with the Audio Production queue.
-  Future<void> enqueueAudioJob(String county) {
-    final job = GenerationJob(
-      id: '',
-      destination: county,
-      jobType: JobType.audio,
-      status: JobStatus.pending,
-      notes: 'location_content:voice;county=$county',
-    );
-    return SupabaseService.client.from('generation_jobs').insert(job.toInsert());
+  /// Enqueues an ElevenLabs voicing job for [id], drained by the existing
+  /// narration worker (same `generation_jobs` pipeline as Nearby Gems/Radio
+  /// Automation — see `RadioAutomationRepository.enqueueSegmentAudio`). The
+  /// worker voices `location_content.text` (falling back to the title) and
+  /// sets `audio_url`. Returns false when Supabase isn't configured.
+  Future<bool> enqueueContentAudio(String id, {String? voiceId}) async {
+    if (!SupabaseService.isConfigured) return false;
+    await SupabaseService.client.from('generation_jobs').insert({
+      'destination': 'location_content:$id',
+      'job_type': 'audio',
+      'status': 'pending',
+      'progress': 0,
+      'notes': 'location_content:voice;id=$id'
+          '${(voiceId ?? '').isEmpty ? '' : ';voice=$voiceId'}',
+    });
+    return true;
+  }
+
+  /// Asks the narration worker to drain the queue NOW so "Generate Audio"
+  /// produces audio immediately instead of waiting for the scheduled worker.
+  /// Works only if the `narration-worker` Edge Function is deployed; returns
+  /// false otherwise (the scheduled GitHub worker still processes the job).
+  Future<bool> triggerNarrationWorker() async {
+    if (!SupabaseService.isConfigured) return false;
+    try {
+      await SupabaseService.client.functions.invoke('narration-worker');
+      return true;
+    } catch (_) {
+      return false; // not deployed / unreachable — scheduled worker will run
+    }
+  }
+
+  /// Reads back a row's current audio URL (to surface it in the admin as soon
+  /// as generation completes). Null when absent/blank.
+  Future<String?> audioUrlFor(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('location_content')
+          .select('audio_url')
+          .eq('id', id)
+          .maybeSingle();
+      final u = (row?['audio_url'] as String?)?.trim();
+      return (u == null || u.isEmpty) ? null : u;
+    } catch (_) {
+      return null;
+    }
   }
 }
 
