@@ -240,4 +240,8 @@ const List<BanterTemplate> kBanterTemplates = [
   // ── Station ID ──
   BanterTemplate(DjStation.all, BanterSituation.stationId,
       'You\'re listening to {station} — music, stories, and discovery from {park}.'),
+  BanterTemplate(DjStation.all, BanterSituation.stationId,
+      'You\'re listening to {station}.'),
+  BanterTemplate(DjStation.all, BanterSituation.stationId,
+      '{station} — where the road has a story.'),
 ];
