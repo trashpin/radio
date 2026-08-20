@@ -60,6 +60,8 @@ class ExploreCandidate {
     this.distanceMeters,
     this.eta,
     this.aheadPriority = 1000,
+    this.sessionKey,
+    this.isAheadOfTravel = true,
   });
 
   final String id;
@@ -95,6 +97,28 @@ class ExploreCandidate {
   /// always agrees with what's actually being narrated.
   final double? distanceMeters;
   final Duration? eta;
+
+  /// Which physical destination this candidate is ABOUT, for cross-category
+  /// "related content" lookup inside a travel-companion session (spec: "For
+  /// an added bit of Florida wildlife, keep an eye out for..." — a MEANINGFUL
+  /// connection, not a random pick). Set by the provider layer using the same
+  /// stable id scheme `_aheadCandidates` already uses for its own candidates
+  /// (`'loc:<id>'`/`'evt:<id>'`); null means "not tied to a specific place"
+  /// (the species/county pools, mostly), which simply can't be found by a
+  /// session — never forced.
+  final String? sessionKey;
+
+  /// True for a candidate genuinely detected ahead of travel (built by
+  /// `_aheadCandidates`'s cone+radius+ETA search — the ONLY function that
+  /// ever builds `whereHeaded`/`teaser` category candidates, so it's always
+  /// true for those). `events` is the one category with mixed provenance —
+  /// both an ahead-of-travel event AND a merely-nearby, non-directional one
+  /// (`_nearbyEventCandidates`) share the `events` category, so THAT source
+  /// explicitly sets this false. [_pickAheadAcross] (the REVEAL step) filters
+  /// on this flag so a plain nearby event can still fill the INFORMATION
+  /// fallback tier via [_pick], but never masquerades as an ahead-of-travel
+  /// reveal worth building a full travel-companion session around.
+  final bool isAheadOfTravel;
 
   bool get isPlayable =>
       (audioUrl ?? '').trim().isNotEmpty || (spokenText ?? '').trim().isNotEmpty;
@@ -138,9 +162,12 @@ class ExploreUrgentCandidate {
 /// the pool once it's no longer ahead, rather than being eligible to replay
 /// while still being approached).
 ///
-/// Returns null when there is truly nothing to say anywhere — the caller
-/// falls back to normal content/music, exactly like
-/// [BackgroundDiscoveryScheduler.due].
+/// [due] returns an empty list when there is truly nothing to say — the
+/// caller falls back to normal content/music, exactly like
+/// [BackgroundDiscoveryScheduler.due]. When INFORMATION lands on a genuine
+/// ahead-of-travel destination reveal, [due] instead returns a small
+/// travel-companion SESSION (teaser → intro → story → related content, when
+/// relevant → music) — see [ExploreRotationScheduler._buildSession].
 class ExploreRotationScheduler {
   ExploreRotationScheduler();
 
@@ -166,8 +193,48 @@ class ExploreRotationScheduler {
     "You're getting closer to somewhere worth knowing about.",
   ];
 
+  /// Opens a travel-companion SESSION (spec: TRAVEL TEASER, the first beat of
+  /// teaser → intro → story → related → music). Deliberately a SEPARATE pool/
+  /// cursor from [_kTeaserPhrases]/[_teaserPhraseCursor] — those are the
+  /// standalone far-away single-line notice for a destination not yet close
+  /// enough to reveal; reusing the same cursor risked the same or adjacent
+  /// phrase surfacing twice in quick succession (once as a standalone tease,
+  /// then again moments later opening that destination's own session).
+  static const List<String> _kSessionOpenerPhrases = [
+    "Looks like you're heading toward something pretty special.",
+    "Your trip is taking you toward a place with quite a story.",
+    "You're heading toward one of Marion County's special places.",
+    "There's something worth slowing down for just ahead.",
+    "Here's something worth knowing about where you're headed.",
+    "You're about to pass somewhere with a real story behind it.",
+  ];
+
+  /// Natural transitions into a SESSION's RELATED content beat (spec section
+  /// 5 — "find a meaningful connection," never "here's a random fact"). Two
+  /// phrases per category so wording varies across sessions.
+  static const Map<ExploreCategory, List<String>> _kRelatedTransitions = {
+    ExploreCategory.wildlife: [
+      "And that's not all — keep an eye out for the wildlife that calls this area home.",
+      "There's more to it than the view, too — this area is home to some notable wildlife.",
+    ],
+    ExploreCategory.nature: [
+      "There's a bit of natural history here worth knowing, too.",
+      "The landscape itself has its own story.",
+    ],
+    ExploreCategory.geology: [
+      "There's more beneath the surface, too.",
+      "It's not just what you see above ground that's interesting here.",
+    ],
+    ExploreCategory.history: [
+      "This place has more history behind it, too.",
+      "There's more to the story of how this place came to be.",
+    ],
+  };
+
   int _cyclePosition = 0; // 0=INFORMATION, 1=WILDLIFE, 2=SONG GAP
   int _teaserPhraseCursor = 0;
+  int _sessionOpenerCursor = 0;
+  int _relatedTransitionCursor = 0;
 
   Map<ExploreCategory, List<ExploreCandidate>> _pool = const {};
   final Map<ExploreCategory, Set<String>> _played = {};
@@ -240,7 +307,8 @@ class ExploreRotationScheduler {
   ExploreCandidate? _pickAheadAcross(List<ExploreCategory> cats) {
     final unseen = <ExploreCandidate>[];
     for (final cat in cats) {
-      final all = (_pool[cat] ?? const []).where((c) => c.isPlayable);
+      final all =
+          (_pool[cat] ?? const []).where((c) => c.isPlayable && c.isAheadOfTravel);
       final played = _played[cat] ?? const <String>{};
       unseen.addAll(all.where((c) => !played.contains(c.id)));
     }
@@ -261,27 +329,50 @@ class ExploreRotationScheduler {
     if (c.category == ExploreCategory.teaser) _teaserPhraseCursor++;
   }
 
-  /// The next segment for the CURRENT cycle position, then advances to the
-  /// next position regardless of whether anything was found (an empty
-  /// INFORMATION/WILDLIFE slot silently becomes one extra song).
-  AudioSegment? due() {
-    final pick = select();
+  /// The segment(s) for the CURRENT cycle position, then advances to the next
+  /// position regardless of whether anything was found (an empty INFORMATION/
+  /// WILDLIFE slot silently becomes one extra song). Usually a single-item
+  /// (or empty) list; when INFORMATION lands on a genuine ahead-of-travel
+  /// REVEAL, this instead returns a whole travel-companion SESSION — see
+  /// [_buildSession] — so the caller can queue them back-to-back before the
+  /// next song plays (spec: "make Explore feel like a travel companion").
+  List<AudioSegment> due() {
+    final segments = <AudioSegment>[];
+    switch (_cyclePosition) {
+      case 0:
+        final picked = _selectInformationDetailed();
+        final pick = picked.candidate;
+        if (pick != null) {
+          if (picked.isReveal) {
+            segments.addAll(_buildSession(pick));
+          } else {
+            segments.add(_toSegment(pick, resumeAfter: true));
+            _markPlayed(pick);
+          }
+        }
+        break;
+      case 1:
+        final pick = _selectWildlife();
+        if (pick != null) {
+          segments.add(_toSegment(pick, resumeAfter: true));
+          _markPlayed(pick);
+        }
+        break;
+      default:
+        break; // song gap
+    }
     _cyclePosition = (_cyclePosition + 1) % 3;
-    if (pick == null) return null;
-    // Build the segment (reads the teaser cursor) BEFORE _markPlayed
-    // advances that same cursor, so the phrase just spoken is the one
-    // actually returned, not the next one in line.
-    final segment = _toSegment(pick, resumeAfter: true);
-    _markPlayed(pick);
-    return segment;
+    return segments;
   }
 
   /// The candidate [due] would pick right now, without mutating any state —
-  /// exposed for tests/telemetry.
+  /// exposed for tests/telemetry. Byte-identical contract to before: still a
+  /// single candidate, even though a REVEAL pick now expands into a full
+  /// session inside [due] itself.
   ExploreCandidate? select() {
     switch (_cyclePosition) {
       case 0:
-        return _selectInformation();
+        return _selectInformationDetailed().candidate;
       case 1:
         return _selectWildlife();
       default:
@@ -292,22 +383,25 @@ class ExploreRotationScheduler {
   /// LOCAL FIRST → NEARBY SECOND → COUNTY LAST:
   ///   1. teaser — a significant destination ahead but not yet close.
   ///   2. genuinely ahead-of-travel + close enough to fully reveal (ranked
-  ///      local-first among themselves — see [_pickAheadAcross]).
+  ///      local-first among themselves — see [_pickAheadAcross]). Flagged
+  ///      `isReveal: true` — the ONLY case [due] expands into a session.
   ///   3. WHERE YOU ARE — the current park/spring/town PLUS other nearby
   ///      parks/springs/attractions/historic sites, closest (and highest
   ///      type-priority) first — so the current town/area is exhausted
   ///      before farther nearby towns are ever reached (emergent from
   ///      [_compareLocalFirst]'s sort, not a separate category per band).
   ///   4. EVENTS — current-town events before farther nearby-town events,
-  ///      same local-first distance sort.
+  ///      same local-first distance sort. NOT a reveal (a merely-nearby
+  ///      event, not one detected ahead-of-travel) even though it shares a
+  ///      category with step 2's ahead-cone events.
   ///   5. COUNTY — county-wide facts/history, the true last resort.
   ///   6. HISTORY — broader, non-town-specific history content.
-  ExploreCandidate? _selectInformation() {
+  ({ExploreCandidate? candidate, bool isReveal}) _selectInformationDetailed() {
     final teaser = _pickAheadAcross([ExploreCategory.teaser]);
-    if (teaser != null) return teaser;
+    if (teaser != null) return (candidate: teaser, isReveal: false);
     final reveal = _pickAheadAcross(
         [ExploreCategory.whereHeaded, ExploreCategory.events]);
-    if (reveal != null) return reveal;
+    if (reveal != null) return (candidate: reveal, isReveal: true);
     for (final cat in [
       ExploreCategory.whereYouAre,
       ExploreCategory.events,
@@ -315,9 +409,154 @@ class ExploreRotationScheduler {
       ExploreCategory.history,
     ]) {
       final pick = _pick(cat);
-      if (pick != null) return pick;
+      if (pick != null) return (candidate: pick, isReveal: false);
+    }
+    return (candidate: null, isReveal: false);
+  }
+
+  /// Builds a travel-companion SESSION around a genuine ahead-of-travel
+  /// REVEAL (spec: TRAVEL TEASER → DESTINATION INTRODUCTION → DESTINATION
+  /// STORY → RELATED CONTENT (only when relevant) → MUSIC). At most 5
+  /// segments; steps that don't apply are simply omitted, never invented.
+  ///
+  /// NOTE (accepted trade-off, not fixed by this method): `checkUrgent()`
+  /// (radio_session_provider.dart) runs on every GPS tick, independent of
+  /// [due]'s song-boundary cadence. If a destination crosses the closer
+  /// "urgent" threshold before the current song even ends, `urgent()` can
+  /// fire first — that destination gets today's flat single-line urgent
+  /// narration instead of a session (a missed session, not a repeat; see the
+  /// no-double-fire guard added to [urgent] below for the repeat case).
+  /// Fixing the ordering would mean making session-building event-driven
+  /// rather than song-boundary-driven, which is outside this change's scope
+  /// (spec: do not rebuild the audio system). Also: every segment here is
+  /// `interruptible:false`, so a *different* destination's urgent interrupt
+  /// can be delayed until the whole session drains — the same kind of
+  /// behavior as today's single segment, just larger in the worst case.
+  List<AudioSegment> _buildSession(ExploreCandidate reveal) {
+    final segments = <AudioSegment>[
+      _sessionOpenerSegment(reveal),
+    ];
+
+    final intro = _introSegment(reveal);
+    if (intro != null) segments.add(intro);
+
+    segments.add(_toSegment(reveal, resumeAfter: true));
+    _markPlayed(reveal);
+
+    final related = _relatedForSession(reveal.sessionKey);
+    if (related != null) {
+      final transition = _transitionSegment(related);
+      if (transition != null) segments.add(transition);
+      segments.add(_toSegment(related, resumeAfter: true));
+      _markPlayed(related);
+    }
+
+    return segments;
+  }
+
+  /// Carries [reveal]'s own imageUrl/location/tellMeMoreContext (per the
+  /// "image, name, narration, and NAVIGATE target can never drift apart"
+  /// contract on [ExploreCandidate.imageUrl]) so the now-playing card already
+  /// shows the destination from the very first beat of the session, not just
+  /// once the story segment starts a beat or two later.
+  AudioSegment _sessionOpenerSegment(ExploreCandidate reveal) {
+    final text =
+        _kSessionOpenerPhrases[_sessionOpenerCursor % _kSessionOpenerPhrases.length];
+    _sessionOpenerCursor++;
+    return AudioSegment(
+      id: 'explore:session-opener:${DateTime.now().microsecondsSinceEpoch}',
+      title: reveal.title,
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      imageUrl: reveal.imageUrl,
+      spokenText: text,
+      location: reveal.hasDestination
+          ? GeoPoint(latitude: reveal.latitude!, longitude: reveal.longitude!)
+          : null,
+      tags: ['explore', 'session_opener'],
+      interruptible: false,
+      resumeAfter: true,
+      tellMeMoreContext: reveal.tellMeMoreContext,
+    );
+  }
+
+  /// "You're about X miles from {title}." — always spoken fresh (never an
+  /// [ExploreCandidate.audioUrl], even when the destination itself has
+  /// recorded story audio; [_toSegment] treats audio/spokenText as mutually
+  /// exclusive on one segment, so the intro must be its own segment).
+  /// Returns null (no invented distance) when [ExploreCandidate.distanceMeters]
+  /// isn't set — doesn't happen in practice for a REVEAL pick, but this stays
+  /// defensive per spec: "Do not invent distances."
+  AudioSegment? _introSegment(ExploreCandidate c) {
+    final meters = c.distanceMeters;
+    if (meters == null) return null;
+    final miles = meters / 1609.344;
+    final text = "You're about ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} "
+        "miles from ${c.title}.";
+    return AudioSegment(
+      id: 'explore:intro:${c.category.name}:${c.id}:'
+          '${DateTime.now().microsecondsSinceEpoch}',
+      title: c.title,
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      imageUrl: c.imageUrl,
+      spokenText: text,
+      location: c.hasDestination
+          ? GeoPoint(latitude: c.latitude!, longitude: c.longitude!)
+          : null,
+      tags: ['explore', c.category.name],
+      interruptible: false,
+      resumeAfter: true,
+      tellMeMoreContext: c.tellMeMoreContext,
+    );
+  }
+
+  /// A candidate genuinely ABOUT the same destination as [sessionKey] (spec:
+  /// a MEANINGFUL connection, never a random one) — checked across
+  /// WILDLIFE → NATURE → GEOLOGY → HISTORY, in that priority order (HISTORY
+  /// is deliberately included here even though [_selectWildlife]'s own cycle
+  /// slot doesn't loop it — a destination's related history is a valid
+  /// connection per spec section 4, not a bug to reconcile with the
+  /// unrelated WILDLIFE cycle slot). At most one, unplayed, per session.
+  ExploreCandidate? _relatedForSession(String? sessionKey) {
+    if (sessionKey == null) return null;
+    for (final cat in [
+      ExploreCategory.wildlife,
+      ExploreCategory.nature,
+      ExploreCategory.geology,
+      ExploreCategory.history,
+    ]) {
+      final played = _played[cat] ?? const <String>{};
+      for (final c in _pool[cat] ?? const <ExploreCandidate>[]) {
+        if (c.sessionKey == sessionKey && c.isPlayable && !played.contains(c.id)) {
+          return c;
+        }
+      }
     }
     return null;
+  }
+
+  AudioSegment? _transitionSegment(ExploreCandidate related) {
+    final phrases = _kRelatedTransitions[related.category];
+    if (phrases == null || phrases.isEmpty) return null;
+    final text = phrases[_relatedTransitionCursor % phrases.length];
+    _relatedTransitionCursor++;
+    return AudioSegment(
+      id: 'explore:transition:${related.category.name}:${related.id}:'
+          '${DateTime.now().microsecondsSinceEpoch}',
+      title: related.title,
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      imageUrl: related.imageUrl,
+      spokenText: text,
+      location: related.hasDestination
+          ? GeoPoint(latitude: related.latitude!, longitude: related.longitude!)
+          : null,
+      tags: ['explore', related.category.name],
+      interruptible: false,
+      resumeAfter: true,
+      tellMeMoreContext: related.tellMeMoreContext,
+    );
   }
 
   ExploreCandidate? _selectWildlife() {
@@ -339,9 +578,20 @@ class ExploreRotationScheduler {
   /// a couple of minutes out) so this class stays free of GPS/ETA math.
   /// Fires at most once per candidate id per trip, and marks it played so a
   /// later [due] call in the same category won't immediately repeat it.
+  ///
+  /// Also refuses to fire for a candidate [due] already narrated (e.g. as
+  /// part of a session — see [_buildSession]). `checkUrgent()` in
+  /// radio_session_provider.dart runs on every GPS tick and reads the pool
+  /// directly, unfiltered by [_played] — without this check, a destination
+  /// already told via the normal cycle could be narrated a SECOND time the
+  /// moment it crosses the closer urgent threshold (the exact "the story
+  /// plays again" bug this feature must not have). Safe/permanent because
+  /// whereHeaded/events (the only categories [urgent] is ever called with)
+  /// are sticky — [_played] for them is never cleared mid-trip.
   AudioSegment? urgent(ExploreCandidate? candidate, {required bool isCloseEnough}) {
     if (candidate == null || !candidate.isPlayable || !isCloseEnough) return null;
     if (_urgentFired.contains(candidate.id)) return null;
+    if (hasPlayed(candidate.category, candidate.id)) return null;
     _urgentFired.add(candidate.id);
     final segment = _toSegment(candidate, resumeAfter: true, urgent: true);
     _markPlayed(candidate);
@@ -357,6 +607,8 @@ class ExploreRotationScheduler {
     _urgentFired.clear();
     _cyclePosition = 0;
     _teaserPhraseCursor = 0;
+    _sessionOpenerCursor = 0;
+    _relatedTransitionCursor = 0;
   }
 
   AudioSegment _toSegment(

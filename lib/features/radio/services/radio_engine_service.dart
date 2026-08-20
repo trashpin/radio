@@ -363,8 +363,7 @@ class RadioEngineService {
       // Explore now always gets to run its own INFORMATION -> WILDLIFE ->
       // SONG cycle without competing with Radio-mode's schedulers. DJ
       // banter + plain music remain the final fallback (never silent).
-      final exploreSegment = explore.due();
-      if (exploreSegment != null) due.add(exploreSegment);
+      due.addAll(explore.due());
     } else {
       if (preferences.narrationsEnabled) {
         final narration = stories.onMusicPlayed();
