@@ -1099,6 +1099,10 @@ GpsBanterContext _banterContext(Ref ref, RadioEngineService engine) {
     nearbyTrails: named(['trail']),
     nearbyHistoricSites: named(['histor', 'fort', 'heritage']),
     station: stationName ?? 'Sunshine Travel Radio',
+    // DJ Sunny — the permanent on-air host (see DjBanterScheduler.djName) —
+    // so GPS Banter Studio clips' {dj} placeholder resolves to her name too,
+    // the same identity used by the template-banter path.
+    dj: engine.djBanter.djName,
     // Time-of-day + season + live-weather aware banter.
     moment: BanterMoment.now(
       weatherCondition: w?.condition,

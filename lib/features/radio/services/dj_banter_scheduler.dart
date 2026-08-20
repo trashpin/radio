@@ -13,6 +13,13 @@ import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedu
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 
+/// ElevenLabs voice id for "DJ Brittney" — the existing, already-generated
+/// voice DJ Sunny (Sunshine Travel Radio's permanent on-air host) always
+/// uses. Matches `assets/data/elevenlabs_voices.json` and
+/// `supabase/functions/narration-worker/worker.ts`'s own reference to this
+/// same voice — not a new voice, just naming the one that already exists.
+const String kDjSunnyVoiceId = 'kPzsL2i3teMYv0FxEYQ6';
+
 /// Decides when the DJ talks between songs and produces the spoken banter.
 ///
 /// Called by the engine after each music track finishes. It stays quiet most of
@@ -25,8 +32,11 @@ class DjBanterScheduler {
     BanterEngine? engine,
     this.everyNSongs = 2,
     this.enabled = true,
-    this.brand = 'Ocala National Forest Radio',
-    this.park = 'Ocala National Forest',
+    this.brand = 'Sunshine Travel Radio',
+    this.park = 'Marion County',
+    this.djName = 'DJ Sunny',
+    this.voiceId = kDjSunnyVoiceId,
+    this.voiceName = 'DJ Brittney',
     Random? rng,
   })  : _engine = engine ?? BanterEngine(),
         _rng = rng ?? Random();
@@ -36,6 +46,19 @@ class DjBanterScheduler {
   bool enabled;
   final String brand;
   final String park;
+
+  /// DJ Sunny — the permanent Sunshine Travel Radio on-air host. Threaded
+  /// into every generated line's `{dj}` placeholder (both the template-banter
+  /// path here and the GPS Banter Studio path via
+  /// `radio_session_provider.dart`'s `_banterContext`) so the same identity
+  /// is used everywhere the DJ speaks. Always voiced by [voiceId] ("DJ
+  /// Brittney") — this doesn't add a new voice system, it just pins the
+  /// existing one so it's the default for newly-generated audio (see
+  /// [_pickClip]'s voice preference and the Radio Automation admin's default
+  /// voice selection).
+  final String djName;
+  final String voiceId;
+  final String? voiceName;
   final Random _rng;
 
   int _count = 0;
@@ -137,7 +160,7 @@ class DjBanterScheduler {
     return AudioSegment(
       id: 'djgps:${sel.clip.id}:${DateTime.now().microsecondsSinceEpoch}',
       title: 'On air',
-      artist: sel.clip.voiceName ?? 'DJ',
+      artist: sel.clip.voiceName ?? djName,
       type: AudioSegmentType.announcement,
       priority: PlaybackPriority.scheduledAnnouncement,
       audioUrl: hasAudio ? sel.clip.audioUrl : null,
@@ -159,6 +182,31 @@ class DjBanterScheduler {
     );
   }
 
+  /// Builds template context for the on-device-TTS banter path, enriched with
+  /// whatever LIVE GPS/weather/location data is currently available — the
+  /// SAME data already flowing into the GPS Banter Studio via
+  /// [setGpsBanter]'s context supplier — so generated lines can reference the
+  /// traveler's actual town/destination/time-of-day instead of only the
+  /// generic constructor defaults. Falls back to [brand]/[park]/[_county]/the
+  /// local clock when no live context is wired yet (e.g. in tests). Always
+  /// carries [djName] so the `{dj}` placeholder resolves to "DJ Sunny".
+  BanterContext _templateContext({String? songTitle, String? artist, String? fact}) {
+    final gc = _banterContext?.call();
+    return BanterContext(
+      station: brand,
+      park: gc?.park ?? park,
+      county: gc?.county ?? _county,
+      songTitle: songTitle,
+      artist: artist,
+      fact: fact,
+      landmark: gc?.upcomingAttraction,
+      timeOfDay: gc?.moment?.timeOfDay.tag ?? _timeOfDay(),
+      wildlife:
+          (gc?.nearbyWildlife.isNotEmpty ?? false) ? gc!.nearbyWildlife.first : null,
+      djName: djName,
+    );
+  }
+
   /// ~1-in-3 of the time (when facts are loaded), returns a spoken county-fact
   /// segment built from the next rotating [CountyConfig.facts] entry; else null.
   AudioSegment? _maybeCountyFact() {
@@ -166,18 +214,13 @@ class DjBanterScheduler {
     if (_rng.nextInt(3) != 0) return null;
     final fact = _countyFacts[_factRotation.abs() % _countyFacts.length];
     _factRotation++;
-    final ctx = BanterContext(
-      station: brand,
-      park: park,
-      county: _county,
-      fact: fact,
-    );
+    final ctx = _templateContext(fact: fact);
     final text = _engine.generate(DjStation.all, BanterSituation.countyFact, ctx);
     if (text == null || text.trim().isEmpty) return null;
     return AudioSegment(
       id: 'djcounty:${DateTime.now().microsecondsSinceEpoch}',
       title: 'On air',
-      artist: 'DJ',
+      artist: djName,
       type: AudioSegmentType.announcement,
       priority: PlaybackPriority.scheduledAnnouncement,
       spokenText: text,
@@ -241,7 +284,7 @@ class DjBanterScheduler {
     return AudioSegment(
       id: 'auto:${s.id}:${DateTime.now().microsecondsSinceEpoch}',
       title: s.title.isEmpty ? 'On air' : s.title,
-      artist: s.voice ?? 'DJ',
+      artist: s.voice ?? djName,
       type: type,
       priority: priority,
       audioUrl: s.hasAudio ? s.audioUrl : null,
@@ -274,7 +317,12 @@ class DjBanterScheduler {
             (c.station == station || c.station == DjStation.all))
         .toList();
     if (matches.isEmpty) return null;
-    return matches[_rng.nextInt(matches.length)];
+    // DJ Sunny's voice (DJ Brittney) is preferred whenever a matching clip
+    // was actually recorded in it; falls back to any matching clip so
+    // nothing regresses for clips voiced before this pinning existed.
+    final sunny = matches.where((c) => c.voiceId == voiceId).toList();
+    final pool = sunny.isNotEmpty ? sunny : matches;
+    return pool[_rng.nextInt(pool.length)];
   }
 
   /// Maps a radio station name to a DJ station flavor for template selection.
@@ -336,7 +384,7 @@ class DjBanterScheduler {
       return AudioSegment(
         id: 'dj:clip:${clip.id}:${DateTime.now().microsecondsSinceEpoch}',
         title: 'On air',
-        artist: clip.voiceName ?? 'DJ',
+        artist: clip.voiceName ?? djName,
         type: AudioSegmentType.announcement,
         priority: PlaybackPriority.scheduledAnnouncement,
         audioUrl: clip.audioUrl,
@@ -346,12 +394,9 @@ class DjBanterScheduler {
     }
 
     // Fall back to dynamically-generated, on-device TTS banter.
-    final ctx = BanterContext(
-      station: brand,
-      park: park,
+    final ctx = _templateContext(
       songTitle: finishedMusic.title.isEmpty ? null : finishedMusic.title,
       artist: finishedMusic.artist,
-      timeOfDay: _timeOfDay(),
     );
     final text = _engine.generate(station, situation, ctx) ??
         _engine.generate(DjStation.all, BanterSituation.stationId, ctx);
@@ -360,7 +405,7 @@ class DjBanterScheduler {
     return AudioSegment(
       id: 'dj:${DateTime.now().microsecondsSinceEpoch}',
       title: 'On air',
-      artist: 'DJ',
+      artist: djName,
       type: AudioSegmentType.announcement,
       priority: PlaybackPriority.scheduledAnnouncement,
       spokenText: text,
