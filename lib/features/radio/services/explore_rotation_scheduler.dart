@@ -142,41 +142,40 @@ class ExploreUrgentCandidate {
 /// content change, and calls [due] after each song to ask what (if anything)
 /// should play next.
 ///
-/// Fixed 3-step CYCLE, not a priority scan: every call to [due] advances one
-/// position, wrapping around —
-///   0. INFORMATION (a teaser, an ahead-of-travel reveal, or a general local
-///      story — whichever is available)
-///   1. WILDLIFE/ANIMAL (a guaranteed slot every cycle, not conditional on
-///      whether anything was ahead)
-///   2. SONG GAP — [due] returns null so the caller's normal music fallback
-///      plays exactly one song, then the cycle resumes at INFORMATION.
-/// An empty INFORMATION or WILDLIFE slot silently becomes "one extra song"
-/// rather than blocking or borrowing from a later position — the cycle
-/// position always advances regardless of what (if anything) was found.
+/// STAY LOCAL LONGER: every call to [due] tries, in order —
+///   1. TEASER — a significant destination ahead but not yet close.
+///   2. REVEAL — a genuine ahead-of-travel destination close enough to fully
+///      reveal, expanded into a multi-segment travel-companion SESSION (see
+///      [_buildSession]) — completely unaffected by everything below.
+///   3. A LOCAL-COLOR BLOCK — when nothing is ahead of travel, [due] builds
+///      and returns several consecutive local pieces about the CURRENT town
+///      first (history, facts, events, historic sites, museums, attractions,
+///      parks, springs, state parks, relevant wildlife/nature — whatever
+///      exists), only reaching into a nearby town's content once the current
+///      town's own unplayed content is genuinely exhausted, and only
+///      reaching county-wide content once nearby towns are too — see
+///      [_buildLocalColorBlock]/[_pickLocalColor]. The block plays entirely
+///      back-to-back (no music between pieces); once it ends, the caller's
+///      normal music fallback naturally plays — that's the "music is a
+///      break after several local pieces" behavior, with no separate
+///      "song gap" signal needed.
+/// An empty local-color block (nothing anywhere is due) silently becomes
+/// "just play music" — never silent, same contract as before.
 ///
-/// No-repeat is exhaustion-based per category, not a play-count cooldown: an
-/// item won't repeat while another unused item exists in its category: once
-/// every item in a category has aired, that category's played history
-/// resets and it may repeat — EXCEPT the ahead-of-travel categories
-/// (whereHeaded/events/teaser), which are GPS-relative and refreshed every
-/// tick, so they never auto-reset (a passed destination simply drops out of
-/// the pool once it's no longer ahead, rather than being eligible to replay
-/// while still being approached).
+/// No-repeat is exhaustion-based per category: an item won't repeat while
+/// another unused item exists in its category. Local-color content
+/// deliberately does NOT reset-and-repeat once a category is exhausted (spec:
+/// "CRITICAL: do not repeat information already played") — a block simply
+/// ends early and Explore falls through to music rather than repeating.
+/// Ahead-of-travel categories (whereHeaded/events/teaser) are GPS-relative
+/// and refreshed every tick, so they never auto-reset either way (a passed
+/// destination simply drops out of the pool once it's no longer ahead).
 ///
 /// [due] returns an empty list when there is truly nothing to say — the
 /// caller falls back to normal content/music, exactly like
-/// [BackgroundDiscoveryScheduler.due]. When INFORMATION lands on a genuine
-/// ahead-of-travel destination reveal, [due] instead returns a small
-/// travel-companion SESSION (teaser → intro → story → related content, when
-/// relevant → music) — see [ExploreRotationScheduler._buildSession].
+/// [BackgroundDiscoveryScheduler.due].
 class ExploreRotationScheduler {
   ExploreRotationScheduler();
-
-  static const Set<ExploreCategory> _kStickyNoReset = {
-    ExploreCategory.whereHeaded,
-    ExploreCategory.events,
-    ExploreCategory.teaser,
-  };
 
   /// Varied pre-arrival teaser phrasing (spec: "do not use the exact same
   /// teaser every time") — a plain round-robin, no [Random], so it stays
@@ -250,7 +249,6 @@ class ExploreRotationScheduler {
         "County.",
   ];
 
-  int _cyclePosition = 0; // 0=INFORMATION, 1=WILDLIFE, 2=SONG GAP
   int _teaserPhraseCursor = 0;
   int _sessionOpenerCursor = 0;
   int _relatedTransitionCursor = 0;
@@ -305,25 +303,9 @@ class ExploreRotationScheduler {
     return ad.compareTo(bd);
   }
 
-  ExploreCandidate? _pick(ExploreCategory cat) {
-    final all = (_pool[cat] ?? const []).where((c) => c.isPlayable).toList();
-    if (all.isEmpty) return null;
-    final played = _played[cat] ?? const <String>{};
-    final unseen = all.where((c) => !played.contains(c.id)).toList()
-      ..sort(_compareLocalFirst);
-    if (unseen.isNotEmpty) return unseen.first;
-    // Every item in this category has aired. Sticky (ahead-of-travel)
-    // categories stay quiet rather than repeat; everything else may loop
-    // back now that the whole pool has genuinely been exhausted.
-    if (_kStickyNoReset.contains(cat)) return null;
-    return (all..sort(_compareLocalFirst)).first;
-  }
-
-  /// Like [_pick], but ranks UNSEEN candidates across several categories
-  /// together (local-first, per [_compareLocalFirst]) rather than trying one
-  /// category to exhaustion before the next. Only used for the sticky
-  /// ahead-of-travel groups, which never reset, so there's no
-  /// exhaustion-reset branch here.
+  /// Ranks UNSEEN candidates across several categories together (local-first,
+  /// per [_compareLocalFirst]) — used only for the ahead-of-travel groups
+  /// (teaser/whereHeaded/events-as-reveal), which never repeat once aired.
   ExploreCandidate? _pickAheadAcross(List<ExploreCategory> cats) {
     final unseen = <ExploreCandidate>[];
     for (final cat in cats) {
@@ -337,101 +319,152 @@ class ExploreRotationScheduler {
     return unseen.first;
   }
 
+  /// Marks [c] played, permanently, for the rest of the trip — no
+  /// reset-and-repeat branch (that was the old tier-priority model's
+  /// behavior; under STAY LOCAL LONGER, "CRITICAL: do not repeat
+  /// information already played" applies uniformly to every category, not
+  /// just the sticky ahead-of-travel ones).
   void _markPlayed(ExploreCandidate c) {
-    final played = _played[c.category] ??= {};
-    final all = (_pool[c.category] ?? const []).where((x) => x.isPlayable);
-    final allAlreadyPlayed =
-        all.every((x) => played.contains(x.id) || x.id == c.id);
-    if (allAlreadyPlayed && !_kStickyNoReset.contains(c.category)) {
-      played.clear();
-    }
-    played.add(c.id);
+    (_played[c.category] ??= {}).add(c.id);
     if (c.category == ExploreCategory.teaser) _teaserPhraseCursor++;
   }
 
-  /// The segment(s) for the CURRENT cycle position, then advances to the next
-  /// position regardless of whether anything was found (an empty INFORMATION/
-  /// WILDLIFE slot silently becomes one extra song). Usually a single-item
-  /// (or empty) list; when INFORMATION lands on a genuine ahead-of-travel
-  /// REVEAL, this instead returns a whole travel-companion SESSION — see
-  /// [_buildSession] — so the caller can queue them back-to-back before the
-  /// next song plays (spec: "make Explore feel like a travel companion").
+  /// STAY LOCAL LONGER (spec): tries ahead-of-travel first (unchanged —
+  /// [_pickAheadAcross] here, exactly as before), then builds a local-color
+  /// BLOCK of several consecutive pieces about the current town, only
+  /// reaching a nearby town's/county-wide content once the current town's
+  /// own unplayed content is genuinely exhausted — see [_buildLocalColorBlock].
+  /// Returns an empty list only when there is truly nothing anywhere; the
+  /// caller falls back to music either way, same "never silent" contract.
   List<AudioSegment> due() {
-    final segments = <AudioSegment>[];
-    switch (_cyclePosition) {
-      case 0:
-        final picked = _selectInformationDetailed();
-        final pick = picked.candidate;
-        if (pick != null) {
-          if (picked.isReveal) {
-            segments.addAll(_buildSession(pick));
-          } else {
-            segments.add(_toSegment(pick, resumeAfter: true));
-            _markPlayed(pick);
-          }
-        }
-        break;
-      case 1:
-        final pick = _selectWildlife();
-        if (pick != null) {
-          segments.add(_toSegment(pick, resumeAfter: true));
-          _markPlayed(pick);
-        }
-        break;
-      default:
-        break; // song gap
-    }
-    _cyclePosition = (_cyclePosition + 1) % 3;
-    return segments;
-  }
-
-  /// The candidate [due] would pick right now, without mutating any state —
-  /// exposed for tests/telemetry. Byte-identical contract to before: still a
-  /// single candidate, even though a REVEAL pick now expands into a full
-  /// session inside [due] itself.
-  ExploreCandidate? select() {
-    switch (_cyclePosition) {
-      case 0:
-        return _selectInformationDetailed().candidate;
-      case 1:
-        return _selectWildlife();
-      default:
-        return null; // song gap
-    }
-  }
-
-  /// LOCAL FIRST → NEARBY SECOND → COUNTY LAST:
-  ///   1. teaser — a significant destination ahead but not yet close.
-  ///   2. genuinely ahead-of-travel + close enough to fully reveal (ranked
-  ///      local-first among themselves — see [_pickAheadAcross]). Flagged
-  ///      `isReveal: true` — the ONLY case [due] expands into a session.
-  ///   3. WHERE YOU ARE — the current park/spring/town PLUS other nearby
-  ///      parks/springs/attractions/historic sites, closest (and highest
-  ///      type-priority) first — so the current town/area is exhausted
-  ///      before farther nearby towns are ever reached (emergent from
-  ///      [_compareLocalFirst]'s sort, not a separate category per band).
-  ///   4. EVENTS — current-town events before farther nearby-town events,
-  ///      same local-first distance sort. NOT a reveal (a merely-nearby
-  ///      event, not one detected ahead-of-travel) even though it shares a
-  ///      category with step 2's ahead-cone events.
-  ///   5. COUNTY — county-wide facts/history, the true last resort.
-  ///   6. HISTORY — broader, non-town-specific history content.
-  ({ExploreCandidate? candidate, bool isReveal}) _selectInformationDetailed() {
     final teaser = _pickAheadAcross([ExploreCategory.teaser]);
-    if (teaser != null) return (candidate: teaser, isReveal: false);
+    if (teaser != null) {
+      final segment = _toSegment(teaser, resumeAfter: true);
+      _markPlayed(teaser);
+      return [segment];
+    }
     final reveal = _pickAheadAcross(
         [ExploreCategory.whereHeaded, ExploreCategory.events]);
-    if (reveal != null) return (candidate: reveal, isReveal: true);
-    for (final cat in [
-      ExploreCategory.whereYouAre,
-      ExploreCategory.events,
-      ExploreCategory.county,
-      ExploreCategory.history,
-    ]) {
-      final pick = _pick(cat);
-      if (pick != null) return (candidate: pick, isReveal: false);
+    if (reveal != null) return _buildSession(reveal);
+
+    return _buildLocalColorBlock();
+  }
+
+  /// The single BEST candidate [due] would pick right now, without mutating
+  /// any state — exposed for tests/telemetry. Same ahead-of-travel-first
+  /// priority as [due], but doesn't expand a REVEAL into a session or a
+  /// local-color pick into a full block (both are [due]-specific mechanics).
+  ExploreCandidate? select() =>
+      _pickAheadAcross([ExploreCategory.teaser]) ??
+      _pickAheadAcross([ExploreCategory.whereHeaded, ExploreCategory.events]) ??
+      _pickLocalColor();
+
+  /// Locality tiers for STAY LOCAL LONGER: the traveler's CURRENT TOWN first,
+  /// a NEARBY town second, county-wide/generic content last — spec: "Only
+  /// after the relevant UNUSED content for that town has been reasonably
+  /// exhausted should Explore expand outward."
+  static const List<ExploreCategory> _kLocalColorCategories = [
+    ExploreCategory.whereYouAre,
+    ExploreCategory.events,
+    ExploreCategory.wildlife,
+    ExploreCategory.nature,
+    ExploreCategory.geology,
+    ExploreCategory.history,
+    ExploreCategory.county,
+  ];
+
+  static const List<ExploreCategory> _kWildlifeCategories = [
+    ExploreCategory.wildlife,
+    ExploreCategory.nature,
+    ExploreCategory.geology,
+  ];
+
+  /// Matches explore_providers.dart's `_kWhereYouAreTownMaxMeters` (~10mi) —
+  /// the existing, already-tuned "is this my town" radius, intentionally
+  /// reused rather than inventing a second one.
+  static const double _kCurrentTownRadiusMeters = 10 * 1609.344;
+
+  static int _tierOf(ExploreCandidate c) {
+    final d = c.distanceMeters;
+    if (d == null) return 2; // county-wide/generic — no location at all
+    if (d <= _kCurrentTownRadiusMeters) return 0; // current town
+    return 1; // nearby town
+  }
+
+  /// TIER beats TYPE beats raw distance — the direct fix for "a neighboring
+  /// town's park (low type-priority) outranking my own town's history (no
+  /// type-priority) purely because of what KIND of place it is." Used only
+  /// for local-color selection; [_pickAheadAcross] (ahead-of-travel) keeps
+  /// using [_compareLocalFirst] (type-first) completely unchanged — moving
+  /// Explore is unaffected by this comparator existing.
+  static int _compareTownFirst(ExploreCandidate a, ExploreCandidate b) {
+    final byTier = _tierOf(a).compareTo(_tierOf(b));
+    if (byTier != 0) return byTier;
+    final byPriority = a.aheadPriority.compareTo(b.aheadPriority);
+    if (byPriority != 0) return byPriority;
+    final ad = a.distanceMeters ?? double.infinity;
+    final bd = b.distanceMeters ?? double.infinity;
+    return ad.compareTo(bd);
+  }
+
+  /// The single best UNSEEN local-color candidate right now, tier-first (see
+  /// [_compareTownFirst]), or null once every relevant category is
+  /// exhausted. Deliberately NO repeat-fallback — spec: "CRITICAL: do not
+  /// repeat information already played" — once everything is genuinely
+  /// exhausted, [_buildLocalColorBlock] simply ends the block early rather
+  /// than repeating (the direct fix for the old fallback loop silently
+  /// repeating `whereYouAre` forever instead of ever reaching `events`/
+  /// `county`/`history` for their own fresh content).
+  ExploreCandidate? _pickLocalColor([List<ExploreCategory>? only]) {
+    final unseen = <ExploreCandidate>[];
+    for (final cat in only ?? _kLocalColorCategories) {
+      final played = _played[cat] ?? const <String>{};
+      for (final c in _pool[cat] ?? const <ExploreCandidate>[]) {
+        // Only `events` ever mixes in isAheadOfTravel:true candidates (an
+        // ahead-cone event reserved for _pickAheadAcross's own reveal) —
+        // every other category defaults to true and must NOT be excluded.
+        if (cat == ExploreCategory.events && c.isAheadOfTravel) continue;
+        if (c.isPlayable && !played.contains(c.id)) unseen.add(c);
+      }
     }
-    return (candidate: null, isReveal: false);
+    if (unseen.isEmpty) return null;
+    unseen.sort(_compareTownFirst);
+    return unseen.first;
+  }
+
+  static const int _kMaxLocalColorBlockSize = 8; // "several pieces" — tunable
+  static const int _kWildlifeGuaranteeEveryNPicks = 3; // soft guarantee, tunable
+
+  /// Builds the actual back-to-back local-color BLOCK [due] returns: several
+  /// consecutive spoken pieces, no music between them (spec: "Music should
+  /// be a BREAK after several local content pieces, not the reason to leave
+  /// the current town") — the block simply ends once fresh content runs out
+  /// or the size cap is hit, and the caller's normal music fallback plays
+  /// once the queued block drains. Reuses the exact same "a due() call can
+  /// return multiple segments, queued back-to-back" mechanism [_buildSession]
+  /// already proved — no engine/queue changes needed.
+  ///
+  /// Wildlife/nature/geology are woven in via a soft guarantee
+  /// ([_kWildlifeGuaranteeEveryNPicks]) rather than a separate cycle slot —
+  /// matching the spec's own example, which places wildlife/nature within a
+  /// rich local block rather than on a rigid alternating cadence, while
+  /// still ensuring it's never starved out of a long block entirely.
+  List<AudioSegment> _buildLocalColorBlock() {
+    final segments = <AudioSegment>[];
+    var picksSinceWildlife = 0;
+    for (var i = 0; i < _kMaxLocalColorBlockSize; i++) {
+      ExploreCandidate? pick;
+      if (picksSinceWildlife >= _kWildlifeGuaranteeEveryNPicks) {
+        pick = _pickLocalColor(_kWildlifeCategories);
+      }
+      pick ??= _pickLocalColor();
+      if (pick == null) break; // nothing fresh left anywhere -- end, never repeat
+      segments.add(_toSegment(pick, resumeAfter: true));
+      _markPlayed(pick);
+      picksSinceWildlife =
+          _kWildlifeCategories.contains(pick.category) ? 0 : picksSinceWildlife + 1;
+    }
+    return segments;
   }
 
   /// Builds a travel-companion SESSION around a genuine ahead-of-travel
@@ -604,18 +637,6 @@ class ExploreRotationScheduler {
     );
   }
 
-  ExploreCandidate? _selectWildlife() {
-    for (final cat in [
-      ExploreCategory.wildlife,
-      ExploreCategory.nature,
-      ExploreCategory.geology,
-    ]) {
-      final pick = _pick(cat);
-      if (pick != null) return pick;
-    }
-    return null;
-  }
-
   /// Checks whether an important location just became relevant enough to
   /// jump the queue (spec section 7). [candidate] is the nearest current
   /// WHAT'S AHEAD item, already resolved by the runtime; [isCloseEnough] is
@@ -643,14 +664,12 @@ class ExploreRotationScheduler {
     return segment;
   }
 
-  /// New trip — clears play history, urgent memory, and cycle position (a
-  /// fresh trip always restarts at INFORMATION). Does NOT clear anything
-  /// persisted by the runtime — that's [snapshotPlayed]/[restorePlayed]'s
-  /// concern, outside this class.
+  /// New trip — clears play history and urgent memory. Does NOT clear
+  /// anything persisted by the runtime — that's [snapshotPlayed]/
+  /// [restorePlayed]'s concern, outside this class.
   void reset() {
     _played.clear();
     _urgentFired.clear();
-    _cyclePosition = 0;
     _teaserPhraseCursor = 0;
     _sessionOpenerCursor = 0;
     _relatedTransitionCursor = 0;
