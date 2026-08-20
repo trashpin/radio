@@ -177,8 +177,11 @@ class DjBanterRepository {
     } catch (_) {}
   }
 
-  /// Enqueues a voicing job so the ElevenLabs tool/worker generates audio for a
-  /// destination's banter (consistent with the Audio Production queue).
+  /// Enqueues a voicing job for every unvoiced clip in [destinationCode],
+  /// drained by the narration worker in small self-throttled batches (one
+  /// `doDjBanterAudio` run per cron tick, `DJ_BANTER_AUDIO_CAP` clips at a
+  /// time) until the whole scope is voiced — mirrors the existing Nearby
+  /// Gems/Radio Automation/Location Content "Generate Audio" pipeline.
   Future<void> enqueueVoiceJob({
     required String destinationCode,
     String? name,
@@ -193,6 +196,21 @@ class DjBanterRepository {
     return SupabaseService.client
         .from('generation_jobs')
         .insert(job.toInsert());
+  }
+
+  /// Asks the narration worker to drain the queue NOW so "Generate audio
+  /// (queue)" starts producing audio immediately instead of waiting for the
+  /// scheduled worker. Works only if the `narration-worker` Edge Function is
+  /// deployed; returns false otherwise (the scheduled GitHub worker still
+  /// processes the job, just on its normal ~5-minute cadence).
+  Future<bool> triggerNarrationWorker() async {
+    if (!SupabaseService.isConfigured) return false;
+    try {
+      await SupabaseService.client.functions.invoke('narration-worker');
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<void> _snapshot(DjBanterClip clip, {String? author}) async {
