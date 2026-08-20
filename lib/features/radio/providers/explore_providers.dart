@@ -189,6 +189,11 @@ List<ExploreCandidate> _nearbyEventCandidates(
       latitude: e.event.latitude,
       longitude: e.event.longitude,
       distanceMeters: e.distanceMeters,
+      // Non-directional/merely-nearby, NOT detected ahead-of-travel — must
+      // never be treated as an ahead-of-travel REVEAL worth building a
+      // travel-companion session around (that's exclusively for genuine
+      // cone+radius+ETA detections from _aheadCandidates below).
+      isAheadOfTravel: false,
     ));
   }
   return out;
@@ -379,15 +384,16 @@ _AheadResult _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
     final closeEnoughToReveal = r.distanceMeters <= _kFullRevealMaxMeters ||
         (r.eta != null && r.eta! <= _kFullRevealMaxEta);
     if (closeEnoughToReveal) {
-      final miles = r.distanceMeters / 1609.344;
-      final leadPhrase =
-          "You're about ${miles.toStringAsFixed(miles < 10 ? 1 : 0)} "
-          "miles from ${ctx.title}.";
+      // The scheduler now builds the "You're about X miles from..." intro as
+      // its own session beat (from distanceMeters/title, both already set
+      // below) — spokenText here is the STORY alone, not a concatenated blob,
+      // so the intro and story can play as two distinct, separately-timed
+      // beats (spec: DESTINATION INTRODUCTION, then DESTINATION STORY).
       out.add(ExploreCandidate(
         id: 'ahead:${r.id}',
         category: category,
         title: ctx.title,
-        spokenText: '$leadPhrase $teaser',
+        spokenText: teaser,
         tellMeMoreContext: ctx.tellMeMoreContext,
         imageUrl: ctx.imageUrl,
         latitude: r.latitude,
@@ -395,6 +401,8 @@ _AheadResult _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
         distanceMeters: r.distanceMeters,
         eta: r.eta,
         aheadPriority: aheadPriority,
+        sessionKey: r.id,
+        isAheadOfTravel: true,
       ));
     } else {
       // Still too far for the full story — a vague pre-arrival teaser
@@ -414,6 +422,8 @@ _AheadResult _aheadCandidates(Ref ref, ExploreCandidate? whereYouAre) {
         distanceMeters: r.distanceMeters,
         eta: r.eta,
         aheadPriority: aheadPriority,
+        sessionKey: r.id,
+        isAheadOfTravel: true,
       ));
     }
   }
@@ -567,6 +577,41 @@ String? _imageForContentItem(ContentItem item, List<MasterLocation> locations) {
   return null;
 }
 
+/// Best-effort correlation from a `destinations` row to its matching
+/// `locations` row for the SAME physical place — there's no first-class FK
+/// between the two tables, so this reuses the exact two mechanisms already
+/// established elsewhere in this codebase rather than inventing a third: (1)
+/// `MasterLocation.destinationCode` <-> `MasterDestination.code`, the SAME
+/// correlation `tell_me_more_mapping.dart`'s `_destinationByCodeProvider`
+/// already relies on (sparse — most locations don't have a code); falling
+/// back to (2) an exact case-insensitive name match, the same best-effort
+/// idiom [_imageForContentItem] above already uses for a different purpose.
+/// Feeds [ExploreCandidate.sessionKey] on destination-narration-derived
+/// wildlife/nature/geology/history candidates (see [_fromDestinationNarrations])
+/// so a travel-companion session can find content genuinely about the SAME
+/// destination it's revealing — never a random one.
+Map<String, String> _destinationToLocationId(
+  List<MasterDestination> destinations,
+  List<MasterLocation> locations,
+) {
+  final byCode = <String, MasterLocation>{};
+  final byName = <String, MasterLocation>{};
+  for (final l in locations) {
+    final code = (l.destinationCode ?? '').trim().toLowerCase();
+    if (code.isNotEmpty) byCode[code] = l;
+    final name = l.name.trim().toLowerCase();
+    if (name.isNotEmpty) byName.putIfAbsent(name, () => l);
+  }
+  final out = <String, String>{};
+  for (final d in destinations) {
+    final code = (d.code ?? '').trim().toLowerCase();
+    final match = (code.isNotEmpty ? byCode[code] : null) ??
+        byName[d.name.trim().toLowerCase()];
+    if (match != null) out[d.id] = match.id;
+  }
+  return out;
+}
+
 /// Birds count as WILDLIFE per this feature's spec (section 4.4), not
 /// nature — distinct from the older `DiscoveryCategory` taxonomy elsewhere in
 /// the radio engine, which splits them out. City/community categories map to
@@ -658,6 +703,7 @@ ExploreCategory? _bucketForScriptType(String scriptType) {
 Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
   List<DestinationNarration> narrations,
   Map<String, MasterDestination> marionDestinationsById,
+  Map<String, String> destinationToLocationId,
 ) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
     ExploreCategory.wildlife: [],
@@ -673,6 +719,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
     final script = (n.script ?? '').trim();
     if (!n.hasAudio && script.isEmpty) continue;
     final title = (n.title ?? '').trim().isNotEmpty ? n.title!.trim() : dest.name;
+    final locationId = destinationToLocationId[dest.id];
     out[bucket]!.add(ExploreCandidate(
       id: 'narration:${n.id}',
       category: bucket,
@@ -687,6 +734,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
       imageUrl: dest.heroImage,
       latitude: dest.latitude,
       longitude: dest.longitude,
+      sessionKey: locationId == null ? null : 'loc:$locationId',
     ));
   }
   return out;
@@ -820,7 +868,13 @@ final exploreCandidatesProvider =
   };
   final narrations = ref.watch(explorePublishedNarrationsProvider).value ??
       const <DestinationNarration>[];
-  _mergeInto(pool, _fromDestinationNarrations(narrations, marionDestinations));
+  final destinationToLocationId =
+      _destinationToLocationId(destinations, masterLocations);
+  _mergeInto(
+    pool,
+    _fromDestinationNarrations(
+        narrations, marionDestinations, destinationToLocationId),
+  );
 
   final species = ref.watch(allSpeciesProvider).value ?? const <Species>[];
   _mergeInto(pool, _fromSpecies(species));
