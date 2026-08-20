@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show FileOptions, PostgrestException;
@@ -24,7 +23,8 @@ class CountyConfigRepository {
           .cast<Map<String, dynamic>>()
           .map(CountyConfig.fromJson)
           .toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[CountyConfigRepository.all] fetch failed: $e');
       return const [];
     }
   }

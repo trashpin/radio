@@ -65,6 +65,10 @@ const _kEligibleHeadedTypes = {
   LocationType.spring,
   LocationType.city,
   LocationType.community,
+  // Confirmed bug: a location whose own category is literally "town" (e.g.
+  // Ocklawaha) was excluded from both the ahead-of-travel search and the
+  // non-directional nearby fallback — silently invisible to Explore.
+  LocationType.town,
   LocationType.historicSite,
   LocationType.museum,
   LocationType.attraction,
@@ -209,6 +213,7 @@ PlayerLocationKind? _kindFor(LocationType t) {
       return PlayerLocationKind.spring;
     case LocationType.city:
     case LocationType.community:
+    case LocationType.town:
       return PlayerLocationKind.town;
     case LocationType.historicSite:
     case LocationType.museum:
