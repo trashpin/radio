@@ -33,7 +33,16 @@ const Set<LocationType> _parkTypes = {
   LocationType.nationalPark,
   LocationType.countyPark,
 };
-const Set<LocationType> _townTypes = {LocationType.city, LocationType.community};
+const Set<LocationType> _townTypes = {
+  LocationType.city,
+  LocationType.community,
+  // A location whose own category IS literally "town" (e.g. Ocklawaha) was
+  // silently invisible to the TOWN tier — this set predates LocationType.town
+  // existing as its own value and was never updated. Confirmed bug: without
+  // this, the player falls straight through to COUNTY for any traveler whose
+  // nearest town is typed "town" rather than "city"/"community".
+  LocationType.town,
+};
 
 /// What the location-aware player should show right now instead of (or
 /// alongside) the normal music artwork — resolved with EVENT > PARK > SPRING

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -24,7 +25,17 @@ class LocationContentRepository {
           .cast<Map<String, dynamic>>()
           .map(ContentItem.fromJson)
           .toList();
-    } catch (_) {
+    } catch (e) {
+      // Deliberately still degrades to [] (never blocks the app on a fetch
+      // failure) — but logged, not silent: this table is the ONLY source
+      // locationContextProvider's county derivation reads (no fallback), so
+      // a failure here doesn't just drop content, it can also flip
+      // marionCountyActiveProvider/exploreActiveProvider false and silently
+      // disable MARION COUNTY EXPLORE for the whole session. A real user
+      // report ("heard nothing in Ocklawaha, 2 songs in a row") traced back
+      // to this exact silent-failure path with no way to confirm it from
+      // telemetry — this log is what makes that diagnosable next time.
+      debugPrint('[LocationContentRepository.all] fetch failed: $e');
       return const [];
     }
   }
