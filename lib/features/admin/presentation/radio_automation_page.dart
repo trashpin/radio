@@ -9,6 +9,8 @@ import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
 import 'package:explorer_os_mobile/features/dj/models/dj_personality.dart';
 import 'package:explorer_os_mobile/features/narration/data/voice_repository.dart';
+import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart'
+    show kDjSunnyVoiceId;
 import 'package:explorer_os_mobile/features/radio_automation/data/radio_automation_repository.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
 import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
@@ -305,8 +307,11 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
   final _topic = TextEditingController();
   final _title = TextEditingController();
   final _script = TextEditingController();
-  String? _voiceId;
-  String? _voiceName;
+  // Defaults to DJ Sunny's voice (DJ Brittney) — Sunshine Travel Radio's
+  // permanent on-air host — so newly-generated segments are consistently
+  // voiced unless the admin deliberately picks someone else.
+  String? _voiceId = kDjSunnyVoiceId;
+  String? _voiceName = 'DJ Brittney';
   bool _saving = false;
   String? _message;
 
@@ -333,6 +338,8 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
   void _generate() {
     final engine = BanterEngine(rng: Random());
     final ctx = BanterContext(
+      station: 'Sunshine Travel Radio',
+      djName: 'DJ Sunny',
       theme: _topic.text.trim().isEmpty ? null : _topic.text.trim(),
       songTitle: _category == SegmentCategory.songIntro ||
               _category == SegmentCategory.songOutro

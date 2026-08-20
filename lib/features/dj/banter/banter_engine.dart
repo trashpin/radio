@@ -36,8 +36,8 @@ enum BanterSituation {
 /// substitutes a natural fallback so output always reads well.
 class BanterContext {
   const BanterContext({
-    this.station = 'Ocala National Forest Radio',
-    this.park = 'Ocala National Forest',
+    this.station = 'Sunshine Travel Radio',
+    this.park = 'Marion County',
     this.songTitle,
     this.artist,
     this.landmark,
