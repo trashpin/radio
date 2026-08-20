@@ -7,6 +7,8 @@ import 'package:explorer_os_mobile/features/dj/models/dj_clip.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/services/dj_banter_scheduler.dart';
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_schedule_rule.dart';
+import 'package:explorer_os_mobile/features/radio_automation/models/radio_segment.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/announcement_content.dart';
 import 'package:explorer_os_mobile/features/radio_automation/services/automation_engine.dart';
 
@@ -177,5 +179,38 @@ void main() {
     expect(seg.interruptible, isFalse);
     expect(seg.resumeAfter, isTrue);
     expect(seg.audioUrl, 'https://a/s.mp3');
+  });
+
+  test('a STATION_ID segment gets proper station-ID semantics — not the '
+      'generic skippable-banter catch-all', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(1));
+    final rule = RadioScheduleRule(
+      id: 'r1',
+      name: 'Station ID',
+      station: 'all',
+      category: 'STATION_ID',
+      triggerType: TriggerType.afterSong,
+      priority: 1,
+      enabled: true,
+    );
+    final segs = [
+      RadioSegment(
+        id: 'sid1',
+        title: 'Sunshine Travel Radio ID',
+        category: SegmentCategory.stationId,
+        station: 'all',
+        audioUrl: 'https://cdn/sid1.mp3',
+        published: true,
+      ),
+    ];
+    s.setAutomation(AutomationEngine(rng: Random(1)), [rule], segs);
+
+    final seg = s.onMusicPlayed(song('Some Song'));
+    expect(seg, isNotNull);
+    expect(seg!.type, AudioSegmentType.stationIdentification);
+    expect(seg.priority, PlaybackPriority.stationIdentification);
+    expect(seg.interruptible, isFalse);
+    expect(seg.resumeAfter, isTrue);
+    expect(seg.audioUrl, 'https://cdn/sid1.mp3');
   });
 }

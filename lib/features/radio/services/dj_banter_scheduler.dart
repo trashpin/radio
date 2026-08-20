@@ -219,6 +219,18 @@ class DjBanterScheduler {
           true,
           true,
         ),
+      // A proper station ID: not skippable, and ducks/resumes whatever it
+      // interrupted — matches PlaybackPriority.stationIdentification's own
+      // design intent (lower urgency than a scheduled announcement, still
+      // above music) rather than falling into the generic banter catch-all
+      // below (which made it skippable and non-resuming, indistinguishable
+      // from ordinary DJ banter).
+      SegmentCategory.stationId => (
+          AudioSegmentType.stationIdentification,
+          PlaybackPriority.stationIdentification,
+          false,
+          true,
+        ),
       _ => (
           AudioSegmentType.announcement,
           PlaybackPriority.scheduledAnnouncement,

@@ -617,6 +617,51 @@ export async function doGemAudio(job: any): Promise<{ done: boolean; msg: string
   return { done: true, msg: `voiced gem ${gem.name} (${Math.round(bytes.length / 1024)} KB)` };
 }
 
+// ── audio (radio_segment): voice a Radio Automation segment's script -> voiceovers -> audio_url ──
+// Triggered by the admin "Generate Audio" action in Radio Automation (Station
+// ID and every other segment category share this same table/pipeline). Voices
+// radio_segments.script with ElevenLabs and stores the public URL on
+// radio_segments.audio_url. Deliberately does NOT set published:true — same
+// norm as doGemAudio: the admin reviews/publishes from the Library tab.
+export async function doRadioSegmentAudio(job: any): Promise<{ done: boolean; msg: string }> {
+  if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no segment id in notes" };
+  const rows = await sbGet(
+    `radio_segments?id=eq.${id}&select=id,title,script,voice_id,audio_url&limit=1`,
+  );
+  const seg = rows[0];
+  if (!seg) return { done: true, msg: `segment not found: ${id}` };
+  if (String(seg.audio_url ?? "").trim()) {
+    return { done: true, msg: "already has audio" };
+  }
+
+  const text = String(seg.script ?? "").trim();
+  if (!text) return { done: true, msg: "no script for segment" };
+
+  const voiceId = noteVoiceId(job.notes) || seg.voice_id ||
+    (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+  const tts = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+    },
+  );
+  if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+  const bytes = new Uint8Array(await tts.arrayBuffer());
+  const path = `segments/${id}.mp3`;
+  const up = await fetch(
+    buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
+    { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+  );
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  const url = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
+  await sbPatch(`radio_segments?id=eq.${id}`, { audio_url: url, voice_id: voiceId });
+  return { done: true, msg: `voiced segment ${seg.title} (${Math.round(bytes.length / 1024)} KB)` };
+}
+
 // ── wikimedia_import: find a hero image on Commons and attach it ──
 // Mirrors tool/wikimedia_import.py: search, filter (name match, >=1200px, real
 // photos only), download the best, upload to media/destination-images/, set the
@@ -784,11 +829,14 @@ async function processJob(job: any): Promise<void> {
       case "audio": {
         // `audio` jobs are shared by target (from the note prefix):
         //   • `nearby_gem:*`             → voice a Nearby Gem
+        //   • `radio_segment:*`          → voice a Radio Automation segment
         //   • `master_location:content*` → generate TEXT content for a location
         //   • `master_location:*`        → voice a master location
         const note = String(job.notes ?? "");
         if (note.startsWith("nearby_gem")) {
           res = await doGemAudio(job);
+        } else if (note.startsWith("radio_segment")) {
+          res = await doRadioSegmentAudio(job);
         } else if (note.includes("master_location:content")) {
           res = await doLocationContent(job);
         } else {
@@ -843,12 +891,12 @@ export async function drainQueue(
     `generation_jobs?status=eq.running&job_type=in.(research,narration,narration_audio,full,audio,wikimedia_import)`,
     { status: "pending" },
   ).catch(() => {});
-  // Two fetches so we ONLY claim job variants this worker can actually run:
-  //   • the narration/knowledge types + wikimedia_import (whole type)
-  //   • `audio` jobs that target a master LOCATION (notes start with
-  //     "master_location"). Other `audio:*` variants (species records,
-  //     dj_banter, batch) belong to their own tooling — we neither run nor
-  //     drop them, so they stay pending for that tooling.
+  // Separate fetches so we ONLY claim job variants this worker can actually
+  // run: the narration/knowledge types + wikimedia_import (whole type), plus
+  // `audio` jobs scoped by notes prefix to master LOCATION / Nearby Gem /
+  // Radio Automation segment. Other `audio:*` variants (species records,
+  // dj_banter, batch) belong to their own tooling — we neither run nor drop
+  // them, so they stay pending for that tooling.
   const primary = await sbGet(
     `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full,wikimedia_import)` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
@@ -866,14 +914,20 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.nearby_gem*` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
-  // Round-robin across the three pools (gem audio, primary knowledge/script
-  // types, master-location audio) instead of merging-then-taking-the-globally-
-  // oldest-N: a huge, old backlog in ANY one pool (e.g. thousands of
-  // wikimedia_import rows) must never fully starve the others for run after
-  // run. Within each pool, jobs are still oldest-first (from the queries
-  // above).
-  const pools = [gemAudio, primary, locAudio];
-  const cursors = [0, 0, 0];
+  // `audio` jobs that target a Radio Automation segment (Station ID and every
+  // other segment category share this one job-type/notes-prefix scheme).
+  const segmentAudio = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.radio_segment*` +
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
+  );
+  // Round-robin across the four pools (gem audio, primary knowledge/script
+  // types, master-location audio, radio-segment audio) instead of merging-
+  // then-taking-the-globally-oldest-N: a huge, old backlog in ANY one pool
+  // (e.g. thousands of wikimedia_import rows) must never fully starve the
+  // others for run after run. Within each pool, jobs are still oldest-first
+  // (from the queries above).
+  const pools = [gemAudio, primary, locAudio, segmentAudio];
+  const cursors = [0, 0, 0, 0];
   const jobs: any[] = [];
   while (jobs.length < limit) {
     let addedAny = false;
