@@ -1,4 +1,5 @@
 import 'package:explorer_os_mobile/core/utils/greeting.dart';
+import 'package:explorer_os_mobile/features/dj/banter/banter_engine.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
@@ -175,7 +176,16 @@ class ExploreUrgentCandidate {
 /// caller falls back to normal content/music, exactly like
 /// [BackgroundDiscoveryScheduler.due].
 class ExploreRotationScheduler {
-  ExploreRotationScheduler();
+  ExploreRotationScheduler({this.djName = 'DJ Sunny', this.brand = 'Sunshine Travel Radio'});
+
+  /// DJ Sunny — the same permanent Sunshine Travel Radio host used by
+  /// [DjBanterScheduler] (`lib/features/radio/services/dj_banter_scheduler.dart`).
+  /// Carried on every produced [AudioSegment]'s `artist` field, and used to
+  /// fill the `{dj}`/`{station}` placeholders on the occasional Station ID
+  /// pulled from the existing [kBanterTemplates] pool (see [_stationIdSegment])
+  /// — no new voice/identity system, just the same pin threaded through here.
+  final String djName;
+  final String brand;
 
   /// Varied pre-arrival teaser phrasing (spec: "do not use the exact same
   /// teaser every time") — a plain round-robin, no [Random], so it stays
@@ -231,6 +241,41 @@ class ExploreRotationScheduler {
     ],
   };
 
+  /// DJ Sunny's intro into a local-color BLOCK (spec: "Explore should feel
+  /// like DJ Sunny is hosting a LOCAL TRAVEL RADIO SHOW" — the block's own
+  /// opening beat, distinct from [_kSessionOpenerPhrases] which opens an
+  /// ahead-of-travel SESSION instead). Rotates so the same line doesn't
+  /// repeat while others are unused.
+  static const List<String> _kBlockOpenerPhrases = [
+    "Hey, DJ Sunny here. You're traveling through a part of Marion County "
+        "with a pretty interesting story.",
+    "DJ Sunny back with you — here's something you might not know about "
+        "this area.",
+    "Alright, let's take a little local detour before the next song.",
+    "You're riding with DJ Sunny, and I've got a few things worth knowing "
+        "about right where you are.",
+    "Speaking of where you are, there's a little local history worth "
+        "knowing.",
+    "While you're enjoying the road, here's what's happening around you.",
+  ];
+
+  /// Generic DJ Sunny connective tissue between two local-color pieces in the
+  /// same block (spec: "CONNECT STORIES... the listener should feel like the
+  /// information belongs together"). Used when the upcoming piece's category
+  /// has no entry in [_kRelatedTransitions] (whereYouAre/events/county); when
+  /// it does, that category-flavored phrase is preferred instead so the
+  /// transition actually references what's coming next.
+  static const List<String> _kBlockConnectorPhrases = [
+    "That brings us to another part of the story.",
+    "Here's something else you might not know about this area.",
+    "Before we move on, here's a fun little fact.",
+    "Now that we've covered that, there's a bit more worth knowing.",
+    "Sticking around this area for a moment longer...",
+    "There's more to this stretch of road than meets the eye.",
+    "Let's keep the local tour going for a moment.",
+    "One more thing worth knowing before we roll on.",
+  ];
+
   /// Opens a fresh, stationary Explore session (spec: "PERSONALIZED GREETING
   /// -> LOCAL INFORMATION" — Explore is discovery-first, so this is the very
   /// first thing heard, before any song). Not tied to a `_pool`/`_played`
@@ -253,6 +298,9 @@ class ExploreRotationScheduler {
   int _sessionOpenerCursor = 0;
   int _relatedTransitionCursor = 0;
   int _greetingCursor = 0;
+  int _blockOpenerCursor = 0;
+  int _blockConnectorCursor = 0;
+  int _stationIdCursor = 0;
 
   Map<ExploreCategory, List<ExploreCandidate>> _pool = const {};
   final Map<ExploreCategory, Set<String>> _played = {};
@@ -435,6 +483,10 @@ class ExploreRotationScheduler {
   static const int _kMaxLocalColorBlockSize = 8; // "several pieces" — tunable
   static const int _kWildlifeGuaranteeEveryNPicks = 3; // soft guarantee, tunable
 
+  /// How often (in local-color picks) an occasional Station ID airs inside a
+  /// block — spec: "occasionally," explicitly NOT after every segment.
+  static const int _kStationIdEveryNPicks = 5;
+
   /// Builds the actual back-to-back local-color BLOCK [due] returns: several
   /// consecutive spoken pieces, no music between them (spec: "Music should
   /// be a BREAK after several local content pieces, not the reason to leave
@@ -449,9 +501,19 @@ class ExploreRotationScheduler {
   /// matching the spec's own example, which places wildlife/nature within a
   /// rich local block rather than on a rigid alternating cadence, while
   /// still ensuring it's never starved out of a long block entirely.
+  ///
+  /// PRESENTATION (spec "MAKE IT SOUND LIKE RADIO, NOT A DATABASE"): the
+  /// GPS/content selection above is completely unchanged — this only wraps
+  /// it with DJ Sunny's voice. The block opens with a DJ Sunny intro
+  /// ([_blockOpenerSegment]), each subsequent piece is preceded by a short
+  /// connective line ([_blockConnectorSegment]) instead of just cutting
+  /// straight to the next content record, and an occasional Station ID
+  /// ([_stationIdSegment]) airs every [_kStationIdEveryNPicks] picks — never
+  /// after every single piece.
   List<AudioSegment> _buildLocalColorBlock() {
     final segments = <AudioSegment>[];
     var picksSinceWildlife = 0;
+    var pickCount = 0;
     for (var i = 0; i < _kMaxLocalColorBlockSize; i++) {
       ExploreCandidate? pick;
       if (picksSinceWildlife >= _kWildlifeGuaranteeEveryNPicks) {
@@ -459,12 +521,98 @@ class ExploreRotationScheduler {
       }
       pick ??= _pickLocalColor();
       if (pick == null) break; // nothing fresh left anywhere -- end, never repeat
+
+      segments.add(
+        segments.isEmpty ? _blockOpenerSegment() : _blockConnectorSegment(pick),
+      );
       segments.add(_toSegment(pick, resumeAfter: true));
       _markPlayed(pick);
+      pickCount++;
       picksSinceWildlife =
           _kWildlifeCategories.contains(pick.category) ? 0 : picksSinceWildlife + 1;
+
+      if (pickCount % _kStationIdEveryNPicks == 0) {
+        segments.add(_stationIdSegment());
+      }
     }
     return segments;
+  }
+
+  /// DJ Sunny's opening line for a local-color block — the "welcome to this
+  /// local segment" beat the plain content-record playback never had.
+  AudioSegment _blockOpenerSegment() {
+    final text = _kBlockOpenerPhrases[_blockOpenerCursor % _kBlockOpenerPhrases.length];
+    _blockOpenerCursor++;
+    return AudioSegment(
+      id: 'explore:block-opener:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'DJ Sunny',
+      artist: djName,
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      spokenText: text,
+      tags: const ['explore', 'dj_glue'],
+      interruptible: false,
+      resumeAfter: true,
+    );
+  }
+
+  /// A short DJ Sunny line connecting the piece that just aired to [next] —
+  /// prefers [next]'s own category-flavored transition (the same pool
+  /// [_transitionSegment] uses for sessions) so the line actually reads as
+  /// "here's what's coming," falling back to the generic connector pool for
+  /// categories ([ExploreCategory.whereYouAre]/[events]/[county]) that don't
+  /// have one.
+  AudioSegment _blockConnectorSegment(ExploreCandidate next) {
+    final categoryPhrases = _kRelatedTransitions[next.category];
+    final String text;
+    if (categoryPhrases != null && categoryPhrases.isNotEmpty) {
+      text = categoryPhrases[_relatedTransitionCursor % categoryPhrases.length];
+      _relatedTransitionCursor++;
+    } else {
+      text = _kBlockConnectorPhrases[
+          _blockConnectorCursor % _kBlockConnectorPhrases.length];
+      _blockConnectorCursor++;
+    }
+    return AudioSegment(
+      id: 'explore:block-connector:${next.category.name}:${next.id}:'
+          '${DateTime.now().microsecondsSinceEpoch}',
+      title: 'DJ Sunny',
+      artist: djName,
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      spokenText: text,
+      tags: const ['explore', 'dj_glue'],
+      interruptible: false,
+      resumeAfter: true,
+    );
+  }
+
+  /// An occasional Station ID, reusing the existing DJ Banter Engine's own
+  /// [kBanterTemplates] pool ([BanterSituation.stationId]) rather than a new
+  /// phrase system — the same pool [DjBanterScheduler] pulls from between
+  /// songs. Rotates through every `all`-station template so wording varies.
+  AudioSegment _stationIdSegment() {
+    final templates = kBanterTemplates
+        .where((t) => t.situation == BanterSituation.stationId && t.station == DjStation.all)
+        .toList();
+    final text = templates.isEmpty
+        ? "You're listening to $brand."
+        : BanterEngine.fill(
+            templates[_stationIdCursor % templates.length].text,
+            BanterContext(station: brand, djName: djName),
+          );
+    _stationIdCursor++;
+    return AudioSegment(
+      id: 'explore:stationid:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'Station ID',
+      artist: djName,
+      type: AudioSegmentType.stationIdentification,
+      priority: PlaybackPriority.stationIdentification,
+      spokenText: text,
+      tags: const ['explore', 'station_id'],
+      interruptible: false,
+      resumeAfter: true,
+    );
   }
 
   /// Builds a travel-companion SESSION around a genuine ahead-of-travel
@@ -519,6 +667,7 @@ class ExploreRotationScheduler {
     return AudioSegment(
       id: 'explore:session-opener:${DateTime.now().microsecondsSinceEpoch}',
       title: reveal.title,
+      artist: djName,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
       imageUrl: reveal.imageUrl,
@@ -550,6 +699,7 @@ class ExploreRotationScheduler {
       id: 'explore:intro:${c.category.name}:${c.id}:'
           '${DateTime.now().microsecondsSinceEpoch}',
       title: c.title,
+      artist: djName,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
       imageUrl: c.imageUrl,
@@ -598,6 +748,7 @@ class ExploreRotationScheduler {
       id: 'explore:transition:${related.category.name}:${related.id}:'
           '${DateTime.now().microsecondsSinceEpoch}',
       title: related.title,
+      artist: djName,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
       imageUrl: related.imageUrl,
@@ -628,6 +779,7 @@ class ExploreRotationScheduler {
     return AudioSegment(
       id: 'explore:greeting:${DateTime.now().microsecondsSinceEpoch}',
       title: 'Welcome',
+      artist: djName,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
       spokenText: text,
@@ -674,6 +826,9 @@ class ExploreRotationScheduler {
     _sessionOpenerCursor = 0;
     _relatedTransitionCursor = 0;
     _greetingCursor = 0;
+    _blockOpenerCursor = 0;
+    _blockConnectorCursor = 0;
+    _stationIdCursor = 0;
   }
 
   AudioSegment _toSegment(
@@ -692,6 +847,7 @@ class ExploreRotationScheduler {
       id: 'explore:${urgent ? 'urgent:' : ''}${c.category.name}:${c.id}:'
           '${DateTime.now().microsecondsSinceEpoch}',
       title: c.title.isEmpty ? c.category.label : c.title,
+      artist: djName,
       type: AudioSegmentType.gpsNarration,
       priority: PlaybackPriority.scheduledAnnouncement,
       imageUrl: c.imageUrl,

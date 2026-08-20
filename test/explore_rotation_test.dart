@@ -14,6 +14,14 @@ import 'package:explorer_os_mobile/shared/models/radio_station.dart';
 import 'package:explorer_os_mobile/shared/models/song.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Strips DJ Sunny's presentation glue (block openers/connectors/occasional
+/// Station IDs — see `explore_rotation_scheduler.dart`'s `_buildLocalColorBlock`)
+/// down to just the actual content segments, so tests about WHICH content
+/// gets selected (tier/no-repeat/exhaustion logic, all unchanged) don't have
+/// to hardcode how many glue lines surround it.
+List<AudioSegment> _contentOnly(List<AudioSegment> segs) =>
+    segs.where((s) => !s.tags.contains('dj_glue') && !s.tags.contains('station_id')).toList();
+
 ExploreCandidate _c(
   String id,
   ExploreCategory cat, {
@@ -52,7 +60,7 @@ void main() {
           ],
         });
       final block = s.due();
-      expect(block.length, 3);
+      expect(_contentOnly(block).length, 3);
     });
 
     test('the block respects the size cap even with much more unplayed '
@@ -65,7 +73,7 @@ void main() {
           ],
         });
       final block = s.due();
-      expect(block.length, 8); // _kMaxLocalColorBlockSize
+      expect(_contentOnly(block).length, 8); // _kMaxLocalColorBlockSize
     });
 
     test('an empty pool produces an empty block — never silent, the caller '
@@ -83,7 +91,7 @@ void main() {
             _c('b', ExploreCategory.whereYouAre),
           ],
         });
-      expect(s.due().length, 2); // both play in one block
+      expect(_contentOnly(s.due()).length, 2); // both play in one block
       expect(s.due(), isEmpty); // nothing left; no repeats
     });
 
@@ -124,7 +132,7 @@ void main() {
           ],
         });
       final block = s.due();
-      expect(block.first.id, contains('my-town-history'),
+      expect(_contentOnly(block).first.id, contains('my-town-history'),
           reason: 'current-town tier wins even though the neighboring '
               'park has a more favorable type-priority');
     });
@@ -214,9 +222,10 @@ void main() {
           ],
         });
       final block = s.due();
-      expect(block.single.id, contains('town-fair'));
-      expect(block.single.tags, isNot(contains('session_opener')),
-          reason: 'a single plain local-color segment, not a session');
+      expect(_contentOnly(block).single.id, contains('town-fair'));
+      expect(block.any((seg) => seg.tags.contains('session_opener')), isFalse,
+          reason: 'a plain local-color pick (plus DJ Sunny\'s block glue), '
+              'not a session');
     });
 
     test('wildlife soft guarantee: an unseen wildlife item is forced into '
@@ -235,13 +244,94 @@ void main() {
             _c('bobcat', ExploreCategory.wildlife),
           ],
         });
-      final block = s.due();
+      final block = _contentOnly(s.due());
       final wildlifeIdx = block.indexWhere((seg) => seg.id.contains('bobcat'));
       expect(wildlifeIdx, greaterThanOrEqualTo(0),
           reason: 'wildlife must not be starved out of a long block '
               'entirely');
       expect(wildlifeIdx, lessThanOrEqualTo(3),
           reason: 'forced in within _kWildlifeGuaranteeEveryNPicks picks');
+    });
+  });
+
+  group('ExploreRotationScheduler — DJ Sunny presentation glue (MAKE IT '
+      'SOUND LIKE RADIO, NOT A DATABASE)', () {
+    test('a local-color block opens with a DJ Sunny intro and glues each '
+        'subsequent piece with a short connector, instead of cutting '
+        'straight from one content record to the next', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('a', ExploreCategory.whereYouAre, distanceMeters: 100),
+            _c('b', ExploreCategory.whereYouAre, distanceMeters: 200),
+            _c('c', ExploreCategory.whereYouAre, distanceMeters: 300),
+          ],
+        });
+      final block = s.due();
+      expect(block.length, 6); // opener, a, connector, b, connector, c
+      expect(block[0].tags, contains('dj_glue'));
+      expect(block[0].artist, 'DJ Sunny');
+      expect(block[1].id, contains(':a:'));
+      expect(block[2].tags, contains('dj_glue'));
+      expect(block[3].id, contains(':b:'));
+      expect(block[4].tags, contains('dj_glue'));
+      expect(block[5].id, contains(':c:'));
+    });
+
+    test('an occasional Station ID airs inside a long block — not after '
+        'every single piece', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            for (var i = 0; i < 6; i++)
+              _c('item-$i', ExploreCategory.whereYouAre,
+                  distanceMeters: (i + 1) * 100.0),
+          ],
+        });
+      final block = s.due();
+      final stationIds = block
+          .where((seg) => seg.type == AudioSegmentType.stationIdentification)
+          .toList();
+      expect(stationIds.length, 1,
+          reason: '_kStationIdEveryNPicks = 5, and 6 items were picked');
+      expect(stationIds.single.artist, 'DJ Sunny');
+      expect(stationIds.single.spokenText, isNotEmpty);
+      expect(stationIds.length, lessThan(_contentOnly(block).length),
+          reason: 'far fewer station IDs than content pieces');
+    });
+
+    test('every Explore-produced segment carries DJ Sunny as the artist, '
+        'not a generic/blank host', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('solo', ExploreCategory.whereYouAre, distanceMeters: 100),
+          ],
+        });
+      final block = s.due();
+      for (final seg in block) {
+        expect(seg.artist, 'DJ Sunny');
+      }
+    });
+
+    test('block-opener phrasing rotates rather than repeating the exact '
+        'same line every block', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('x1', ExploreCategory.whereYouAre, distanceMeters: 100),
+          ],
+        });
+      final opener1 = s.due().first.spokenText;
+
+      s.updateCandidates({
+        ExploreCategory.whereYouAre: [
+          _c('x2', ExploreCategory.whereYouAre, distanceMeters: 100),
+        ],
+      });
+      final opener2 = s.due().first.spokenText;
+
+      expect(opener1, isNot(opener2));
     });
   });
 
@@ -338,7 +428,7 @@ void main() {
             _c('alligator', ExploreCategory.history),
           ],
         });
-      final block = s.due();
+      final block = _contentOnly(s.due());
       final ids = block.map((seg) => seg.id).toList();
       expect(ids.any((id) => id.contains('black-bear')), isTrue);
       expect(ids.any((id) => id.contains('alligator')), isTrue);
@@ -353,7 +443,7 @@ void main() {
           ExploreCategory.history: [_c('only', ExploreCategory.history)],
         });
       final first = s.due();
-      expect(first.single.id, contains('only'));
+      expect(_contentOnly(first).single.id, contains('only'));
       expect(s.due(), isEmpty,
           reason: 'the only history item already aired; must not repeat it');
     });
@@ -379,7 +469,7 @@ void main() {
             _c('aquifer', ExploreCategory.geology, audioUrl: 'https://a.mp3'),
           ],
         });
-      final seg = s.due().single;
+      final seg = _contentOnly(s.due()).single;
       expect(seg.audioUrl, 'https://a.mp3');
       expect(seg.spokenText, isNull);
       expect(seg.resumeAfter, isTrue);
@@ -487,8 +577,8 @@ void main() {
           ],
         });
       // isAheadOfTravel:false means _pickAheadAcross([whereHeaded, events])
-      // skips it — it's only reachable via local color, a single segment.
-      expect(s.due().length, 1);
+      // skips it — it's only reachable via local color, a single piece.
+      expect(_contentOnly(s.due()).length, 1);
     });
 
     test('an events-category candidate defaults to isAheadOfTravel:true — '
@@ -523,7 +613,7 @@ void main() {
       final session = s.due(); // session consumes 'manatee' as related content
       expect(session.any((seg) => seg.id.contains('manatee')), isTrue);
 
-      final next = s.due(); // local color — manatee already gone
+      final next = _contentOnly(s.due()); // local color — manatee already gone
       expect(next.single.id, contains('gopher-tortoise'),
           reason: 'manatee already aired via the session; the still-unplayed '
               'gopher-tortoise plays instead of an immediate repeat');
@@ -782,8 +872,12 @@ void main() {
       engine.station.load(station: station, playlist: playlist);
 
       // Discovery-first: start() alone must already surface Explore content
-      // — no song, and no extra onSegmentCompleted() needed to reveal it.
+      // — no song needed first. DJ Sunny's block-opener leads the block now
+      // (spec: "sounds like DJ Sunny hosting"), so one completion is needed
+      // to reach the content itself.
       engine.start();
+      expect(engine.playback.current!.segment.tags, contains('dj_glue'));
+      engine.onSegmentCompleted();
       final current = engine.playback.current!.segment;
       expect(current.title, contains('marion-fact'));
       expect(current.tags, contains('explore'));
@@ -861,7 +955,9 @@ void main() {
       engine.start();
       final seenIds = <String>[];
       AudioSegmentType? lastType;
-      for (var i = 0; i < 6; i++) {
+      // The block now also carries DJ Sunny's opener + connectors, so a few
+      // more completions are needed to drain it before music resumes.
+      for (var i = 0; i < 10; i++) {
         final seg = engine.playback.current!.segment;
         seenIds.add(seg.id);
         lastType = seg.type;
@@ -908,10 +1004,15 @@ void main() {
       expect(first.tags, contains('greeting'));
       expect(first.spokenText, contains('Ocklawaha'));
 
-      // The greeting is followed by discovery content, not a song.
+      // The greeting is followed by discovery content, not a song — DJ
+      // Sunny's block-opener leads the local-color block itself.
       engine.onSegmentCompleted();
       final second = engine.playback.current!.segment;
-      expect(second.title, contains('marion-fact'));
+      expect(second.tags, contains('dj_glue'));
+
+      engine.onSegmentCompleted();
+      final third = engine.playback.current!.segment;
+      expect(third.title, contains('marion-fact'));
     });
 
     test('a cold start with no resolvable place name skips the greeting — '
@@ -927,8 +1028,12 @@ void main() {
       engine.station.load(station: station, playlist: playlist);
 
       engine.start();
+      final opener = engine.playback.current!.segment;
+      expect(opener.tags, isNot(contains('greeting')));
+      expect(opener.tags, contains('dj_glue'));
+
+      engine.onSegmentCompleted();
       final current = engine.playback.current!.segment;
-      expect(current.tags, isNot(contains('greeting')));
       expect(current.title, contains('marion-fact'));
     });
 
@@ -970,6 +1075,10 @@ void main() {
       engine.station.load(station: station, playlist: playlist);
 
       engine.start(); // the local-color block plays first (discovery-first)
+      // DJ Sunny's block-opener leads the block now.
+      expect(engine.playback.current!.segment.tags, contains('dj_glue'));
+
+      engine.onSegmentCompleted();
       expect(engine.playback.current!.segment.tags, contains('county'));
 
       // Completing that (non-music) segment falls straight to a real song —
