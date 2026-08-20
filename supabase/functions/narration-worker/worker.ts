@@ -9,7 +9,10 @@
 //   - audio            -> master-location narration (OpenAI + ElevenLabs) ->
 //                         voiceovers bucket + locations.audio_files (PENDING→READY)
 //                         OR (notes "nearby_gem:*") voice a Nearby Gem's script
-//                         (ElevenLabs) -> voiceovers + nearby_gems.narration_url
+//                         OR (notes "radio_segment:*") voice a Radio Automation segment
+//                         OR (notes "location_content:*") voice a Location Content record
+//                         OR (notes "dj_banter:*") voice a batch of DJ Banter Studio clips
+//                         (ElevenLabs) -> voiceovers bucket + the row's own audio_url column
 //   - wikimedia_import -> find a Commons hero image -> media bucket +
 //                         locations.images + media_assets attribution
 //
@@ -574,6 +577,43 @@ function noteVoiceId(notes: string | null): string | null {
   return m ? m[1] : null;
 }
 
+// Extract a destination code from a job note like "...;code=<CODE>".
+function noteCode(notes: string | null): string | null {
+  const m = /code=([A-Za-z0-9_-]+)/.exec(notes ?? "");
+  return m ? m[1] : null;
+}
+
+// Same fallback text GpsBanterContext.placeholders() uses live when a field
+// isn't known (mirrors lib/features/dj/banter_studio/gps_banter_director.dart)
+// -- a pre-recorded clip is static, so it can't reference the traveler's
+// actual position; this keeps a baked-in clip reading naturally instead of
+// leaving raw {tokens} in the audio.
+const BANTER_PLACEHOLDER_FALLBACKS: Record<string, string> = {
+  station: "Sunshine Travel Radio",
+  dj: "your host",
+  park: "this area",
+  county: "the county",
+  road: "this road",
+  attraction: "the road ahead",
+  upcoming_attraction: "the road ahead",
+  guide_mode: "explorer",
+  song_title: "that track",
+  artist: "a local artist",
+  story: "a story worth hearing",
+  nearby_lake: "a nearby lake",
+  nearby_river: "a nearby river",
+  nearby_spring: "a nearby spring",
+  nearby_trail: "a nearby trail",
+  nearby_historic_site: "a historic site",
+  nearby_wildlife: "local wildlife",
+};
+function fillBanterStatic(template: string, park: string | null): string {
+  const map = { ...BANTER_PLACEHOLDER_FALLBACKS };
+  if (park && park.trim()) map.park = park.trim();
+  const out = template.replace(/\{(\w+)\}/g, (_m, key) => map[key] ?? "");
+  return out.replace(/\s+/g, " ").replace(/ \./g, ".").trim();
+}
+
 // ── audio (nearby_gem): voice a Nearby Gem's script -> voiceovers -> narration_url ──
 // Triggered by the admin "Generate Narration" button. Voices the gem's
 // narration_script (falling back to long_story, then short_description) with
@@ -666,6 +706,76 @@ export async function doLocationContentAudio(
     done: true,
     msg: `voiced ${item.title ?? id} (${Math.round(bytes.length / 1024)} KB)`,
   };
+}
+
+// ── audio (dj_banter): voice a BATCH of GPS-Aware DJ Banter Studio clips ──
+// Triggered by DJ Banter Studio's "Generate audio (queue)" button (Admin ->
+// DJ Studio). Voices dj_banter rows that have text but no audio_url yet,
+// optionally scoped to one destination via notes "...;code=<destination_code>"
+// -- mirrors tool/dj_audio.dart --from-dj-banter exactly, including its
+// placeholder-fallback fill (see fillBanterStatic). Deliberately processes
+// only a small capped batch per run (self-throttled across 5-minute cron
+// ticks, same pattern as doNarration/doAudio's TYPE_CAP/AUDIO_CAP) instead of
+// voicing the whole backlog in one burst -- returns done:false with a
+// "remaining" count so the job simply gets redrained next run until finished.
+const DJ_BANTER_AUDIO_CAP = 5;
+
+export async function doDjBanterAudio(
+  job: any,
+): Promise<{ done: boolean; msg: string }> {
+  if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
+  const code = noteCode(job.notes);
+  let filter =
+    "select=id,text,voice_id,voice_name,destination_code,gps_region" +
+    "&audio_url=is.null&text=not.is.null&order=created_at.asc&limit=300";
+  if (code) filter += `&destination_code=eq.${enc(code)}`;
+  const rows = await sbGet(`dj_banter?${filter}`);
+  if (rows.length === 0) return { done: true, msg: "no dj_banter rows need audio" };
+
+  const batch = rows.slice(0, DJ_BANTER_AUDIO_CAP);
+  let ok = 0;
+  for (const r of batch) {
+    try {
+      const text = fillBanterStatic(String(r.text ?? ""), r.gps_region ?? null);
+      if (!text) continue;
+      const voiceId = (r.voice_id && String(r.voice_id).length)
+        ? String(r.voice_id)
+        : noteVoiceId(job.notes) || (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+      const voiceNm = (r.voice_name && String(r.voice_name).length)
+        ? String(r.voice_name)
+        : voiceName(voiceId);
+      const tts = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+        {
+          method: "POST",
+          headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+          body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+        },
+      );
+      if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+      const bytes = new Uint8Array(await tts.arrayBuffer());
+      const path = `banter/${r.id}.mp3`;
+      const up = await fetch(
+        buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
+        { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+      );
+      if (!up.ok) throw new Error(`upload ${up.status}`);
+      const url = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
+      await sbPatch(`dj_banter?id=eq.${r.id}`, {
+        audio_url: url,
+        voice_id: voiceId,
+        voice_name: voiceNm,
+        status: "published",
+      });
+      ok++;
+    } catch (e) {
+      console.error(`dj_banter ${r.id} failed: ${e}`);
+    }
+  }
+  const remaining = rows.length - batch.length;
+  return remaining > 0
+    ? { done: false, msg: `voiced ${ok}, ${remaining}+ remaining` }
+    : { done: true, msg: `voiced ${ok}` };
 }
 
 // ── audio (radio_segment): voice a Radio Automation segment's script -> voiceovers -> audio_url ──
@@ -882,6 +992,7 @@ async function processJob(job: any): Promise<void> {
         //   • `nearby_gem:*`             → voice a Nearby Gem
         //   • `radio_segment:*`          → voice a Radio Automation segment
         //   • `location_content:*`       → voice a Location Content record
+        //   • `dj_banter:*`              → voice a batch of DJ Banter Studio clips
         //   • `master_location:content*` → generate TEXT content for a location
         //   • `master_location:*`        → voice a master location
         const note = String(job.notes ?? "");
@@ -891,6 +1002,8 @@ async function processJob(job: any): Promise<void> {
           res = await doRadioSegmentAudio(job);
         } else if (note.startsWith("location_content")) {
           res = await doLocationContentAudio(job);
+        } else if (note.startsWith("dj_banter")) {
+          res = await doDjBanterAudio(job);
         } else if (note.includes("master_location:content")) {
           res = await doLocationContent(job);
         } else {
@@ -948,9 +1061,9 @@ export async function drainQueue(
   // Separate fetches so we ONLY claim job variants this worker can actually
   // run: the narration/knowledge types + wikimedia_import (whole type), plus
   // `audio` jobs scoped by notes prefix to master LOCATION / Nearby Gem /
-  // Radio Automation segment. Other `audio:*` variants (species records,
-  // dj_banter, batch) belong to their own tooling — we neither run nor drop
-  // them, so they stay pending for that tooling.
+  // Radio Automation segment / Location Content / DJ Banter Studio. Other
+  // `audio:*` variants (species records, batch) belong to their own tooling —
+  // we neither run nor drop them, so they stay pending for that tooling.
   const primary = await sbGet(
     `generation_jobs?status=eq.pending&job_type=in.(research,narration,narration_audio,full,wikimedia_import)` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
@@ -980,14 +1093,30 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.location_content*` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
-  // Round-robin across the five pools (gem audio, primary knowledge/script
+  // `audio` jobs that target DJ Banter Studio clips (Admin -> DJ Studio's
+  // "Generate audio (queue)" button) -- each job voices a small capped batch
+  // (doDjBanterAudio's own DJ_BANTER_AUDIO_CAP) and stays pending, redraining
+  // across many cron ticks, until its whole scope is voiced.
+  const djBanterAudio = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.dj_banter*` +
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
+  );
+  // Round-robin across the six pools (gem audio, primary knowledge/script
   // types, master-location audio, radio-segment audio, location-content
-  // audio) instead of merging-then-taking-the-globally-oldest-N: a huge, old
-  // backlog in ANY one pool (e.g. thousands of wikimedia_import rows) must
-  // never fully starve the others for run after run. Within each pool, jobs
-  // are still oldest-first (from the queries above).
-  const pools = [gemAudio, primary, locAudio, segmentAudio, locationContentAudio];
-  const cursors = [0, 0, 0, 0, 0];
+  // audio, dj-banter audio) instead of merging-then-taking-the-globally-
+  // oldest-N: a huge, old backlog in ANY one pool (e.g. thousands of
+  // wikimedia_import rows) must never fully starve the others for run after
+  // run. Within each pool, jobs are still oldest-first (from the queries
+  // above).
+  const pools = [
+    gemAudio,
+    primary,
+    locAudio,
+    segmentAudio,
+    locationContentAudio,
+    djBanterAudio,
+  ];
+  const cursors = [0, 0, 0, 0, 0, 0];
   const jobs: any[] = [];
   while (jobs.length < limit) {
     let addedAny = false;

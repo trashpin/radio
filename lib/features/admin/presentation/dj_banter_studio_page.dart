@@ -421,6 +421,7 @@ class _BanterCard extends ConsumerWidget {
           case 'audio':
             await repo.enqueueVoiceJob(
                 destinationCode: clip.destinationCode ?? '');
+            await repo.triggerNarrationWorker();
             if (context.mounted) {
               _toast(context, 'Queued audio generation');
             }
@@ -901,6 +902,7 @@ class _GenerateTabState extends ConsumerState<_GenerateTab> {
                           : () async {
                               await repo.enqueueVoiceJob(
                                   destinationCode: selected);
+                              await repo.triggerNarrationWorker();
                               if (context.mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
