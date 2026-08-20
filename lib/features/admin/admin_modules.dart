@@ -158,6 +158,12 @@ enum AdminModule {
       description: 'Segment library (banter/IDs/intros/promos), scheduling '
           'rules, voices, and templates — broadcast automation.',
       table: 'radio_segments'),
+  ambientSounds('Ambient Sounds', Icons.graphic_eq_rounded, AdminGroup.audio,
+      ready: true,
+      description: 'Reusable looping background clips (flowing water, birds, '
+          'swamp, forest, ...) that Location Content records can optionally '
+          'point at, played very quietly under Explore narration.',
+      table: 'ambient_sounds'),
 
   species('Species', Icons.eco_rounded, AdminGroup.nature,
       ready: true,

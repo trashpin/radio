@@ -31,6 +31,7 @@ ExploreCandidate _c(
   double? distanceMeters,
   String? sessionKey,
   bool isAheadOfTravel = true,
+  String? ambientAudioUrl,
 }) =>
     ExploreCandidate(
       id: id,
@@ -42,6 +43,7 @@ ExploreCandidate _c(
       distanceMeters: distanceMeters,
       sessionKey: sessionKey,
       isAheadOfTravel: isAheadOfTravel,
+      ambientAudioUrl: ambientAudioUrl,
     );
 
 void main() {
@@ -332,6 +334,63 @@ void main() {
       final opener2 = s.due().first.spokenText;
 
       expect(opener1, isNot(opener2));
+    });
+  });
+
+  group('ExploreRotationScheduler — optional ambient sound layer', () {
+    test('a candidate\'s ambientAudioUrl carries through to its own content '
+        'segment, untouched', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('silver-springs', ExploreCategory.whereYouAre,
+                distanceMeters: 100, ambientAudioUrl: 'https://a/water.mp3'),
+          ],
+        });
+      final content = _contentOnly(s.due()).single;
+      expect(content.ambientAudioUrl, 'https://a/water.mp3');
+    });
+
+    test('a candidate with no ambient association plays with none — never '
+        'forced', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('no-ambient', ExploreCategory.whereYouAre, distanceMeters: 100),
+          ],
+        });
+      final content = _contentOnly(s.due()).single;
+      expect(content.ambientAudioUrl, isNull);
+    });
+
+    test('DJ Sunny\'s own opener/connector/station-ID lines never carry the '
+        'content piece\'s ambient sound — it belongs to the story itself, '
+        'not the glue around it', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('a', ExploreCategory.whereYouAre,
+                distanceMeters: 100, ambientAudioUrl: 'https://a/water.mp3'),
+          ],
+        });
+      final block = s.due();
+      final glue = block.where((seg) => seg.tags.contains('dj_glue'));
+      for (final seg in glue) {
+        expect(seg.ambientAudioUrl, isNull);
+      }
+    });
+
+    test('a teaser never speaks its candidate\'s ambient sound — it\'s '
+        'generic pre-arrival phrasing, not the real story yet', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.teaser: [
+            _c('tease:x', ExploreCategory.teaser,
+                ambientAudioUrl: 'https://a/water.mp3'),
+          ],
+        });
+      final seg = s.due().single;
+      expect(seg.ambientAudioUrl, isNull);
     });
   });
 

@@ -94,6 +94,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const DjStudioPage();
       case AdminModule.radioAutomation:
         return const RadioAutomationPage();
+      case AdminModule.ambientSounds:
+        return const ContentUploaderPage(ambientSoundsConfig);
       case AdminModule.storyStudio:
         return const StoryStudioPage();
       case AdminModule.contentGenerator:
