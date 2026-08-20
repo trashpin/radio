@@ -145,8 +145,9 @@ class _LibraryTabState extends ConsumerState<_LibraryTab> {
               return const AdminSectionCard(
                   child: AdminEmptyState(
                       icon: Icons.library_music_rounded,
-                      message: 'No segments. Create one in the "Create" tab, then '
-                          'generate audio with tool/dj_audio.dart.'));
+                      message: 'No segments. Create one in the "Create" tab — '
+                          'audio generates automatically, or use "Generate '
+                          'Audio" here for any segment without one yet.'));
             }
             return AdminSectionCard(
               child: Column(children: [
@@ -186,10 +187,18 @@ class _LibraryTabState extends ConsumerState<_LibraryTab> {
                             await repo.duplicateSegment(s);
                           } else if (v == 'delete') {
                             await repo.deleteSegment(s.id);
+                          } else if (v == 'generate_audio') {
+                            final queued =
+                                await repo.enqueueSegmentAudio(s.id, voiceId: s.voiceId);
+                            if (queued) await repo.triggerNarrationWorker();
                           }
                           ref.read(segmentsRefreshProvider.notifier).bump();
                         },
                         itemBuilder: (_) => [
+                          if (!s.hasAudio)
+                            const PopupMenuItem(
+                                value: 'generate_audio',
+                                child: Text('Generate Audio')),
                           PopupMenuItem(
                               value: 'publish',
                               child: Text(s.published ? 'Unpublish' : 'Publish')),
@@ -350,7 +359,8 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
       _message = null;
     });
     try {
-      await ref.read(radioAutomationRepositoryProvider).insertSegment(RadioSegment(
+      final repo = ref.read(radioAutomationRepositoryProvider);
+      final id = await repo.insertSegment(RadioSegment(
             id: '',
             title: _title.text.trim().isEmpty
                 ? '${_category.label} — ${_station.label}'
@@ -364,9 +374,34 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
             published: false,
           ));
       ref.read(segmentsRefreshProvider.notifier).bump();
+
+      // Voice it right away, the same "enqueue + trigger the worker now"
+      // pattern the Nearby Gems admin's "Generate Narration" button already
+      // uses — no ElevenLabs key ever touches this client.
+      final queued = await repo.enqueueSegmentAudio(id, voiceId: _voiceId);
+      if (!queued) {
+        setState(() {
+          _message = 'Saved to the library (draft). Could not queue audio '
+              '(Supabase not configured) — try "Generate Audio" from the '
+              'Library tab later.';
+          _saving = false;
+        });
+        return;
+      }
+      final triggered = await repo.triggerNarrationWorker();
+      String? url = await repo.audioUrlFor(id);
+      if (url == null && triggered) {
+        for (var i = 0; i < 5 && url == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          url = await repo.audioUrlFor(id);
+        }
+      }
+      ref.read(segmentsRefreshProvider.notifier).bump();
       setState(() {
-        _message = 'Saved to the library (draft). Generate audio with '
-            'tool/dj_audio.dart, then publish.';
+        _message = url != null
+            ? 'Saved and voiced — open the Library tab to preview and publish.'
+            : 'Saved — audio is generating in the background and will '
+                'appear in the Library tab shortly.';
         _saving = false;
       });
     } catch (e) {
@@ -386,8 +421,8 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
       children: [
         const AdminPageHeader(
           title: 'Create Segment',
-          subtitle: 'Generate a script from templates, edit it, and save it to '
-              'the library. Audio is voiced separately with ElevenLabs.',
+          subtitle: 'Generate a script from templates, edit it, and save — '
+              'audio is voiced automatically with ElevenLabs.',
         ),
         const Gap.v(AppSpacing.lg),
         AdminSectionCard(
@@ -478,8 +513,8 @@ class _CreateTabState extends ConsumerState<_CreateTab> {
                       height: 16,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
-                  : const Icon(Icons.save_rounded, size: 18),
-              label: const Text('Save to library'),
+                  : const Icon(Icons.graphic_eq_rounded, size: 18),
+              label: const Text('Save & generate audio'),
             ),
             if (_message != null) ...[
               const Gap.v(AppSpacing.sm),

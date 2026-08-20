@@ -27,8 +27,65 @@ class RadioAutomationRepository {
     }
   }
 
-  Future<void> insertSegment(RadioSegment s) =>
-      SupabaseService.client.from('radio_segments').insert(s.toInsert());
+  /// Inserts [s] and returns its new id (needed so a caller can immediately
+  /// enqueue audio generation for the row it just created).
+  Future<String> insertSegment(RadioSegment s) async {
+    final row = await SupabaseService.client
+        .from('radio_segments')
+        .insert(s.toInsert())
+        .select('id')
+        .single();
+    return row['id'] as String;
+  }
+
+  /// Enqueues an ElevenLabs voicing job for [segmentId], drained by the
+  /// existing narration worker (same `generation_jobs` pipeline as Nearby
+  /// Gems/master-location audio — see `NearbyGemsRepository.enqueueGemAudio`).
+  /// The worker voices `radio_segments.script` and sets `audio_url`. Returns
+  /// false when Supabase isn't configured.
+  Future<bool> enqueueSegmentAudio(String segmentId, {String? voiceId}) async {
+    if (!SupabaseService.isConfigured) return false;
+    await SupabaseService.client.from('generation_jobs').insert({
+      'destination': 'radio_segment:$segmentId',
+      'job_type': 'audio',
+      'status': 'pending',
+      'progress': 0,
+      'notes': 'radio_segment:voice;id=$segmentId'
+          '${(voiceId ?? '').isEmpty ? '' : ';voice=$voiceId'}',
+    });
+    return true;
+  }
+
+  /// Asks the narration worker to drain the queue NOW so "Generate Audio"
+  /// produces audio immediately instead of waiting for the scheduled worker.
+  /// Works only if the `narration-worker` Edge Function is deployed; returns
+  /// false otherwise (the scheduled GitHub worker still processes the job).
+  Future<bool> triggerNarrationWorker() async {
+    if (!SupabaseService.isConfigured) return false;
+    try {
+      await SupabaseService.client.functions.invoke('narration-worker');
+      return true;
+    } catch (_) {
+      return false; // not deployed / unreachable — scheduled worker will run
+    }
+  }
+
+  /// Reads back a segment's current audio URL (to surface it in the admin as
+  /// soon as generation completes). Null when absent/blank.
+  Future<String?> audioUrlFor(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('radio_segments')
+          .select('audio_url')
+          .eq('id', id)
+          .maybeSingle();
+      final u = (row?['audio_url'] as String?)?.trim();
+      return (u == null || u.isEmpty) ? null : u;
+    } catch (_) {
+      return null;
+    }
+  }
 
   Future<void> setPublished(String id, bool published) => SupabaseService.client
       .from('radio_segments')
