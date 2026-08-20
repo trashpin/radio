@@ -534,18 +534,24 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
     if ((item.audioUrl ?? '').trim().isEmpty && text.isEmpty) continue;
     final lat = item.latitude == 0 ? null : item.latitude;
     final lng = item.longitude == 0 ? null : item.longitude;
+    // Computed once per item (not just for the WHERE YOU ARE gate below) so
+    // EVERY bucket -- wildlife/nature/history/county too -- carries a real
+    // distanceMeters. Without this, Ocklawaha's own content (well within
+    // range) could never out-tier a farther-away MasterLocation candidate
+    // that does carry a distance, reintroducing "leaves town too soon" one
+    // layer down (see ExploreRotationScheduler's locality-tier comparator).
+    final distanceMeters = (userLat != null && userLng != null &&
+            lat != null && lng != null)
+        ? GeoMath.distanceMeters(userLat, userLng, lat, lng)
+        : null;
     // WHERE YOU ARE items (town welcome/history/fun-facts/community-story)
     // are about ONE specific town — only surface them when the traveler is
     // actually near that town, not every Marion town regardless of position
     // (previously every town's content played as if it were "where you
     // are", which is both misleading and crowded out real variety).
     if (bucket == ExploreCategory.whereYouAre &&
-        userLat != null &&
-        userLng != null &&
-        lat != null &&
-        lng != null &&
-        GeoMath.distanceMeters(userLat, userLng, lat, lng) >
-            _kWhereYouAreTownMaxMeters) {
+        distanceMeters != null &&
+        distanceMeters > _kWhereYouAreTownMaxMeters) {
       continue;
     }
     out[bucket]!.add(ExploreCandidate(
@@ -561,6 +567,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
       imageUrl: _imageForContentItem(item, masterLocations),
       latitude: lat,
       longitude: lng,
+      distanceMeters: distanceMeters,
     ));
   }
   return out;
@@ -708,8 +715,10 @@ ExploreCategory? _bucketForScriptType(String scriptType) {
 Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
   List<DestinationNarration> narrations,
   Map<String, MasterDestination> marionDestinationsById,
-  Map<String, String> destinationToLocationId,
-) {
+  Map<String, String> destinationToLocationId, {
+  double? userLat,
+  double? userLng,
+}) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
     ExploreCategory.wildlife: [],
     ExploreCategory.nature: [],
@@ -725,6 +734,11 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
     if (!n.hasAudio && script.isEmpty) continue;
     final title = (n.title ?? '').trim().isNotEmpty ? n.title!.trim() : dest.name;
     final locationId = destinationToLocationId[dest.id];
+    final distanceMeters = (userLat != null && userLng != null &&
+            dest.latitude != null && dest.longitude != null)
+        ? GeoMath.distanceMeters(
+            userLat, userLng, dest.latitude!, dest.longitude!)
+        : null;
     out[bucket]!.add(ExploreCandidate(
       id: 'narration:${n.id}',
       category: bucket,
@@ -739,6 +753,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromDestinationNarrations(
       imageUrl: dest.heroImage,
       latitude: dest.latitude,
       longitude: dest.longitude,
+      distanceMeters: distanceMeters,
       sessionKey: locationId == null ? null : 'loc:$locationId',
     ));
   }
@@ -878,7 +893,12 @@ final exploreCandidatesProvider =
   _mergeInto(
     pool,
     _fromDestinationNarrations(
-        narrations, marionDestinations, destinationToLocationId),
+      narrations,
+      marionDestinations,
+      destinationToLocationId,
+      userLat: userLoc?.latitude,
+      userLng: userLoc?.longitude,
+    ),
   );
 
   final species = ref.watch(allSpeciesProvider).value ?? const <Species>[];

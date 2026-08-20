@@ -37,126 +37,211 @@ ExploreCandidate _c(
     );
 
 void main() {
-  group('ExploreRotationScheduler — 3-step cycle (INFORMATION → WILDLIFE → '
-      'SONG GAP → repeat)', () {
-    test('a full cycle: INFORMATION, then WILDLIFE, then a song gap, then '
-        'INFORMATION again (pool exhausted → resets, non-sticky)', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
-          ExploreCategory.wildlife: [_c('bobcat', ExploreCategory.wildlife)],
-        });
-      expect(s.due().single.tags, contains('county')); // position 0: INFORMATION
-      expect(s.due().single.tags, contains('wildlife')); // position 1: WILDLIFE
-      expect(s.due(), isEmpty); // position 2: SONG GAP — let one song play
-      // Lap 2 — the county pool (one item) was exhausted, so it resets and
-      // repeats rather than the cycle silently skipping INFORMATION.
-      expect(s.due().single.tags, contains('county'));
-    });
-
-    test('WILDLIFE is a guaranteed slot every cycle, even when INFORMATION '
-        'also found something — not conditional on "nothing ahead" like the '
-        'old tier-priority model', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
-          ExploreCategory.wildlife: [_c('w', ExploreCategory.wildlife)],
-        });
-      // whereHeaded is a REVEAL, so INFORMATION expands into a session (at
-      // least: session-opener, then the story itself somewhere in the batch).
-      final info = s.due();
-      expect(info.length, greaterThanOrEqualTo(2));
-      expect(info.any((seg) => seg.tags.contains('whereHeaded')), isTrue);
-      expect(s.due().single.tags, contains('wildlife'),
-          reason: 'wildlife plays even though something was ahead this lap');
-    });
-
-    test('an empty INFORMATION or WILDLIFE slot silently becomes an extra '
-        'song rather than borrowing from a later position', () {
-      final s = ExploreRotationScheduler(); // nothing in any category
-      expect(s.due(), isEmpty); // INFORMATION: nothing → empty
-      expect(s.due(), isEmpty); // WILDLIFE: nothing → empty
-      expect(s.due(), isEmpty); // SONG GAP: always empty
-    });
-  });
-
-  group('ExploreRotationScheduler — INFORMATION slot sourcing', () {
-    test('within INFORMATION, WHERE YOU ARE beats the broader COUNTY '
-        'fallback, which beats HISTORY', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.whereYouAre: [_c('y', ExploreCategory.whereYouAre)],
-          ExploreCategory.county: [_c('c', ExploreCategory.county)],
-          ExploreCategory.history: [_c('h', ExploreCategory.history)],
-        });
-      expect(s.select()!.id, 'y');
-    });
-
-    test('a candidate with neither audio nor spoken text never fills a slot',
-        () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.county: [
-            _c('empty', ExploreCategory.county, spokenText: null),
-          ],
-          ExploreCategory.history: [_c('h', ExploreCategory.history)],
-        });
-      expect(s.select()!.id, 'h');
-    });
-
-    test('type-priority ranks a higher-priority ahead candidate over a '
-        'lower-priority one, regardless of list order', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.whereHeaded: [
-            _c('town-x', ExploreCategory.whereHeaded, aheadPriority: 5),
-            _c('state-park-y', ExploreCategory.whereHeaded, aheadPriority: 0),
-          ],
-        });
-      expect(s.select()!.id, 'state-park-y');
-    });
-
-    test('an event can outrank a lower-priority location even though '
-        "they're different categories", () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.whereHeaded: [
-            _c('town', ExploreCategory.whereHeaded, aheadPriority: 5),
-          ],
-          ExploreCategory.events: [
-            _c('festival', ExploreCategory.events, aheadPriority: 4),
-          ],
-        });
-      expect(s.select()!.id, 'festival');
-    });
-
-    test('LOCAL FIRST: within WHERE YOU ARE, a closer same-priority '
-        'candidate is tried before a farther one — current town/area before '
-        'a farther nearby town, with no separate distance-band category', () {
+  group('ExploreRotationScheduler — local-color BLOCK building (STAY '
+      'LOCAL LONGER)', () {
+    test('a rich local pool produces one block containing everything '
+        'unplayed, back-to-back, in a single due() call', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereYouAre: [
-            _c('far-town-park', ExploreCategory.whereYouAre,
-                aheadPriority: 0, distanceMeters: 30000),
-            _c('current-area-park', ExploreCategory.whereYouAre,
-                aheadPriority: 0, distanceMeters: 2000),
+            _c('history', ExploreCategory.whereYouAre),
+            _c('facts', ExploreCategory.whereYouAre),
+          ],
+          ExploreCategory.history: [
+            _c('broader-history', ExploreCategory.history),
           ],
         });
-      expect(s.select()!.id, 'current-area-park');
+      final block = s.due();
+      expect(block.length, 3);
     });
 
-    test('EVENTS is an explicit INFORMATION fallback tier, after WHERE YOU '
-        'ARE and before COUNTY — current/nearby-town events considered '
-        'ahead of county-wide content', () {
+    test('the block respects the size cap even with much more unplayed '
+        'content available', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            for (var i = 0; i < 20; i++)
+              _c('item-$i', ExploreCategory.whereYouAre),
+          ],
+        });
+      final block = s.due();
+      expect(block.length, 8); // _kMaxLocalColorBlockSize
+    });
+
+    test('an empty pool produces an empty block — never silent, the caller '
+        'falls back to music', () {
+      final s = ExploreRotationScheduler();
+      expect(s.due(), isEmpty);
+    });
+
+    test('once a block\'s content is exhausted, the next due() call returns '
+        'an empty block rather than repeating', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('a', ExploreCategory.whereYouAre),
+            _c('b', ExploreCategory.whereYouAre),
+          ],
+        });
+      expect(s.due().length, 2); // both play in one block
+      expect(s.due(), isEmpty); // nothing left; no repeats
+    });
+
+    test('ahead-of-travel (teaser/reveal) is always checked before ever '
+        'building a local-color block', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.teaser: [_c('tease:x', ExploreCategory.teaser)],
+          ExploreCategory.whereYouAre: [
+            _c('local', ExploreCategory.whereYouAre),
+          ],
+        });
+      final result = s.due();
+      expect(result.single.tags, contains('teaser'),
+          reason: 'the teaser wins even though local content is also '
+              'available');
+    });
+  });
+
+  group('ExploreRotationScheduler — tier-first local color (STAY LOCAL '
+      'LONGER)', () {
+    test('CURRENT-TOWN tier beats NEARBY tier regardless of type-priority '
+        '— the direct fix for a neighboring town\'s park outranking my own '
+        'town\'s history', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            // A neighboring town's park: low (favorable) type-priority,
+            // but ~15mi away — shaped like _nearbyLocationCandidates' real
+            // output.
+            _c('neighboring-town-park', ExploreCategory.whereYouAre,
+                aheadPriority: 0, distanceMeters: 24140),
+            // My own town's own content: no type-priority at all
+            // (default), but essentially at distance 0 — shaped like
+            // _fromLocationContent's real output.
+            _c('my-town-history', ExploreCategory.whereYouAre,
+                distanceMeters: 500),
+          ],
+        });
+      final block = s.due();
+      expect(block.first.id, contains('my-town-history'),
+          reason: 'current-town tier wins even though the neighboring '
+              'park has a more favorable type-priority');
+    });
+
+    test('the fallback-starvation fix: whereYouAre/events/county/history '
+        'are ALL genuinely reachable together in one block, not stuck '
+        'repeating whereYouAre forever', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('town', ExploreCategory.whereYouAre),
+          ],
+          ExploreCategory.events: [
+            _c('fair', ExploreCategory.events, isAheadOfTravel: false),
+          ],
+          ExploreCategory.county: [_c('county-fact', ExploreCategory.county)],
+          ExploreCategory.history: [_c('broader', ExploreCategory.history)],
+        });
+      final ids = s.due().map((seg) => seg.id).toList();
+      expect(ids.any((i) => i.contains('town')), isTrue);
+      expect(ids.any((i) => i.contains('fair')), isTrue);
+      expect(ids.any((i) => i.contains('county-fact')), isTrue);
+      expect(ids.any((i) => i.contains('broader')), isTrue);
+    });
+
+    test('expansion ordering end-to-end: current-town tier before nearby '
+        'tier before county-wide, within the block\'s own ordering', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('current-town-item', ExploreCategory.whereYouAre,
+                distanceMeters: 500),
+            _c('nearby-town-item', ExploreCategory.whereYouAre,
+                distanceMeters: 24140),
+          ],
+          ExploreCategory.county: [_c('county-item', ExploreCategory.county)],
+        });
+      final ids = s.due().map((seg) => seg.id).toList();
+      final currentIdx = ids.indexWhere((i) => i.contains('current-town-item'));
+      final nearbyIdx = ids.indexWhere((i) => i.contains('nearby-town-item'));
+      final countyIdx = ids.indexWhere((i) => i.contains('county-item'));
+      expect(currentIdx, lessThan(nearbyIdx));
+      expect(nearbyIdx, lessThan(countyIdx));
+    });
+
+    test('isAheadOfTravel exclusion: an ahead-cone events candidate is '
+        'reserved for the REVEAL path and never surfaces via local color — '
+        'while a candidate left at the DEFAULT isAheadOfTravel:true in '
+        'every OTHER category is still perfectly pickable', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.events: [
+            // isAheadOfTravel defaults true -- an ahead-cone detection.
+            _c('ahead-cone-event', ExploreCategory.events,
+                distanceMeters: 1000),
+          ],
+        });
+      // It's a REVEAL, not plain local color -- due() builds a session.
+      final result = s.due();
+      expect(
+        result.any((seg) => seg.id.contains('ahead-cone-event')),
+        isTrue,
+        reason: 'still plays -- via the REVEAL/session path, not local '
+            'color',
+      );
+
+      // A whereYouAre candidate (also defaulting isAheadOfTravel:true, but
+      // NOT in the events category, so the exclusion never applies to it)
+      // must remain pickable by local color on its own.
+      final s2 = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('local-item', ExploreCategory.whereYouAre),
+          ],
+        });
+      expect(s2.select()!.id, 'local-item');
+    });
+
+    test('a nearby-fallback (isAheadOfTravel:false) events candidate IS '
+        'reachable via local color, never mistaken for an ahead-of-travel '
+        'reveal', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.events: [
             _c('town-fair', ExploreCategory.events, distanceMeters: 3000,
-                isAheadOfTravel: false), // merely nearby, not ahead-of-travel
+                isAheadOfTravel: false),
           ],
-          ExploreCategory.county: [_c('county-fact', ExploreCategory.county)],
         });
-      expect(s.select()!.id, 'town-fair');
+      final block = s.due();
+      expect(block.single.id, contains('town-fair'));
+      expect(block.single.tags, isNot(contains('session_opener')),
+          reason: 'a single plain local-color segment, not a session');
+    });
+
+    test('wildlife soft guarantee: an unseen wildlife item is forced into '
+        'the block within a few picks, even when higher-tier non-wildlife '
+        'content would otherwise keep winning', () {
+      final s = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            for (var i = 0; i < 6; i++)
+              _c('history-$i', ExploreCategory.whereYouAre,
+                  distanceMeters: 500),
+          ],
+          ExploreCategory.wildlife: [
+            // No distance -- county-wide tier, would otherwise lose to
+            // every current-town whereYouAre item, every time.
+            _c('bobcat', ExploreCategory.wildlife),
+          ],
+        });
+      final block = s.due();
+      final wildlifeIdx = block.indexWhere((seg) => seg.id.contains('bobcat'));
+      expect(wildlifeIdx, greaterThanOrEqualTo(0),
+          reason: 'wildlife must not be starved out of a long block '
+              'entirely');
+      expect(wildlifeIdx, lessThanOrEqualTo(3),
+          reason: 'forced in within _kWildlifeGuaranteeEveryNPicks picks');
     });
   });
 
@@ -174,9 +259,8 @@ void main() {
       expect(seg.spokenText, isNot('REAL STORY TEXT (should never be spoken here)'));
       expect(seg.tags, contains('teaser'));
 
-      s.due(); // WILDLIFE (empty)
-      s.due(); // SONG GAP
-      // Lap 2 — the teaser is sticky: exhausted, but must not reset/repeat.
+      // Sticky: exhausted, but must not reset/repeat, and there's nothing
+      // else anywhere, so the next block is empty.
       expect(s.due(), isEmpty);
     });
 
@@ -190,8 +274,6 @@ void main() {
           ],
         });
       s.due(); // teaser plays and is consumed
-      s.due(); // WILDLIFE
-      s.due(); // SONG GAP
 
       // The real destination becomes eligible for full reveal on a later
       // lap (in production: once close enough, the provider stops emitting
@@ -219,10 +301,8 @@ void main() {
         });
       final phrases = <String?>[];
       for (var lap = 0; lap < 3; lap++) {
-        final info = s.due(); // INFORMATION
+        final info = s.due();
         phrases.add(info.isEmpty ? null : info.single.spokenText);
-        s.due(); // WILDLIFE (empty)
-        s.due(); // SONG GAP
       }
       expect(phrases.toSet().length, 3,
           reason: 'three distinct teasers should not repeat the same phrase');
@@ -248,9 +328,9 @@ void main() {
     });
   });
 
-  group('ExploreRotationScheduler — no-repeat / exhaustion reset', () {
-    test('does not repeat a played item; prefers another unused item in the '
-        'same category', () {
+  group('ExploreRotationScheduler — local color: no repeats, ever', () {
+    test('does not repeat within a block — two items in the same category '
+        'both play, as distinct pieces, in one block', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.history: [
@@ -258,85 +338,37 @@ void main() {
             _c('alligator', ExploreCategory.history),
           ],
         });
-      final first = s.due().single; // INFORMATION (history is the fallback here)
-      expect(first.id, contains('black-bear'));
-      expect(s.hasPlayed(ExploreCategory.history, 'black-bear'), isTrue);
-      s.due(); // WILDLIFE
-      s.due(); // SONG GAP
-
-      final second = s.due().single; // INFORMATION, lap 2
-      expect(second.id, contains('alligator'),
-          reason: 'black-bear already aired; the other item plays');
+      final block = s.due();
+      final ids = block.map((seg) => seg.id).toList();
+      expect(ids.any((id) => id.contains('black-bear')), isTrue);
+      expect(ids.any((id) => id.contains('alligator')), isTrue);
+      expect(ids.length, 2, reason: 'each unique item plays exactly once');
     });
 
-    test('a non-sticky category with only one candidate repeats it once the '
-        'pool is exhausted, rather than going quiet (literal "don\'t repeat '
-        'while other unused content exists" — there is no other content)',
-        () {
+    test('CRITICAL: once a category\'s content is exhausted, it is NEVER '
+        'repeated — a later due() call returns an empty block rather than '
+        'replaying already-heard content', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.history: [_c('only', ExploreCategory.history)],
         });
-      expect(s.due().single.id, contains('only'));
-      s.due();
-      s.due();
-      expect(s.due().single.id, contains('only'),
-          reason: 'the whole (one-item) pool was exhausted, so it resets');
-    });
-
-    test('a full non-sticky category (3 items) plays each exactly once, '
-        'then resets and repeats the first — CONTENT POOL RESET only once '
-        'genuinely exhausted, never prematurely', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.history: [
-            _c('h1', ExploreCategory.history),
-            _c('h2', ExploreCategory.history),
-            _c('h3', ExploreCategory.history),
-          ],
-        });
-      final ids = <String>[];
-      for (var lap = 0; lap < 3; lap++) {
-        ids.add(s.due().single.id);
-        s.due();
-        s.due();
-      }
-      expect(
-        ids.map((i) => i.contains('h1')
-            ? 'h1'
-            : i.contains('h2')
-                ? 'h2'
-                : 'h3'),
-        containsAll(['h1', 'h2', 'h3']),
-      );
-      expect(s.due().single.id, contains('h1'),
-          reason: 'pool exhausted after 3 plays; resets and repeats the first');
+      final first = s.due();
+      expect(first.single.id, contains('only'));
+      expect(s.due(), isEmpty,
+          reason: 'the only history item already aired; must not repeat it');
     });
 
     test('a STICKY category (whereHeaded) does NOT reset — once its single '
-        'item has aired, it stays quiet rather than re-triggering while '
-        'still being approached', () {
+        'item has aired via a session, it stays quiet rather than '
+        're-triggering while still being approached', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
         });
-      final session = s.due(); // INFORMATION, lap 1 — a REVEAL session
+      final session = s.due(); // a REVEAL session
       expect(session.any((seg) => seg.id.contains('a')), isTrue);
-      s.due(); // WILDLIFE
-      s.due(); // SONG GAP
       expect(s.due(), isEmpty,
-          reason: 'whereHeaded is sticky — exhausted, but must not reset');
-    });
-
-    test('WILDLIFE prefers actual wildlife content over nature/geology, '
-        'falling back only when wildlife is empty', () {
-      final s = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.nature: [_c('plant', ExploreCategory.nature)],
-          ExploreCategory.wildlife: [_c('bobcat', ExploreCategory.wildlife)],
-        });
-      s.due(); // INFORMATION (empty)
-      expect(s.due().single.id, contains('bobcat')); // WILDLIFE prefers wildlife over nature
+          reason: 'whereHeaded is sticky and there is nothing else to say');
     });
 
     test('emits recorded audio when present, else spoken text, and carries '
@@ -347,8 +379,7 @@ void main() {
             _c('aquifer', ExploreCategory.geology, audioUrl: 'https://a.mp3'),
           ],
         });
-      s.due(); // INFORMATION (empty)
-      final seg = s.due().single; // WILDLIFE → falls to geology
+      final seg = s.due().single;
       expect(seg.audioUrl, 'https://a.mp3');
       expect(seg.spokenText, isNull);
       expect(seg.resumeAfter, isTrue);
@@ -456,8 +487,7 @@ void main() {
           ],
         });
       // isAheadOfTravel:false means _pickAheadAcross([whereHeaded, events])
-      // skips it — it's only reachable via the plain fallback loop in
-      // _selectInformationDetailed, so isReveal is false, single segment.
+      // skips it — it's only reachable via local color, a single segment.
       expect(s.due().length, 1);
     });
 
@@ -472,12 +502,12 @@ void main() {
           ],
         });
       expect(s.due().length, 3, reason: 'defaults true → a session, not a '
-          'single fallback segment');
+          'single local-color segment');
     });
 
     test('a related candidate consumed by a session counts toward its own '
-        'category exhaustion — a later WILDLIFE cycle slot prefers a still-'
-        'unplayed item in the same category over an immediate repeat', () {
+        'category exhaustion — a later due() call prefers a still-unplayed '
+        'item in the same category over an immediate repeat', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [
@@ -490,11 +520,11 @@ void main() {
             _c('gopher-tortoise', ExploreCategory.wildlife),
           ],
         });
-      final session = s.due(); // INFORMATION — session consumes 'manatee'
+      final session = s.due(); // session consumes 'manatee' as related content
       expect(session.any((seg) => seg.id.contains('manatee')), isTrue);
 
-      final wildlifeSlot = s.due(); // WILDLIFE
-      expect(wildlifeSlot.single.id, contains('gopher-tortoise'),
+      final next = s.due(); // local color — manatee already gone
+      expect(next.single.id, contains('gopher-tortoise'),
           reason: 'manatee already aired via the session; the still-unplayed '
               'gopher-tortoise plays instead of an immediate repeat');
     });
@@ -629,8 +659,7 @@ void main() {
           ExploreCategory.whereHeaded: [_c('headed', ExploreCategory.whereHeaded)],
         });
       s.urgent(_c('urgent-stop', ExploreCategory.whereHeaded), isCloseEnough: true);
-      // INFORMATION still wins on the next due() call, unaffected — a
-      // whereHeaded REVEAL, so a session (containing 'headed' somewhere).
+      // the whereHeaded REVEAL still wins on the next due() call, unaffected.
       final session = s.due();
       expect(session.any((seg) => seg.id.contains('headed')), isTrue);
     });
@@ -701,16 +730,15 @@ void main() {
   });
 
   group('ExploreRotationScheduler.reset', () {
-    test('clears play history, urgent memory, and cycle position', () {
+    test('clears play history and urgent memory', () {
       final s = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.whereHeaded: [_c('a', ExploreCategory.whereHeaded)],
         });
-      s.due(); // consumes 'a' via a session, advances past INFORMATION
+      s.due(); // consumes 'a' via a session
       s.reset();
       expect(s.hasPlayed(ExploreCategory.whereHeaded, 'a'), isFalse);
-      // Back at INFORMATION (position 0) with 'a' unseen again — proves both
-      // play history AND cycle position were reset, not just one.
+      // 'a' unseen again -- proves play history was genuinely reset.
       final session = s.due();
       expect(session.any((seg) => seg.id.contains('a')), isTrue);
     });
@@ -816,6 +844,38 @@ void main() {
           reason: 'the session fully drains before any song plays');
     });
 
+    test('a local-color block plays every unplayed piece back-to-back '
+        'before any song plays', () {
+      final explore = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.whereYouAre: [
+            _c('history', ExploreCategory.whereYouAre),
+            _c('facts', ExploreCategory.whereYouAre),
+            _c('events', ExploreCategory.whereYouAre),
+          ],
+        });
+      final engine = buildEngine(explore: explore);
+      engine.djBanter.enabled = false;
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final seenIds = <String>[];
+      AudioSegmentType? lastType;
+      for (var i = 0; i < 6; i++) {
+        final seg = engine.playback.current!.segment;
+        seenIds.add(seg.id);
+        lastType = seg.type;
+        if (lastType == AudioSegmentType.music) break;
+        engine.onSegmentCompleted();
+      }
+      expect(seenIds.any((id) => id.contains('history')), isTrue);
+      expect(seenIds.any((id) => id.contains('facts')), isTrue);
+      expect(seenIds.any((id) => id.contains('events')), isTrue);
+      expect(lastType, AudioSegmentType.music,
+          reason: 'the whole block plays before any song, then music '
+              'follows as the break');
+    });
+
     test('Radio mode (exploreMode off) is completely unaffected — normal '
         'discovery still fires', () {
       final engine = buildEngine(
@@ -897,8 +957,8 @@ void main() {
     });
 
     test('the cold-start Explore-first check only ever fires once per '
-        'session — once history is non-empty, the normal SONG GAP cadence '
-        'is completely untouched', () {
+        'session — once history is non-empty, subsequent song boundaries '
+        'behave exactly as they always have', () {
       final explore = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.county: [
@@ -909,18 +969,19 @@ void main() {
       engine.djBanter.enabled = false;
       engine.station.load(station: station, playlist: playlist);
 
-      engine.start(); // INFORMATION plays first (discovery-first)
+      engine.start(); // the local-color block plays first (discovery-first)
       expect(engine.playback.current!.segment.tags, contains('county'));
 
       // Completing that (non-music) segment falls straight to a real song —
       // NOT back through the cold-start branch a second time, since history
       // is no longer empty. That song completing then drives the normal
-      // WILDLIFE slot (empty this lap) via _injectScheduledContent exactly
-      // as it always has, landing on another real song.
+      // due() call via _injectScheduledContent exactly as it always has;
+      // with the county pool now exhausted (never repeats), it lands on
+      // another real song.
       engine.onSegmentCompleted();
       engine.onSegmentCompleted();
       expect(engine.playback.current!.segment.type, AudioSegmentType.music,
-          reason: 'the normal cycle is unaffected once the one-time '
+          reason: 'the normal cadence is unaffected once the one-time '
               'cold-start branch has already fired');
     });
   });
