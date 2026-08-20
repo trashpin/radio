@@ -831,14 +831,14 @@ void main() {
       expect(current.tags, contains('wildlife'));
     });
 
-    test('a STATIONARY cold start with a resolvable place opens with the '
-        'personalized greeting, before any other discovery content', () {
+    test('a cold start with a resolvable place opens with the personalized '
+        'greeting, before any other discovery content — moving or '
+        'stationary makes no difference, only whether a place is known', () {
       final explore = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
         });
       final engine = buildEngine(explore: explore)
-        ..isStationary = true
         ..currentPlaceName = 'Ocklawaha';
       engine.djBanter.enabled = false;
       engine.station.load(station: station, playlist: playlist);
@@ -854,31 +854,14 @@ void main() {
       expect(second.title, contains('marion-fact'));
     });
 
-    test('a MOVING cold start does not play a greeting, but still does not '
-        'start with a song when relevant content exists', () {
+    test('a cold start with no resolvable place name skips the greeting — '
+        'never invents a place — but still opens with discovery content, '
+        'not a song', () {
       final explore = ExploreRotationScheduler()
         ..updateCandidates({
           ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
         });
-      final engine = buildEngine(explore: explore)
-        ..isStationary = false
-        ..currentPlaceName = 'Ocklawaha';
-      engine.djBanter.enabled = false;
-      engine.station.load(station: station, playlist: playlist);
-
-      engine.start();
-      final current = engine.playback.current!.segment;
-      expect(current.tags, isNot(contains('greeting')));
-      expect(current.title, contains('marion-fact'));
-    });
-
-    test('a cold start with no resolvable place name skips the greeting '
-        'even while stationary — never invents a place', () {
-      final explore = ExploreRotationScheduler()
-        ..updateCandidates({
-          ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
-        });
-      final engine = buildEngine(explore: explore)..isStationary = true;
+      final engine = buildEngine(explore: explore);
       // currentPlaceName left null.
       engine.djBanter.enabled = false;
       engine.station.load(station: station, playlist: playlist);
@@ -893,7 +876,7 @@ void main() {
         'place, so not even a greeting — still falls through to music, '
         'never silent', () {
       final engine = buildEngine(explore: ExploreRotationScheduler());
-      // isStationary/currentPlaceName left at their defaults (false/null).
+      // currentPlaceName left at its default (null).
       engine.station.load(station: station, playlist: playlist);
 
       engine.start();
@@ -901,11 +884,10 @@ void main() {
       expect(current.type, AudioSegmentType.music);
     });
 
-    test('a STATIONARY cold start with a place but genuinely no discovery '
+    test('a cold start with a resolvable place but genuinely no discovery '
         'content anywhere still plays the greeting (not silent, not a song '
         '— the greeting alone is still a meaningful opening)', () {
       final engine = buildEngine(explore: ExploreRotationScheduler())
-        ..isStationary = true
         ..currentPlaceName = 'Ocklawaha';
       engine.station.load(station: station, playlist: playlist);
 

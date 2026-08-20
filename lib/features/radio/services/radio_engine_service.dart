@@ -109,17 +109,14 @@ class RadioEngineService {
   /// spec section 7.
   void setExploreMode(bool enabled) => exploreMode = enabled;
 
-  /// Whether the traveler is currently stationary (not walking/biking/
-  /// driving) — set externally from the GPS layer, exactly like
-  /// [exploreMode]/[setExploreMode]. Used only to decide whether a fresh
-  /// Explore cold start should open with a personalized greeting (spec:
-  /// "PERSONALIZED GREETING -> LOCAL INFORMATION" when the listener is
-  /// sitting still) — moving Explore behavior is unaffected.
-  bool isStationary = false;
-
   /// The traveler's current place name (a town, or "`<County> County`" when
-  /// no town resolves) for the Explore greeting — null when not yet known. Set
-  /// externally exactly like [isStationary]; never invented downstream.
+  /// no town resolves) for the Explore greeting — null when not yet known.
+  /// Set externally from the GPS layer, exactly like [exploreMode]/
+  /// [setExploreMode]; never invented downstream. Whenever this is reliably
+  /// known, a fresh Explore cold start opens with a personalized greeting
+  /// (spec: "GPS LOCATION -> DETERMINE TOWN/CITY -> TIME-OF-DAY GREETING ->
+  /// BEGIN LOCAL EXPLORE CONTENT") — moving or stationary, the greeting is
+  /// the same either way; only whether a place name is resolvable matters.
   String? currentPlaceName;
 
   final StreamController<RadioEvent> _events =
@@ -175,7 +172,7 @@ class RadioEngineService {
     if (exploreMode && history.all.isEmpty) {
       final segments = <AudioSegment>[];
       final place = currentPlaceName;
-      if (isStationary && place != null && place.trim().isNotEmpty) {
+      if (place != null && place.trim().isNotEmpty) {
         segments.add(explore.greetingSegment(place));
       }
       segments.addAll(explore.due());
