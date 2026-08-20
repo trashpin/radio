@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/core/utils/greeting.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
@@ -231,10 +232,29 @@ class ExploreRotationScheduler {
     ],
   };
 
+  /// Opens a fresh, stationary Explore session (spec: "PERSONALIZED GREETING
+  /// -> LOCAL INFORMATION" — Explore is discovery-first, so this is the very
+  /// first thing heard, before any song). Not tied to a `_pool`/`_played`
+  /// no-repeat category like other content — it's synthesized directly from
+  /// a place name (the same pattern [_sessionOpenerSegment]/[_introSegment]
+  /// already use), and its own "don't repeat" requirement is wording variety
+  /// (this cursor) plus the CALLER only ever invoking [greetingSegment] once
+  /// per genuine session start (see `RadioEngineService._takeNext`'s
+  /// cold-start check), never on a plain GPS update.
+  static const List<String> _kGreetingTemplates = [
+    "{greeting} to everyone listening here in {place}. Hope you're having a "
+        "great day. Let's take a look around your corner of Marion County.",
+    "{greeting}, folks in {place}. Let's see what's happening around you.",
+    "{greeting} to everyone enjoying their time in {place}.",
+    "{greeting}! Let's take a look around {place} and the rest of Marion "
+        "County.",
+  ];
+
   int _cyclePosition = 0; // 0=INFORMATION, 1=WILDLIFE, 2=SONG GAP
   int _teaserPhraseCursor = 0;
   int _sessionOpenerCursor = 0;
   int _relatedTransitionCursor = 0;
+  int _greetingCursor = 0;
 
   Map<ExploreCategory, List<ExploreCandidate>> _pool = const {};
   final Map<ExploreCategory, Set<String>> _played = {};
@@ -559,6 +579,31 @@ class ExploreRotationScheduler {
     );
   }
 
+  /// A personalized time-of-day + place greeting ("Good afternoon to
+  /// everyone listening here in Ocklawaha..."), varied via a round-robin
+  /// cursor (never the same wording twice while others are unused — spec:
+  /// "Do NOT use the exact same greeting every time"). [place] is a town
+  /// name or "`<County> County`" fallback, resolved by the caller
+  /// (`playerLocationContextProvider`) — never invented here.
+  AudioSegment greetingSegment(String place) {
+    final template =
+        _kGreetingTemplates[_greetingCursor % _kGreetingTemplates.length];
+    _greetingCursor++;
+    final text = template
+        .replaceFirst('{greeting}', greetingForTime(DateTime.now()))
+        .replaceFirst('{place}', place);
+    return AudioSegment(
+      id: 'explore:greeting:${DateTime.now().microsecondsSinceEpoch}',
+      title: 'Welcome',
+      type: AudioSegmentType.gpsNarration,
+      priority: PlaybackPriority.scheduledAnnouncement,
+      spokenText: text,
+      tags: const ['explore', 'greeting'],
+      interruptible: false,
+      resumeAfter: true,
+    );
+  }
+
   ExploreCandidate? _selectWildlife() {
     for (final cat in [
       ExploreCategory.wildlife,
@@ -609,6 +654,7 @@ class ExploreRotationScheduler {
     _teaserPhraseCursor = 0;
     _sessionOpenerCursor = 0;
     _relatedTransitionCursor = 0;
+    _greetingCursor = 0;
   }
 
   AudioSegment _toSegment(

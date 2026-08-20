@@ -109,6 +109,19 @@ class RadioEngineService {
   /// spec section 7.
   void setExploreMode(bool enabled) => exploreMode = enabled;
 
+  /// Whether the traveler is currently stationary (not walking/biking/
+  /// driving) — set externally from the GPS layer, exactly like
+  /// [exploreMode]/[setExploreMode]. Used only to decide whether a fresh
+  /// Explore cold start should open with a personalized greeting (spec:
+  /// "PERSONALIZED GREETING -> LOCAL INFORMATION" when the listener is
+  /// sitting still) — moving Explore behavior is unaffected.
+  bool isStationary = false;
+
+  /// The traveler's current place name (a town, or "`<County> County`" when
+  /// no town resolves) for the Explore greeting — null when not yet known. Set
+  /// externally exactly like [isStationary]; never invented downstream.
+  String? currentPlaceName;
+
   final StreamController<RadioEvent> _events =
       StreamController<RadioEvent>.broadcast();
 
@@ -142,10 +155,37 @@ class RadioEngineService {
 
   /// The core "what plays next" decision:
   ///   1. serve the highest-priority queued item, else
-  ///   2. fall back to the station's next music track (respecting preferences).
+  ///   2. on a genuine EXPLORE cold start, try Explore's own rotation
+  ///      before ever falling to music, else
+  ///   3. fall back to the station's next music track (respecting preferences).
   PlaybackQueueItem? _takeNext() {
     final queued = queue.skip();
     if (queued != null) return queued;
+
+    // EXPLORE is discovery-first, not music-first (spec). Ordinarily
+    // explore.due() is only consulted from _injectScheduledContent, which
+    // itself only runs after a MUSIC segment finishes — so without this
+    // check, the very FIRST thing Explore ever plays (the first Play tap, or
+    // any resume after stop()/a station change) would always be a song,
+    // regardless of exploreMode, simply because nothing has been queued yet.
+    // Guarded by history.all.isEmpty so this only ever fires once per
+    // session: the first segment played always records into history, so
+    // every subsequent empty-queue moment (including the legitimate SONG GAP
+    // cycle position) skips this branch and falls through exactly as before.
+    if (exploreMode && history.all.isEmpty) {
+      final segments = <AudioSegment>[];
+      final place = currentPlaceName;
+      if (isStationary && place != null && place.trim().isNotEmpty) {
+        segments.add(explore.greetingSegment(place));
+      }
+      segments.addAll(explore.due());
+      for (final segment in segments) {
+        if (!preferences.allowsTags(segment.tags)) continue;
+        queue.insertPriority(segment, origin: QueueOrigin.scheduledStory);
+      }
+      final firstQueued = queue.skip();
+      if (firstQueued != null) return firstQueued;
+    }
 
     final music = musicScheduler.next(station);
     if (music == null) return null;

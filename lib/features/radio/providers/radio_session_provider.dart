@@ -771,8 +771,26 @@ void _attachExplore(Ref ref, RadioEngineService engine) {
     }
   }
 
+  // Explore is discovery-first, not music-first (spec): a fresh, stationary
+  // session should open with a personalized greeting before local
+  // discovery, never a plain song. Pushes the GPS-derived signals
+  // RadioEngineService._takeNext needs for its cold-start check — reuses the
+  // SAME already-computed movement classification (TravelContext.isMoving,
+  // backed by SpeedService) and the SAME place-name resolution
+  // (playerLocationContextProvider.title) _whereYouAreCandidate already
+  // reads elsewhere — no new GPS/geocoding work.
+  void syncGpsDerivedExploreFields() {
+    final travel = ref.read(gpsControllerProvider);
+    engine.isStationary = !travel.isMoving;
+    engine.currentPlaceName = ref.read(playerLocationContextProvider)?.title;
+  }
+
+  syncGpsDerivedExploreFields();
   checkUrgent();
-  ref.listen(gpsControllerProvider, (_, _) => checkUrgent());
+  ref.listen(gpsControllerProvider, (_, _) {
+    syncGpsDerivedExploreFields();
+    checkUrgent();
+  });
 }
 
 // --- GPS geofence → radio (Supabase `geofences` + get_nearby_geofences) ------

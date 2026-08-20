@@ -554,6 +554,56 @@ void main() {
     });
   });
 
+  group('ExploreRotationScheduler.greetingSegment', () {
+    test('interpolates the given place name and varies wording across calls '
+        '(round-robin, no repeat while other phrasing is unused)', () {
+      final s = ExploreRotationScheduler();
+      final texts = [
+        s.greetingSegment('Ocklawaha').spokenText,
+        s.greetingSegment('Ocklawaha').spokenText,
+        s.greetingSegment('Ocklawaha').spokenText,
+      ];
+      for (final t in texts) {
+        expect(t, contains('Ocklawaha'));
+      }
+      expect(texts.toSet().length, 3,
+          reason: 'three calls should not repeat the same template');
+    });
+
+    test('carries a time-of-day greeting ("Good morning/afternoon/evening")',
+        () {
+      final s = ExploreRotationScheduler();
+      final text = s.greetingSegment('Ocala').spokenText!;
+      expect(
+        text.contains('Good morning') ||
+            text.contains('Good afternoon') ||
+            text.contains('Good evening'),
+        isTrue,
+      );
+    });
+
+    test('is not tied to the no-repeat played-content pool — never counted '
+        'in hasPlayed', () {
+      final s = ExploreRotationScheduler();
+      final seg = s.greetingSegment('Belleview');
+      expect(seg.tags, contains('greeting'));
+      expect(seg.resumeAfter, isTrue);
+      // No category tracks a "greeting" id — confirms this is a synthesized
+      // beat, not a pool/exhaustion-tracked candidate like other content.
+      for (final cat in ExploreCategory.values) {
+        expect(s.hasPlayed(cat, seg.id), isFalse);
+      }
+    });
+
+    test('reset() restarts the wording cursor from the beginning', () {
+      final s = ExploreRotationScheduler();
+      final before = s.greetingSegment('Dunnellon').spokenText;
+      s.reset();
+      final after = s.greetingSegment('Dunnellon').spokenText;
+      expect(after, before);
+    });
+  });
+
   group('ExploreRotationScheduler.urgent (location-priority interruption)', () {
     test('fires once for a close candidate, then stays quiet for the same id', () {
       final s = ExploreRotationScheduler();
@@ -703,8 +753,9 @@ void main() {
       engine.djBanter.enabled = false;
       engine.station.load(station: station, playlist: playlist);
 
+      // Discovery-first: start() alone must already surface Explore content
+      // — no song, and no extra onSegmentCompleted() needed to reveal it.
       engine.start();
-      engine.onSegmentCompleted(); // song ends → Explore checked immediately
       final current = engine.playback.current!.segment;
       expect(current.title, contains('marion-fact'));
       expect(current.tags, contains('explore'));
@@ -739,8 +790,9 @@ void main() {
       engine.djBanter.enabled = false;
       engine.station.load(station: station, playlist: playlist);
 
+      // Discovery-first: start() alone queues and immediately begins the
+      // session — no song, no extra onSegmentCompleted() needed first.
       engine.start();
-      engine.onSegmentCompleted(); // song ends → session queued (5 segments)
 
       // First beat: the session-opener.
       expect(engine.playback.current!.segment.tags, contains('session_opener'));
@@ -777,6 +829,117 @@ void main() {
       engine.onSegmentCompleted();
       final current = engine.playback.current!.segment;
       expect(current.tags, contains('wildlife'));
+    });
+
+    test('a STATIONARY cold start with a resolvable place opens with the '
+        'personalized greeting, before any other discovery content', () {
+      final explore = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
+        });
+      final engine = buildEngine(explore: explore)
+        ..isStationary = true
+        ..currentPlaceName = 'Ocklawaha';
+      engine.djBanter.enabled = false;
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final first = engine.playback.current!.segment;
+      expect(first.tags, contains('greeting'));
+      expect(first.spokenText, contains('Ocklawaha'));
+
+      // The greeting is followed by discovery content, not a song.
+      engine.onSegmentCompleted();
+      final second = engine.playback.current!.segment;
+      expect(second.title, contains('marion-fact'));
+    });
+
+    test('a MOVING cold start does not play a greeting, but still does not '
+        'start with a song when relevant content exists', () {
+      final explore = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
+        });
+      final engine = buildEngine(explore: explore)
+        ..isStationary = false
+        ..currentPlaceName = 'Ocklawaha';
+      engine.djBanter.enabled = false;
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final current = engine.playback.current!.segment;
+      expect(current.tags, isNot(contains('greeting')));
+      expect(current.title, contains('marion-fact'));
+    });
+
+    test('a cold start with no resolvable place name skips the greeting '
+        'even while stationary — never invents a place', () {
+      final explore = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.county: [_c('marion-fact', ExploreCategory.county)],
+        });
+      final engine = buildEngine(explore: explore)..isStationary = true;
+      // currentPlaceName left null.
+      engine.djBanter.enabled = false;
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final current = engine.playback.current!.segment;
+      expect(current.tags, isNot(contains('greeting')));
+      expect(current.title, contains('marion-fact'));
+    });
+
+    test('a cold start with truly nothing due anywhere — and no resolvable '
+        'place, so not even a greeting — still falls through to music, '
+        'never silent', () {
+      final engine = buildEngine(explore: ExploreRotationScheduler());
+      // isStationary/currentPlaceName left at their defaults (false/null).
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final current = engine.playback.current!.segment;
+      expect(current.type, AudioSegmentType.music);
+    });
+
+    test('a STATIONARY cold start with a place but genuinely no discovery '
+        'content anywhere still plays the greeting (not silent, not a song '
+        '— the greeting alone is still a meaningful opening)', () {
+      final engine = buildEngine(explore: ExploreRotationScheduler())
+        ..isStationary = true
+        ..currentPlaceName = 'Ocklawaha';
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start();
+      final current = engine.playback.current!.segment;
+      expect(current.tags, contains('greeting'));
+    });
+
+    test('the cold-start Explore-first check only ever fires once per '
+        'session — once history is non-empty, the normal SONG GAP cadence '
+        'is completely untouched', () {
+      final explore = ExploreRotationScheduler()
+        ..updateCandidates({
+          ExploreCategory.county: [
+            _c('marion-fact', ExploreCategory.county),
+          ],
+        });
+      final engine = buildEngine(explore: explore);
+      engine.djBanter.enabled = false;
+      engine.station.load(station: station, playlist: playlist);
+
+      engine.start(); // INFORMATION plays first (discovery-first)
+      expect(engine.playback.current!.segment.tags, contains('county'));
+
+      // Completing that (non-music) segment falls straight to a real song —
+      // NOT back through the cold-start branch a second time, since history
+      // is no longer empty. That song completing then drives the normal
+      // WILDLIFE slot (empty this lap) via _injectScheduledContent exactly
+      // as it always has, landing on another real song.
+      engine.onSegmentCompleted();
+      engine.onSegmentCompleted();
+      expect(engine.playback.current!.segment.type, AudioSegmentType.music,
+          reason: 'the normal cycle is unaffected once the one-time '
+              'cold-start branch has already fired');
     });
   });
 }
