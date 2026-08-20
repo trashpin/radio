@@ -64,6 +64,7 @@ class ExploreCandidate {
     this.aheadPriority = 1000,
     this.sessionKey,
     this.isAheadOfTravel = true,
+    this.ambientAudioUrl,
   });
 
   final String id;
@@ -121,6 +122,15 @@ class ExploreCandidate {
   /// fallback tier via [_pick], but never masquerades as an ahead-of-travel
   /// reveal worth building a full travel-companion session around.
   final bool isAheadOfTravel;
+
+  /// A very quiet, looping ambient bed (flowing water under a springs story,
+  /// birds under a bird story, ...) that MAY play underneath this piece's own
+  /// narration -- optional, admin-authored (see `ambient_type` on
+  /// `location_content`), resolved to a playable URL by the provider layer
+  /// before this candidate is built (this class stays pure/synchronous, per
+  /// its own class doc, so it never looks anything up itself). Null means no
+  /// ambient association exists for this piece -- never forced.
+  final String? ambientAudioUrl;
 
   bool get isPlayable =>
       (audioUrl ?? '').trim().isNotEmpty || (spokenText ?? '').trim().isNotEmpty;
@@ -860,6 +870,11 @@ class ExploreRotationScheduler {
       interruptible: false,
       resumeAfter: resumeAfter,
       tellMeMoreContext: c.tellMeMoreContext,
+      // Never on a teaser -- it speaks generic pre-arrival phrasing, not the
+      // piece's own narration, so its ambient association (if any) belongs on
+      // the real story later, not this placeholder line.
+      ambientAudioUrl:
+          c.category == ExploreCategory.teaser ? null : c.ambientAudioUrl,
     );
   }
 }

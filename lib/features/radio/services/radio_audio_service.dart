@@ -4,6 +4,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 
 import 'package:explorer_os_mobile/features/radio/events/radio_event.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
+import 'package:explorer_os_mobile/features/radio/services/ambient_audio_player.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_player_port.dart';
 import 'package:explorer_os_mobile/features/radio/services/radio_engine_service.dart';
 
@@ -70,13 +71,21 @@ class RadioAudioService {
     required this.engine,
     required this.port,
     Speaker? speaker,
-  }) : _speaker = speaker ?? TtsSpeaker() {
+    AmbientPlayer? ambient,
+  })  : _speaker = speaker ?? TtsSpeaker(),
+        _ambient = ambient ?? JustAudioAmbientPlayer() {
     _speaker.onComplete = _finishSpeaking;
   }
 
   final RadioEngineService engine;
   final AudioPlayerPort port;
   final Speaker _speaker;
+
+  /// The optional, very quiet background layer under Explore narration (e.g.
+  /// flowing water under a Silver Springs story) -- entirely separate from
+  /// [port], so it never interferes with music/narration playback. See
+  /// [_updateAmbient].
+  final AmbientPlayer _ambient;
 
   StreamSubscription<RadioEvent>? _eventSub;
   StreamSubscription<void>? _completionSub;
@@ -98,6 +107,15 @@ class RadioAudioService {
   Future<void> _onEvent(RadioEvent event) async {
     switch (event) {
       case SegmentStarted(:final segment):
+        // Every new segment first settles the ambient layer: fade out
+        // whatever was playing (so it never bleeds into the next segment --
+        // spec: "ambient does not continue into the next segment," "never
+        // allow ambient audio to accidentally continue underneath music"),
+        // then fade a fresh one in only if THIS segment is Explore narration
+        // that actually has one associated. Doing this unconditionally, first,
+        // covers every transition (narration → narration, narration → music,
+        // narration → interruption) with one hook.
+        await _updateAmbient(segment);
         // Dynamically-generated DJ banter: speak it (no pre-recorded clip),
         // then advance the engine when the speech ends.
         final text = segment.spokenText;
@@ -149,6 +167,7 @@ class RadioAudioService {
         if (_speaking) await _speaker.stop();
         _speaking = false;
         await port.stop();
+        await _ambient.stop();
       case VolumeChanged(:final volume):
         await port.setVolume(volume);
       case MuteChanged(:final muted):
@@ -188,6 +207,26 @@ class RadioAudioService {
     }
   }
 
+  /// Starts/stops the ambient layer for [segment]. Only ever fires for
+  /// genuine Explore narration (`tags` contains `'explore'` -- the same
+  /// discriminator `ExploreRotationScheduler` already tags every segment it
+  /// produces with) that isn't music and actually has an
+  /// [AudioSegment.ambientAudioUrl] set; everything else (music, Radio-mode
+  /// GPS banter, DJ Sunny banter, safety/wildlife alerts, plain Explore
+  /// pieces with no ambient association) just fades whatever was playing out.
+  Future<void> _updateAmbient(AudioSegment segment) async {
+    final url = segment.ambientAudioUrl;
+    final isExploreNarration = segment.tags.contains('explore') &&
+        segment.type != AudioSegmentType.music &&
+        url != null &&
+        url.trim().isNotEmpty;
+    if (isExploreNarration) {
+      await _ambient.play(url);
+    } else {
+      await _ambient.stop();
+    }
+  }
+
   void _finishSpeaking() {
     if (!_speaking) return;
     _speaking = false;
@@ -209,6 +248,7 @@ class RadioAudioService {
     try {
       await _speaker.stop();
     } catch (_) {}
+    await _ambient.dispose();
     await port.dispose();
   }
 }

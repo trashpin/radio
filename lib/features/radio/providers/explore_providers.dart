@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/admin/counties/county_config.dart';
+import 'package:explorer_os_mobile/features/ambient_sounds/data/ambient_sounds_repository.dart';
+import 'package:explorer_os_mobile/features/ambient_sounds/models/ambient_sound.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_config_repository.dart';
 import 'package:explorer_os_mobile/features/destinations/data/master_destination_repository.dart';
 import 'package:explorer_os_mobile/features/destinations/models/master_destination.dart';
@@ -512,11 +514,34 @@ List<ExploreCandidate> _countyCandidates(Ref ref) {
 /// player's own PARK/SPRING cap (5mi) since towns cover more ground.
 const double _kWhereYouAreTownMaxMeters = 10 * 1609.344;
 
+/// Resolves a content record's optional `ambient_type` (e.g. `flowing_water`)
+/// against the active [ambientSounds] library into an actual playable URL,
+/// picking a fresh clip from the type's pool each time so several items
+/// sharing a type don't all get the exact same recording (spec: "allow the
+/// system to vary them"). [cursor] is caller-owned so each call to
+/// [_fromLocationContent] gets its own independent rotation. Returns null
+/// (no ambient) when the type is unset/`none`, or nothing active matches it
+/// — never forces one.
+String? _resolveAmbientAudio(
+  String? ambientType,
+  Map<String, List<AmbientSound>> ambientSounds,
+  Map<String, int> cursor,
+) {
+  final type = (ambientType ?? '').trim().toLowerCase();
+  if (type.isEmpty || type == 'none') return null;
+  final pool = ambientSounds[type];
+  if (pool == null || pool.isEmpty) return null;
+  final i = cursor[type] ?? 0;
+  cursor[type] = i + 1;
+  return pool[i % pool.length].audioUrl;
+}
+
 Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
   List<ContentItem> items,
   List<MasterLocation> masterLocations, {
   double? userLat,
   double? userLng,
+  Map<String, List<AmbientSound>> ambientSounds = const {},
 }) {
   final out = <ExploreCategory, List<ExploreCandidate>>{
     ExploreCategory.whereYouAre: [],
@@ -525,6 +550,7 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
     ExploreCategory.nature: [],
     ExploreCategory.history: [],
   };
+  final ambientCursor = <String, int>{};
   for (final item in items) {
     final county = (item.county ?? '').trim().toLowerCase();
     if (county.isNotEmpty && county != 'marion') continue;
@@ -568,6 +594,8 @@ Map<ExploreCategory, List<ExploreCandidate>> _fromLocationContent(
       latitude: lat,
       longitude: lng,
       distanceMeters: distanceMeters,
+      ambientAudioUrl:
+          _resolveAmbientAudio(item.ambientType, ambientSounds, ambientCursor),
     ));
   }
   return out;
@@ -854,6 +882,7 @@ final exploreCandidatesProvider =
   final masterLocations = ref.watch(masterLocationsProvider).value ??
       const <MasterLocation>[];
   final userLoc = ref.watch(gpsControllerProvider).location;
+  final ambientSounds = ref.watch(activeAmbientSoundsByTypeProvider);
   _mergeInto(
     pool,
     _fromLocationContent(
@@ -861,6 +890,7 @@ final exploreCandidatesProvider =
       masterLocations,
       userLat: userLoc?.latitude,
       userLng: userLoc?.longitude,
+      ambientSounds: ambientSounds,
     ),
   );
 

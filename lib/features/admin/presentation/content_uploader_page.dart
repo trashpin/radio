@@ -10,6 +10,8 @@ import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/image_match/filename_normalizer.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
+import 'package:explorer_os_mobile/features/ambient_sounds/models/ambient_sound.dart'
+    show kAmbientSoundTypes;
 
 /// One editable field in a content form.
 class FieldSpec {
@@ -407,6 +409,25 @@ const scheduleConfig = ContentConfig(
     FieldSpec('station', 'Station (blank = all)'),
     FieldSpec('park_code', 'Park code', defaultValue: 'ocala'),
     FieldSpec('priority', 'Priority (0-10)', number: true, defaultValue: '5'),
+  ],
+);
+
+const ambientSoundsConfig = ContentConfig(
+  table: 'ambient_sounds',
+  title: 'Ambient Sounds',
+  subtitle: 'Reusable looping background clips Location Content can '
+      'optionally point at (see its "Ambient sound" field) — played very '
+      'quietly under Explore narration, never under music.',
+  titleColumn: 'name',
+  subtitleColumns: ['type'],
+  defaults: {'active': true},
+  audioBucket: 'ambient-sounds',
+  audioColumn: 'audio_url',
+  fields: [
+    FieldSpec('name', 'Name', required: true),
+    FieldSpec('type', 'Type',
+        options: kAmbientSoundTypes, defaultValue: 'flowing_water'),
+    FieldSpec('description', 'Description (optional)', multiline: true),
   ],
 );
 

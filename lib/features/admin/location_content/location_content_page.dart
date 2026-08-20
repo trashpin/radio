@@ -5,6 +5,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/location_content/location_content_admin_repository.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
+import 'package:explorer_os_mobile/features/ambient_sounds/models/ambient_sound.dart'
+    show kAmbientSoundTypes;
 import 'package:explorer_os_mobile/features/location_intelligence/models/content_item.dart';
 
 /// Admin → Location Content. One place to manage every geocoded "where you are"
@@ -445,6 +447,7 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
   late final _text = TextEditingController(text: widget.item?.text ?? '');
   late ContentCategory _category =
       widget.item?.category ?? ContentCategory.countyWelcome;
+  late String? _ambientType = widget.item?.ambientType;
   bool _saving = false;
 
   static final _editable = ContentCategory.values
@@ -478,6 +481,7 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
       'park': _park.text.trim().isEmpty ? null : _park.text.trim(),
       'priority': int.tryParse(_priority.text.trim()) ?? 0,
       'text': _text.text.trim().isEmpty ? null : _text.text.trim(),
+      'ambient_type': _ambientType,
     };
     try {
       if (widget.item == null) {
@@ -542,6 +546,25 @@ class _EditorDialogState extends ConsumerState<_EditorDialog> {
               ]),
               const Gap.v(AppSpacing.sm),
               _f(_text, 'Narration text', maxLines: 4),
+              const Gap.v(AppSpacing.sm),
+              DropdownButtonFormField<String?>(
+                initialValue: _ambientType,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                    labelText: 'Ambient sound (optional)',
+                    helperText: 'A very quiet background layer under this '
+                        "narration, e.g. flowing water. Leave as \"None\" "
+                        "unless it genuinely fits — don't force one.",
+                    helperMaxLines: 2,
+                    isDense: true,
+                    border: OutlineInputBorder()),
+                items: [
+                  const DropdownMenuItem(value: null, child: Text('None')),
+                  for (final t in kAmbientSoundTypes)
+                    DropdownMenuItem(value: t, child: Text(t)),
+                ],
+                onChanged: (v) => setState(() => _ambientType = v),
+              ),
             ],
           ),
         ),

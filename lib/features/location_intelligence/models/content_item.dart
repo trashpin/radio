@@ -171,6 +171,7 @@ class ContentItem {
     this.lastPlayed,
     this.audioUrl,
     this.text,
+    this.ambientType,
   });
 
   final String id;
@@ -196,6 +197,12 @@ class ContentItem {
   final DateTime? lastPlayed;
   final String? audioUrl;
   final String? text;
+
+  /// Optional ambient-sound TYPE (e.g. `flowing_water`, `birds`) this piece's
+  /// narration may play underneath, admin-authored per content record —
+  /// resolved to a playable clip against the `ambient_sounds` library by the
+  /// Explore candidate builder. Null/`none` means no ambient association.
+  final String? ambientType;
 
   bool get hasCoordinates => latitude != 0 || longitude != 0;
 
@@ -224,6 +231,7 @@ class ContentItem {
         lastPlayed: DateTime.tryParse('${j['last_played']}'),
         audioUrl: j['audio_url'] as String?,
         text: j['text'] as String?,
+        ambientType: j['ambient_type'] as String?,
       );
 
   ContentItem copyWith({int? playCount, DateTime? lastPlayed}) => ContentItem(
@@ -245,5 +253,6 @@ class ContentItem {
         lastPlayed: lastPlayed ?? this.lastPlayed,
         audioUrl: audioUrl,
         text: text,
+        ambientType: ambientType,
       );
 }

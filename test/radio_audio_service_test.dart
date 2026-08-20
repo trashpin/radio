@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/services/ambient_audio_player.dart';
 import 'package:explorer_os_mobile/features/radio/services/announcement_scheduler.dart';
 import 'package:explorer_os_mobile/features/radio/services/audio_player_port.dart';
 import 'package:explorer_os_mobile/features/radio/services/gps_audio_scheduler.dart';
@@ -52,6 +53,36 @@ class FakeAudioPlayerPort implements AudioPlayerPort {
   void finishCurrent() => _completions.add(null);
 }
 
+/// Fake speaker: records spoken text and completes immediately (mirrors
+/// dj_runtime_test.dart's FakeSpeaker).
+class FakeSpeaker implements Speaker {
+  final List<String> spoken = [];
+  void Function()? _cb;
+  @override
+  set onComplete(void Function() cb) => _cb = cb;
+  @override
+  Future<void> speak(String text) async {
+    spoken.add(text);
+    _cb?.call();
+  }
+
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> stop() async {}
+}
+
+class FakeAmbientPlayer implements AmbientPlayer {
+  final List<String> played = [];
+  int stops = 0;
+  @override
+  Future<void> play(String url) async => played.add(url);
+  @override
+  Future<void> stop() async => stops++;
+  @override
+  Future<void> dispose() async {}
+}
+
 RadioEngineService buildEngine() => RadioEngineService(
       queue: QueueManagerService(),
       playback: PlaybackController(),
@@ -91,6 +122,46 @@ const _narration = AudioSegment(
   audioUrl: 'https://audio/n1.mp3',
   interruptible: false,
   resumeAfter: true,
+);
+const _exploreWithAmbient = AudioSegment(
+  id: 'e1',
+  title: 'Silver Springs',
+  type: AudioSegmentType.gpsNarration,
+  priority: PlaybackPriority.scheduledAnnouncement,
+  spokenText: 'Silver Springs is one of Florida\'s most remarkable natural landmarks.',
+  tags: ['explore', 'whereYouAre'],
+  interruptible: false,
+  resumeAfter: true,
+  ambientAudioUrl: 'https://ambient/water.mp3',
+);
+const _exploreNoAmbient = AudioSegment(
+  id: 'e2',
+  title: 'A town fact',
+  type: AudioSegmentType.gpsNarration,
+  priority: PlaybackPriority.scheduledAnnouncement,
+  spokenText: 'A fact about this town.',
+  tags: ['explore', 'whereYouAre'],
+  interruptible: false,
+  resumeAfter: true,
+);
+const _exploreMusicWithAmbientTag = AudioSegment(
+  id: 'e-music',
+  title: 'A song',
+  type: AudioSegmentType.music,
+  priority: PlaybackPriority.music,
+  audioUrl: 'https://audio/song.mp3',
+  tags: ['explore'],
+  ambientAudioUrl: 'https://ambient/water.mp3',
+);
+const _nonExploreNarrationWithAmbient = AudioSegment(
+  id: 'r1',
+  title: 'Radio-mode GPS banter',
+  type: AudioSegmentType.gpsNarration,
+  priority: PlaybackPriority.scheduledAnnouncement,
+  spokenText: 'You are entering Marion County.',
+  interruptible: true,
+  resumeAfter: true,
+  ambientAudioUrl: 'https://ambient/water.mp3',
 );
 
 void main() {
@@ -184,5 +255,109 @@ void main() {
     await settle();
     expect(port.played.last, 'https://audio/s1.mp3'); // back to the song
     expect(port.seeks, [const Duration(seconds: 30)]); // at the exact spot
+  });
+
+  group('ambient sound layer (Explore narration only, never under music)', () {
+    test('starts the ambient bed under Explore narration that has one', () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_exploreWithAmbient);
+      engine.play();
+      await settle();
+      expect(ambient.played, ['https://ambient/water.mp3']);
+    });
+
+    test('does not start ambient for Explore narration with no association',
+        () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_exploreNoAmbient);
+      engine.play();
+      await settle();
+      expect(ambient.played, isEmpty);
+      expect(ambient.stops, greaterThan(0)); // settles to "nothing playing"
+    });
+
+    test('never starts ambient under a music segment, even if one is tagged '
+        '"explore" and carries an ambientAudioUrl', () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_exploreMusicWithAmbientTag);
+      engine.play();
+      await settle();
+      expect(ambient.played, isEmpty,
+          reason: 'MUSIC + NARRATION = NEVER applies to ambient too');
+    });
+
+    test('never starts ambient under non-Explore narration (e.g. ordinary '
+        'Radio-mode GPS banter), even if it somehow carried an '
+        'ambientAudioUrl', () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_nonExploreNarrationWithAmbient);
+      engine.play();
+      await settle();
+      expect(ambient.played, isEmpty);
+    });
+
+    test('ambient fades out before the next segment starts, whatever it is '
+        '— never bleeds from one segment into the next', () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_exploreWithAmbient);
+      engine.enqueue(_exploreNoAmbient);
+      engine.play();
+      await settle(); // FakeSpeaker completes instantly, so both segments run.
+
+      expect(ambient.played, ['https://ambient/water.mp3'],
+          reason: 'ambient only ever started once, for the segment that had '
+              'one');
+      expect(ambient.stops, greaterThanOrEqualTo(1),
+          reason: 'faded out at (or before) the no-ambient segment, never '
+              'left running underneath it');
+    });
+
+    test('PlaybackStopped stops the ambient layer too', () async {
+      final engine = buildEngine();
+      final port = FakeAudioPlayerPort();
+      final ambient = FakeAmbientPlayer();
+      RadioAudioService(
+              engine: engine, port: port, speaker: FakeSpeaker(), ambient: ambient)
+          .attach();
+
+      engine.enqueue(_exploreWithAmbient);
+      engine.play();
+      await settle();
+      expect(ambient.played, ['https://ambient/water.mp3']);
+
+      engine.stop();
+      await settle();
+      expect(ambient.stops, greaterThan(0));
+    });
   });
 }

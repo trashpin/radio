@@ -83,6 +83,7 @@ class AudioSegment {
     this.resumeAfter = false,
     this.spokenText,
     this.tellMeMoreContext,
+    this.ambientAudioUrl,
   });
 
   final String id;
@@ -134,6 +135,12 @@ class AudioSegment {
   /// context (e.g. music, generic TTS filler).
   final TellMeMoreContext? tellMeMoreContext;
 
+  /// A very quiet, looping background bed (flowing water, birds, ...) that
+  /// MAY play underneath this segment while it speaks -- optional, and only
+  /// ever meaningful for spoken narration (never set on music). See
+  /// `RadioAudioService._updateAmbient` and `AmbientPlayer`.
+  final String? ambientAudioUrl;
+
   AudioSegment copyWith({PlaybackPriority? priority}) => AudioSegment(
         id: id,
         title: title,
@@ -153,6 +160,7 @@ class AudioSegment {
         resumeAfter: resumeAfter,
         spokenText: spokenText,
         tellMeMoreContext: tellMeMoreContext,
+        ambientAudioUrl: ambientAudioUrl,
       );
 
   // --- Factories: map source content into normalized segments --------------
