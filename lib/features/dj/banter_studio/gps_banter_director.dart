@@ -165,6 +165,15 @@ String fillBanter(String template, GpsBanterContext ctx) {
 /// something to say from a priority list), respecting cooldown and never
 /// repeating the same banter during a trip, then fills its GPS placeholders into
 /// a conversational line. Pure + deterministic under an injected [Random].
+/// DJ Sunny's permanent voice — ElevenLabs "DJ Brittney". Matches
+/// `kDjSunnyVoiceId` in `lib/features/radio/services/dj_banter_scheduler.dart`
+/// (not imported directly to avoid a circular import — that file already
+/// imports this one). A clip with recorded audio in any OTHER voice is never
+/// eligible for selection: it either gets re-voiced in this voice or falls
+/// back to live TTS (still spoken as DJ Sunny), but a stale recording in the
+/// old voice can never be picked — see [GpsBanterDirector.eligible].
+const String _kDjSunnyVoiceId = 'kPzsL2i3teMYv0FxEYQ6';
+
 class GpsBanterDirector {
   GpsBanterDirector({Random? random}) : _rng = random ?? Random();
 
@@ -172,7 +181,10 @@ class GpsBanterDirector {
 
   /// Clips eligible right now for [category]: published, matching the current
   /// destination (or clip has no destination / matches GPS region), fitting the
-  /// guide mode, not already played this trip, and not in the recent cooldown.
+  /// guide mode, not already played this trip, not in the recent cooldown, and
+  /// — if it has recorded audio at all — voiced in DJ Sunny's own voice (a
+  /// clip with no audio yet is still eligible; it just speaks its text live
+  /// via TTS instead of playing a recording).
   List<DjBanterClip> eligible(
     List<DjBanterClip> library,
     BanterCategory category,
@@ -184,6 +196,7 @@ class GpsBanterDirector {
       if (c.category != category) return false;
       if (!c.isPublished) return false;
       if ((c.text).trim().isEmpty && !c.hasAudio) return false;
+      if (c.hasAudio && c.voiceId != _kDjSunnyVoiceId) return false;
       if (!_matchesLocation(c, ctx)) return false;
       if (!_matchesGuide(c, ctx)) return false;
       if (ctx.moment != null && !clipMatchesMoment(c.tags, ctx.moment!)) {

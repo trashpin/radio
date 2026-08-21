@@ -310,19 +310,20 @@ class DjBanterScheduler {
     return seg == null ? null : _fromSegment(seg);
   }
 
+  /// Only ever returns a clip actually recorded in DJ Sunny's own voice
+  /// ([voiceId], "DJ Brittney") — no fallback to a clip recorded in any other
+  /// voice, so an old-voice recording can never be selected even if nothing
+  /// in the new voice matches yet (the scheduler falls back further, to live
+  /// TTS, in that case — see [onMusicPlayed]'s own fallback chain).
   DjClip? _pickClip(DjStation station, BanterSituation situation) {
     final matches = _clips
         .where((c) =>
             c.situation == situation &&
-            (c.station == station || c.station == DjStation.all))
+            (c.station == station || c.station == DjStation.all) &&
+            c.voiceId == voiceId)
         .toList();
     if (matches.isEmpty) return null;
-    // DJ Sunny's voice (DJ Brittney) is preferred whenever a matching clip
-    // was actually recorded in it; falls back to any matching clip so
-    // nothing regresses for clips voiced before this pinning existed.
-    final sunny = matches.where((c) => c.voiceId == voiceId).toList();
-    final pool = sunny.isNotEmpty ? sunny : matches;
-    return pool[_rng.nextInt(pool.length)];
+    return matches[_rng.nextInt(matches.length)];
   }
 
   /// Maps a radio station name to a DJ station flavor for template selection.
