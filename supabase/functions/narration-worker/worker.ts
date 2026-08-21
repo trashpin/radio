@@ -12,6 +12,12 @@
 //                         OR (notes "radio_segment:*") voice a Radio Automation segment
 //                         OR (notes "location_content:*") voice a Location Content record
 //                         OR (notes "dj_banter:*") voice a batch of DJ Banter Studio clips
+//                         OR (notes "destination_narration:*") re-voice an already-published
+//                         narration in the current voice, in place
+//                         OR (notes "what_is_that:*") generate + voice ONE topic (history,
+//                         what's here now, accessibility, ...) for a "What Is That?"
+//                         selection -- combines locations + a Google Places supplement
+//                         (Places API, cached) via OpenAI, then ElevenLabs
 //                         (ElevenLabs) -> voiceovers bucket + the row's own audio_url column
 //   - wikimedia_import -> find a Commons hero image -> media bucket +
 //                         locations.images + media_assets attribution
@@ -21,7 +27,9 @@
 //
 // Deploy:
 //   supabase functions deploy narration-worker --no-verify-jwt
-//   supabase secrets set OPENAI_API_KEY=... ELEVENLABS_API_KEY=...
+//   supabase secrets set OPENAI_API_KEY=... ELEVENLABS_API_KEY=... GOOGLE_MAPS_API_KEY=...
+//   (GOOGLE_MAPS_API_KEY is optional -- "What Is That?" degrades to our own
+//   database alone, no Google Places supplement, when it's unset)
 // Then schedule it every minute (Supabase dashboard → Edge Functions →
 // Schedules, or pg_cron calling the function URL). SUPABASE_URL and
 // SUPABASE_SERVICE_ROLE_KEY are injected automatically.
@@ -57,6 +65,13 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
   Deno.env.get("SUPABASE_SERVICE_KEY") ?? "";
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const ELEVEN_KEY = Deno.env.get("ELEVENLABS_API_KEY") ?? "";
+// Same key already used client-side for the Maps SDK/Distance Matrix
+// (lib/core/config/env_config.dart) -- reused here server-side ONLY for
+// "What Is That?"'s Google Places supplement. Requires "Places API" (and/or
+// "Places API (New)") enabled for this key in Google Cloud Console; when
+// unset or the API isn't enabled, fetchWitPlaceData degrades to whatever's
+// already cached (or null) rather than failing the whole request.
+const GOOGLE_KEY = Deno.env.get("GOOGLE_MAPS_API_KEY") ?? "";
 
 const MODEL = "gpt-4o-mini";
 const BUCKET = "narration";
@@ -641,6 +656,301 @@ function noteCode(notes: string | null): string | null {
   return m ? m[1] : null;
 }
 
+// Extract a "What Is That?" topic from a job note like "...;topic=<name>".
+function noteTopic(notes: string | null): string | null {
+  const m = /topic=([a-z_]+)/.exec(notes ?? "");
+  return m ? m[1] : null;
+}
+
+// ── "What Is That?": Google Places supplement + OpenAI topic scripts ──────
+//
+// EXPANSION of the existing What Is That? feature (candidate search is
+// untouched -- lib/features/what_is_that/services/what_is_that_search.dart).
+// Adds a second, independent verified-facts source (Google Places, cached
+// per location) and an on-demand, per-topic spoken script (OpenAI, grounded
+// ONLY in our own `locations` fields + the Places cache), voiced with the
+// SAME ElevenLabs pipeline/voice every other narration type already uses.
+// Our `locations` table stays the primary source; Places only ever
+// supplements it -- never overwrites a `locations` column.
+const WIT_PLACE_STALE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+const WIT_TOPICS: Record<string, { label: string; guidance: string }> = {
+  history: {
+    label: "History",
+    guidance: "Explain the verified HISTORY of this place -- when or why it " +
+      "came to be, and how it changed over time. Use ONLY the historical " +
+      "facts provided below.",
+  },
+  unique_features: {
+    label: "Unique Features",
+    guidance: "Describe what makes this place UNIQUE or DISTINCTIVE, using " +
+      "ONLY the verified details provided below.",
+  },
+  whats_here_now: {
+    label: "What's Here Now",
+    guidance: "Explain what is CURRENTLY here or how this place is used " +
+      "TODAY. If verified current information is provided, describe it " +
+      "plainly; if BOTH historical and current information are provided, " +
+      "you may connect them naturally (e.g. \"originally a general store, " +
+      "today...\"). If no current information is verified, say plainly " +
+      "that current details aren't available -- never guess.",
+  },
+  wildlife_nature: {
+    label: "Wildlife & Nature",
+    guidance: "Describe the WILDLIFE AND NATURE associated with this " +
+      "place, using ONLY the verified natural details provided below.",
+  },
+  things_to_do: {
+    label: "Things To Do",
+    guidance: "Describe THINGS TO DO here, using ONLY the verified " +
+      "activities/amenities provided below.",
+  },
+  accessibility: {
+    label: "Accessibility",
+    guidance: "Describe ACCESSIBILITY information for this place, using " +
+      "ONLY verified accessibility details provided below. If none are " +
+      "verified, say plainly that accessibility information isn't " +
+      "available -- never guess.",
+  },
+  tell_me_more: {
+    label: "Tell Me More",
+    guidance: "Give a natural, general overview of this place, blending " +
+      "its history and current status when both are verified. Use ONLY " +
+      "the information provided below.",
+  },
+};
+
+// Every line traces to a real, non-empty field from our own `locations` row
+// or the Places cache -- nothing here is invented or assumed.
+function buildWitFactSheet(loc: any, place: any | null): string {
+  const lines: string[] = [];
+  const put = (label: string, value: unknown) => {
+    const s = (value ?? "").toString().trim();
+    if (s) lines.push(`- ${label}: ${s}`);
+  };
+  put("Name", loc.name);
+  put("Type", String(loc.category ?? "").replace(/_/g, " "));
+  put("County", loc.county);
+  put("City", loc.city);
+  put("State", loc.state);
+  put("Short description", loc.short_description);
+  put("Long description", loc.long_description);
+  put("Existing narration script", loc.narration_script);
+  put("Hours", loc.hours);
+  put("Admission", loc.admission);
+  put("Tags/activities", (loc.tags ?? []).join(", "));
+  if (loc.wheelchair_accessible === true) {
+    lines.push("- Wheelchair accessible: yes (per our own records)");
+  } else if (loc.wheelchair_accessible === false) {
+    lines.push("- Wheelchair accessible: no (per our own records)");
+  }
+  if (place) {
+    put("Current name (Google Places)", place.current_name);
+    put("Formatted address (Google Places)", place.formatted_address);
+    put("Place type(s) (Google Places)", (place.place_types ?? []).join(", "));
+    put("Current business status (Google Places)", place.business_status);
+    put("Opening hours (Google Places)", place.opening_hours);
+    if (place.wheelchair_accessible === true) {
+      lines.push("- Wheelchair accessible entrance (Google Places): yes");
+    } else if (place.wheelchair_accessible === false) {
+      lines.push("- Wheelchair accessible entrance (Google Places): no");
+    }
+  }
+  return lines.length > 0 ? lines.join("\n") : "(no verified details available)";
+}
+
+// Fetches (and caches) Google Places supplementary data for one location.
+// Degrades to whatever's already cached (or null) when GOOGLE_MAPS_API_KEY
+// isn't set or the API call fails -- never blocks script generation on it.
+async function fetchWitPlaceData(
+  id: string,
+  lat: number,
+  lng: number,
+): Promise<any | null> {
+  const cached = await sbGet(`what_is_that_place_data?location_id=eq.${id}&limit=1`);
+  const existing = cached[0] ?? null;
+  if (existing) {
+    const age = Date.now() - new Date(existing.fetched_at).getTime();
+    if (!Number.isNaN(age) && age < WIT_PLACE_STALE_MS) return existing;
+  }
+  if (!GOOGLE_KEY) return existing;
+
+  try {
+    const nearbyRes = await fetch(
+      `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=75&key=${GOOGLE_KEY}`,
+    );
+    const nearbyData = await nearbyRes.json();
+    const top = (nearbyData.results ?? [])[0];
+    if (!top?.place_id) return existing;
+
+    const fields = "name,formatted_address,type,opening_hours,photo,wheelchair_accessible_entrance,business_status";
+    const detailsRes = await fetch(
+      `https://maps.googleapis.com/maps/api/place/details/json?place_id=${top.place_id}&fields=${fields}&key=${GOOGLE_KEY}`,
+    );
+    const detailsData = await detailsRes.json();
+    const result = detailsData.result ?? {};
+
+    let photoUrl: string | null = existing?.photo_url ?? null;
+    const photoRef = (result.photos ?? [])[0]?.photo_reference;
+    if (photoRef && !photoUrl) {
+      try {
+        const photoRes = await fetch(
+          `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1000&photo_reference=${photoRef}&key=${GOOGLE_KEY}`,
+        );
+        if (photoRes.ok) {
+          const bytes = new Uint8Array(await photoRes.arrayBuffer());
+          const path = `google-places/${id}.jpg`;
+          const up = await fetch(
+            buildSupabaseUrl(`storage/v1/object/${MEDIA_BUCKET}/${path}`),
+            { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "image/jpeg" }, body: bytes as BodyInit },
+          );
+          if (up.ok) {
+            photoUrl = buildSupabaseUrl(`storage/v1/object/public/${MEDIA_BUCKET}/${path}`);
+          }
+        }
+      } catch (_) { /* photo is optional -- never blocks the rest */ }
+    }
+
+    const row = {
+      location_id: id,
+      google_place_id: top.place_id,
+      formatted_address: result.formatted_address ?? null,
+      current_name: result.name ?? null,
+      place_types: result.types ?? [],
+      business_status: result.business_status ?? null,
+      wheelchair_accessible: result.wheelchair_accessible_entrance ?? null,
+      opening_hours: (result.opening_hours?.weekday_text ?? []).join("; ") || null,
+      photo_url: photoUrl,
+      fetched_at: new Date().toISOString(),
+    };
+    if (existing) {
+      await sbPatch(`what_is_that_place_data?location_id=eq.${id}`, row);
+    } else {
+      await sbInsert("what_is_that_place_data", row);
+    }
+    return row;
+  } catch (e) {
+    console.error(`fetchWitPlaceData ${id} failed: ${e}`);
+    return existing;
+  }
+}
+
+// ── audio (what_is_that): generate + voice ONE topic for a selected place ──
+// Triggered by the What Is That? screen's topic picker. Combines our own
+// `locations` record (primary source) with cached Google Places data
+// (supplementary, never overriding it) into a verified fact sheet, asks
+// OpenAI to turn it into a natural spoken script for the requested topic
+// (explicitly forbidden from inventing anything), then voices it with the
+// existing ElevenLabs pipeline in DJ Sunny's own voice. Idempotent: a
+// duplicate job for the same (location, topic) that already has audio is a
+// no-op.
+export async function doWhatIsThatTopic(
+  job: any,
+): Promise<{ done: boolean; msg: string }> {
+  const id = noteLocationId(job.notes);
+  const topic = noteTopic(job.notes);
+  if (!id) return { done: true, msg: "no location id in notes" };
+  if (!topic || !WIT_TOPICS[topic]) {
+    return { done: true, msg: `unknown or missing topic: ${topic}` };
+  }
+
+  const existingRows = await sbGet(
+    `what_is_that_narrations?location_id=eq.${id}&topic=eq.${topic}&limit=1`,
+  );
+  const existing = existingRows[0];
+  if (existing?.audio_url) return { done: true, msg: "already generated" };
+
+  const locRows = await sbGet(
+    `locations?id=eq.${id}&select=id,name,category,county,city,state,latitude,longitude,` +
+      `short_description,long_description,narration_script,hours,admission,tags,` +
+      `wheelchair_accessible&limit=1`,
+  );
+  const loc = locRows[0];
+  if (!loc) return { done: true, msg: `location not found: ${id}` };
+
+  const place = (loc.latitude != null && loc.longitude != null)
+    ? await fetchWitPlaceData(id, loc.latitude, loc.longitude)
+    : null;
+
+  const facts = buildWitFactSheet(loc, place);
+  const topicInfo = WIT_TOPICS[topic];
+
+  let script = "";
+  if (OPENAI_KEY) {
+    try {
+      script = await openaiText(
+        "You are DJ Sunny, the warm, conversational host of Sunshine Travel " +
+          "Radio, speaking directly to a traveler who just asked \"what is " +
+          "that?\" about a specific place. Write ONE short spoken segment " +
+          "(60-100 words), natural and warm, never robotic, never mention " +
+          "being an AI. Use ONLY the verified facts given to you -- never " +
+          "invent historical facts, current businesses, accessibility " +
+          "information, distances, or any other factual detail. If the " +
+          "facts don't cover what's being asked, say plainly that the " +
+          "information isn't available rather than guessing.",
+        `${topicInfo.guidance}\n\nVerified facts about this place:\n${facts}\n\n` +
+          `Write only the spoken segment, no title or quotes.`,
+      );
+    } catch (e) {
+      return { done: false, msg: `OpenAI failed: ${e}` };
+    }
+  }
+  script = script.trim();
+  if (!script) {
+    // No OpenAI key, or an empty result -- fall back to whatever verified
+    // text already exists rather than producing nothing.
+    script = String(loc.long_description || loc.short_description || loc.narration_script || "").trim();
+  }
+  if (!script) return { done: true, msg: "no verified information available for this topic" };
+
+  let audioUrl: string | null = null;
+  let voiceId: string | null = null;
+  if (ELEVEN_KEY) {
+    try {
+      voiceId = (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
+      const tts = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+        {
+          method: "POST",
+          headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+          body: JSON.stringify({ text: script, model_id: "eleven_multilingual_v2" }),
+        },
+      );
+      if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+      const bytes = new Uint8Array(await tts.arrayBuffer());
+      const path = `what_is_that/${id}_${topic}.mp3`;
+      const up = await fetch(
+        buildSupabaseUrl(`storage/v1/object/${VOICEOVERS_BUCKET}/${path}`),
+        { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+      );
+      if (!up.ok) throw new Error(`upload ${up.status}`);
+      audioUrl = buildSupabaseUrl(`storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`);
+    } catch (e) {
+      console.error(`what_is_that voicing ${id}/${topic} failed: ${e}`);
+    }
+  }
+
+  const row = {
+    location_id: id,
+    topic,
+    script,
+    audio_url: audioUrl,
+    voice_id: voiceId,
+    generated_at: new Date().toISOString(),
+  };
+  if (existing) {
+    await sbPatch(`what_is_that_narrations?location_id=eq.${id}&topic=eq.${topic}`, row);
+  } else {
+    await sbInsert("what_is_that_narrations", row);
+  }
+  return {
+    done: true,
+    msg: audioUrl
+      ? `voiced ${topicInfo.label} for ${loc.name}`
+      : `generated script (no audio) for ${loc.name}`,
+  };
+}
+
 // Same fallback text GpsBanterContext.placeholders() uses live when a field
 // isn't known (mirrors lib/features/dj/banter_studio/gps_banter_director.dart)
 // -- a pre-recorded clip is static, so it can't reference the traveler's
@@ -1052,6 +1362,7 @@ async function processJob(job: any): Promise<void> {
         //   • `location_content:*`       → voice a Location Content record
         //   • `dj_banter:*`              → voice a batch of DJ Banter Studio clips
         //   • `destination_narration:*`  → re-voice an already-published narration
+        //   • `what_is_that:*`           → generate + voice one topic for a selected place
         //   • `master_location:content*` → generate TEXT content for a location
         //   • `master_location:*`        → voice a master location
         const note = String(job.notes ?? "");
@@ -1065,6 +1376,8 @@ async function processJob(job: any): Promise<void> {
           res = await doDjBanterAudio(job);
         } else if (note.startsWith("destination_narration")) {
           res = await doDestinationNarrationRevoice(job);
+        } else if (note.startsWith("what_is_that")) {
+          res = await doWhatIsThatTopic(job);
         } else if (note.includes("master_location:content")) {
           res = await doLocationContent(job);
         } else {
@@ -1168,13 +1481,19 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.destination_narration*` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
-  // Round-robin across the seven pools (gem audio, primary knowledge/script
+  // `audio` jobs that generate + voice one "What Is That?" topic for a
+  // selected place (Google Places supplement + OpenAI script + ElevenLabs).
+  const whatIsThatAudio = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.what_is_that*` +
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
+  );
+  // Round-robin across the eight pools (gem audio, primary knowledge/script
   // types, master-location audio, radio-segment audio, location-content
-  // audio, dj-banter audio, destination-narration re-voice) instead of
-  // merging-then-taking-the-globally-oldest-N: a huge, old backlog in ANY one
-  // pool (e.g. thousands of wikimedia_import rows) must never fully starve
-  // the others for run after run. Within each pool, jobs are still
-  // oldest-first (from the queries above).
+  // audio, dj-banter audio, destination-narration re-voice, what-is-that
+  // topic audio) instead of merging-then-taking-the-globally-oldest-N: a
+  // huge, old backlog in ANY one pool (e.g. thousands of wikimedia_import
+  // rows) must never fully starve the others for run after run. Within each
+  // pool, jobs are still oldest-first (from the queries above).
   const pools = [
     gemAudio,
     primary,
@@ -1183,8 +1502,9 @@ export async function drainQueue(
     locationContentAudio,
     djBanterAudio,
     destinationNarrationRevoice,
+    whatIsThatAudio,
   ];
-  const cursors = [0, 0, 0, 0, 0, 0, 0];
+  const cursors = [0, 0, 0, 0, 0, 0, 0, 0];
   const jobs: any[] = [];
   while (jobs.length < limit) {
     let addedAny = false;
