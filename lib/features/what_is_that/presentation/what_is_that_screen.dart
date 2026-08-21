@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -204,7 +206,7 @@ class _StatusMessage extends StatelessWidget {
   }
 }
 
-class _Body extends StatefulWidget {
+class _Body extends ConsumerStatefulWidget {
   const _Body({
     required this.heading,
     required this.usingCompass,
@@ -222,11 +224,75 @@ class _Body extends StatefulWidget {
   final void Function(WhatIsThatCandidate) onNavigate;
 
   @override
-  State<_Body> createState() => _BodyState();
+  ConsumerState<_Body> createState() => _BodyState();
 }
 
-class _BodyState extends State<_Body> {
+class _BodyState extends ConsumerState<_Body> {
   String? _selectedId;
+
+  /// Cached Google Places photos, keyed by `locationId` — populated by a
+  /// cheap read of our own cache table (never a live Places call from this
+  /// screen). Only ever used for candidates whose OWN database has no image
+  /// of its own — spec: "photo request only as a LAST resort," so a Places
+  /// photo is a fallback, never the first thing checked.
+  Map<String, String?> _cachedPhotos = const {};
+  final Set<String> _photoRequestsSent = {};
+  Set<String> _lastCandidateIds = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _maybeLoadPhotos();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Body oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _maybeLoadPhotos();
+  }
+
+  void _maybeLoadPhotos() {
+    final candidates = widget.candidates;
+    if (candidates.isEmpty) return;
+    final ids = candidates.map((c) => c.id).toSet();
+    if (ids.length == _lastCandidateIds.length &&
+        ids.difference(_lastCandidateIds).isEmpty) {
+      return; // same candidate set as last time — nothing new to look up
+    }
+    _lastCandidateIds = ids;
+    unawaited(_loadPhotos(candidates));
+  }
+
+  Future<void> _loadPhotos(List<WhatIsThatCandidate> candidates) async {
+    final repo = ref.read(whatIsThatNarrationRepositoryProvider);
+    final needLookup = candidates
+        .where((c) => (c.imageUrl ?? '').trim().isEmpty)
+        .map((c) => c.locationId)
+        .toList();
+    if (needLookup.isEmpty) return;
+
+    final photos = await repo.cachedPhotosFor(needLookup);
+    if (mounted) setState(() => _cachedPhotos = {..._cachedPhotos, ...photos});
+
+    // Opportunistically ask the worker to cache a photo for anything STILL
+    // missing one — fire-and-forget, never awaited/polled, never blocks this
+    // screen. Purely improves things the NEXT time this place comes up.
+    for (final c in candidates) {
+      if ((c.imageUrl ?? '').trim().isNotEmpty) continue;
+      if ((photos[c.locationId] ?? '').trim().isNotEmpty) continue;
+      if (!_photoRequestsSent.add(c.locationId)) continue;
+      unawaited(repo.enqueuePhotoOnly(c.locationId));
+    }
+  }
+
+  /// Our own database image first; a cached Google Places photo only when we
+  /// have nothing of our own. Never blocks on a fresh Places call.
+  String? _imageFor(WhatIsThatCandidate c) {
+    final own = c.imageUrl;
+    if (own != null && own.trim().isNotEmpty) return own;
+    final cached = _cachedPhotos[c.locationId];
+    return (cached != null && cached.trim().isNotEmpty) ? cached : null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -260,31 +326,26 @@ class _BodyState extends State<_Body> {
           Text(
             candidates.length == 1
                 ? "1 place that way"
-                : "${candidates.length} places that way",
+                : "${candidates.length} places that way — pick the right one",
             style: RD.badge
                 .copyWith(color: RD.textSecondary, letterSpacing: 1.1),
           ),
           const SizedBox(height: RD.sm),
-          SizedBox(
-            height: 108,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: candidates.length,
-              separatorBuilder: (_, _) => const SizedBox(width: RD.sm),
-              itemBuilder: (context, i) {
-                final c = candidates[i];
-                return _CandidateChip(
-                  candidate: c,
-                  selected: c.id == selected?.id,
-                  onTap: () => setState(() => _selectedId = c.id),
-                );
-              },
+          for (final c in candidates) ...[
+            _CandidateCard(
+              candidate: c,
+              imageUrl: _imageFor(c),
+              selected: c.id == selected?.id,
+              onTap: () => setState(() => _selectedId = c.id),
             ),
-          ),
-          const SizedBox(height: RD.lg),
+            const SizedBox(height: RD.sm),
+          ],
+          const SizedBox(height: RD.sm),
           if (selected != null)
             _CandidateDetail(
+              key: ValueKey(selected.id),
               candidate: selected,
+              imageUrl: _imageFor(selected),
               onTellDjSunny: () => widget.onTellDjSunny(selected),
               onTellMeMore: () => widget.onTellMeMore(selected),
               onNavigate: () => widget.onNavigate(selected),
@@ -344,13 +405,21 @@ class _CompassDial extends StatelessWidget {
   }
 }
 
-class _CandidateChip extends StatelessWidget {
-  const _CandidateChip({
+/// A candidate selection card — spec: "Show: Photo, Building/place name,
+/// Type/category, Distance, Address when useful... The user should be able
+/// to tap the photo/card to select that building." A photo is only ever a
+/// visual aid: a candidate with no photo at all (neither our own database
+/// nor a cached Google Places one) still shows fully identified by name,
+/// type, and distance — never blocked on having a picture.
+class _CandidateCard extends StatelessWidget {
+  const _CandidateCard({
     required this.candidate,
+    required this.imageUrl,
     required this.selected,
     required this.onTap,
   });
   final WhatIsThatCandidate candidate;
+  final String? imageUrl;
   final bool selected;
   final VoidCallback onTap;
 
@@ -359,8 +428,7 @@ class _CandidateChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 132,
-        padding: const EdgeInsets.all(RD.xs),
+        padding: const EdgeInsets.all(RD.sm),
         decoration: BoxDecoration(
           color: RD.panel,
           borderRadius: BorderRadius.circular(RD.rMd),
@@ -369,15 +437,16 @@ class _CandidateChip extends StatelessWidget {
             width: 2,
           ),
         ),
-        child: Column(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(RD.rSm),
-                child: (candidate.imageUrl ?? '').isNotEmpty
-                    ? Image.network(candidate.imageUrl!,
-                        fit: BoxFit.cover, width: double.infinity)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(RD.rSm),
+              child: SizedBox(
+                width: 64,
+                height: 64,
+                child: (imageUrl ?? '').trim().isNotEmpty
+                    ? Image.network(imageUrl!, fit: BoxFit.cover)
                     : Container(
                         color: RD.bgElevated,
                         alignment: Alignment.center,
@@ -386,14 +455,34 @@ class _CandidateChip extends StatelessWidget {
                       ),
               ),
             ),
-            const SizedBox(height: 4),
-            Text(candidate.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: RD.caption.copyWith(
-                    color: Colors.white, fontWeight: FontWeight.w600)),
-            Text(candidate.distanceLabel,
-                style: RD.caption.copyWith(color: RD.textSecondary)),
+            const SizedBox(width: RD.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(candidate.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: RD.cardTitle.copyWith(color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text(
+                    [
+                      if ((candidate.typeLabel ?? '').isNotEmpty)
+                        candidate.typeLabel,
+                      candidate.distanceLabel,
+                    ].whereType<String>().join('  ·  '),
+                    style: RD.caption.copyWith(color: RD.textSecondary),
+                  ),
+                  if ((candidate.address ?? '').trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(candidate.address!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: RD.caption.copyWith(color: RD.textSecondary)),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -403,12 +492,15 @@ class _CandidateChip extends StatelessWidget {
 
 class _CandidateDetail extends StatelessWidget {
   const _CandidateDetail({
+    super.key,
     required this.candidate,
+    required this.imageUrl,
     required this.onTellDjSunny,
     required this.onTellMeMore,
     required this.onNavigate,
   });
   final WhatIsThatCandidate candidate;
+  final String? imageUrl;
   final VoidCallback onTellDjSunny;
   final VoidCallback onTellMeMore;
   final VoidCallback onNavigate;
@@ -424,10 +516,10 @@ class _CandidateDetail extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if ((candidate.imageUrl ?? '').isNotEmpty)
+          if ((imageUrl ?? '').trim().isNotEmpty)
             AspectRatio(
               aspectRatio: 16 / 9,
-              child: Image.network(candidate.imageUrl!, fit: BoxFit.cover),
+              child: Image.network(imageUrl!, fit: BoxFit.cover),
             ),
           Padding(
             padding: const EdgeInsets.all(RD.md),
@@ -445,6 +537,11 @@ class _CandidateDetail extends StatelessWidget {
                   ].whereType<String>().join('  ·  '),
                   style: RD.caption.copyWith(color: RD.textSecondary),
                 ),
+                if ((candidate.address ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(candidate.address!,
+                      style: RD.caption.copyWith(color: RD.textSecondary)),
+                ],
                 if ((candidate.description ?? '').isNotEmpty) ...[
                   const SizedBox(height: RD.sm),
                   Text(candidate.description!,
@@ -455,10 +552,10 @@ class _CandidateDetail extends StatelessWidget {
                   spacing: RD.sm,
                   runSpacing: RD.sm,
                   children: [
-                    FilledButton.icon(
+                    OutlinedButton.icon(
                       onPressed: onTellDjSunny,
-                      icon: const Icon(Icons.graphic_eq_rounded, size: 18),
-                      label: const Text('DJ Sunny, tell me'),
+                      icon: const Icon(Icons.replay_rounded, size: 18),
+                      label: const Text('Replay'),
                     ),
                     OutlinedButton.icon(
                       onPressed: onTellMeMore,
@@ -473,7 +570,7 @@ class _CandidateDetail extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: RD.lg),
-                _TopicPicker(candidate: candidate),
+                _TopicPicker(candidate: candidate, imageUrl: imageUrl),
               ],
             ),
           ),
@@ -483,19 +580,53 @@ class _CandidateDetail extends StatelessWidget {
   }
 }
 
-/// Per-topic on-demand DJ Sunny narration (spec: "the user should be able to
-/// select topics such as HISTORY, UNIQUE FEATURES, WHAT'S HERE NOW, WILDLIFE
-/// & NATURE, THINGS TO DO, ACCESSIBILITY, TELL ME MORE"). Additive alongside
-/// the existing "DJ Sunny, tell me"/Tell Me More/Navigate actions above —
-/// those keep working unchanged (including with no OpenAI/Google Places key
-/// configured); this adds the richer, verified-facts-grounded narration on
-/// top. Reuses the exact enqueue -> trigger -> poll pattern already proven by
-/// Radio Automation's "Generate & poll" flow, and the exact same
+/// Which topics are worth even offering for [c] — spec: "Only display
+/// topics for which meaningful information exists." A simple, free
+/// presence-based check against fields already on the candidate (our own
+/// database — Google Places only ever supplements the actual generated
+/// answer later, per the identification priority order: existing database
+/// before Google Places). "What's Here Now" and "Tell Me More" are always
+/// offered — asking "what's here" or for a general overview is meaningful
+/// for literally any physical place, even when the honest answer ends up
+/// being "not verified" (the worker says so rather than inventing one).
+List<WhatIsThatTopic> _relevantTopicsFor(WhatIsThatCandidate c) {
+  final hasDescription = (c.description ?? '').trim().isNotEmpty;
+  const peopleStoryTypes = {
+    'Historic Site',
+    'Historic District',
+    'Museum',
+    'Monument',
+    'Memorial',
+  };
+  final out = <WhatIsThatTopic>[];
+  if (hasDescription) out.add(WhatIsThatTopic.history);
+  out.add(WhatIsThatTopic.whatsHereNow);
+  if (hasDescription) out.add(WhatIsThatTopic.uniqueFeatures);
+  if (hasDescription || peopleStoryTypes.contains(c.typeLabel)) {
+    out.add(WhatIsThatTopic.peopleStories);
+  }
+  if (c.wheelchairAccessible != null) out.add(WhatIsThatTopic.accessibility);
+  if ((c.hours ?? '').trim().isNotEmpty ||
+      (c.admission ?? '').trim().isNotEmpty) {
+    out.add(WhatIsThatTopic.visitorInformation);
+  }
+  out.add(WhatIsThatTopic.tellMeMore);
+  return out;
+}
+
+/// Auto-plays a short basic DJ Sunny narration the moment a candidate is
+/// selected (spec: "Immediately play the short basic DJ Sunny narration"),
+/// then reveals the relevant topic chips once it's had time to finish (spec:
+/// "After the basic narration, display the short list of available
+/// information topics"). Each topic is additional, richer, on-demand
+/// narration — reuses the exact enqueue -> trigger -> poll pattern already
+/// proven by Radio Automation's "Generate & poll" flow, and the exact same
 /// requestInterruption + play-if-idle playback fix already applied to
 /// [WhatIsThatScreen._tellDjSunny] — no new audio player, no new voice.
 class _TopicPicker extends ConsumerStatefulWidget {
-  const _TopicPicker({required this.candidate});
+  const _TopicPicker({required this.candidate, required this.imageUrl});
   final WhatIsThatCandidate candidate;
+  final String? imageUrl;
 
   @override
   ConsumerState<_TopicPicker> createState() => _TopicPickerState();
@@ -504,6 +635,50 @@ class _TopicPicker extends ConsumerStatefulWidget {
 class _TopicPickerState extends ConsumerState<_TopicPicker> {
   WhatIsThatTopic? _busyTopic;
   String? _error;
+  bool _narrationDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _playBasicNarration();
+  }
+
+  void _playBasicNarration() {
+    final c = widget.candidate;
+    final text = (c.description ?? '').trim();
+    final spoken = text.isNotEmpty ? text : "That's ${c.name}.";
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    radio.requestInterruption(
+      AudioSegment(
+        id: 'whatisthat:${c.locationId}:'
+            '${DateTime.now().microsecondsSinceEpoch}',
+        title: c.name,
+        artist: 'DJ Sunny',
+        type: AudioSegmentType.gpsNarration,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        imageUrl: widget.imageUrl,
+        audioUrl: c.hasAudio ? c.audioUrl : null,
+        spokenText: c.hasAudio ? null : spoken,
+        location: GeoPoint(latitude: c.latitude, longitude: c.longitude),
+        tags: const ['what_is_that'],
+        interruptible: true,
+        resumeAfter: true,
+      ),
+    );
+    if (ref.read(radioEngineControllerProvider).status !=
+        PlaybackStatus.playing) {
+      radio.play();
+    }
+    // Reveal the topic list once the basic narration has had time to finish.
+    // Estimated from word count (same formula RadioAudioService already uses
+    // for its own TTS-completion fallback) since a pre-recorded clip's exact
+    // duration isn't known client-side.
+    final words = c.hasAudio ? 30 : spoken.split(RegExp(r'\s+')).length;
+    final secs = (words / 2.0).clamp(4, 60).toInt() + 2;
+    Future.delayed(Duration(seconds: secs), () {
+      if (mounted) setState(() => _narrationDone = true);
+    });
+  }
 
   Future<void> _play(WhatIsThatNarration narration) async {
     final c = widget.candidate;
@@ -516,7 +691,7 @@ class _TopicPickerState extends ConsumerState<_TopicPicker> {
         artist: 'DJ Sunny',
         type: AudioSegmentType.gpsNarration,
         priority: PlaybackPriority.scheduledAnnouncement,
-        imageUrl: c.imageUrl,
+        imageUrl: widget.imageUrl,
         audioUrl: narration.hasAudio ? narration.audioUrl : null,
         spokenText: narration.hasAudio ? null : narration.script,
         location: GeoPoint(latitude: c.latitude, longitude: c.longitude),
@@ -568,6 +743,23 @@ class _TopicPickerState extends ConsumerState<_TopicPicker> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_narrationDone) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: RD.sm),
+          Text('DJ Sunny is talking…',
+              style: RD.caption.copyWith(color: RD.textSecondary)),
+        ],
+      );
+    }
+
+    final topics = _relevantTopicsFor(widget.candidate);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -580,7 +772,7 @@ class _TopicPickerState extends ConsumerState<_TopicPicker> {
           spacing: RD.sm,
           runSpacing: RD.sm,
           children: [
-            for (final topic in WhatIsThatTopic.values)
+            for (final topic in topics)
               _TopicChip(
                 label: topic.label,
                 busy: _busyTopic == topic,

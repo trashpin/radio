@@ -4,11 +4,11 @@
 /// keep the two in sync if either changes.
 enum WhatIsThatTopic {
   history('history', 'History'),
-  uniqueFeatures('unique_features', 'Unique Features'),
   whatsHereNow('whats_here_now', "What's Here Now"),
-  wildlifeNature('wildlife_nature', 'Wildlife & Nature'),
-  thingsToDo('things_to_do', 'Things To Do'),
+  uniqueFeatures('unique_features', 'Unique Features'),
+  peopleStories('people_stories', 'People & Stories'),
   accessibility('accessibility', 'Accessibility'),
+  visitorInformation('visitor_information', 'Visitor Information'),
   tellMeMore('tell_me_more', 'Tell Me More');
 
   const WhatIsThatTopic(this.id, this.label);

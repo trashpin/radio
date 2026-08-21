@@ -66,6 +66,49 @@ class WhatIsThatNarrationRepository {
       return false;
     }
   }
+
+  /// Cheap, instant read of already-cached Google Places photos for several
+  /// candidates at once (one bulk query against our own cache table — never
+  /// calls the Places API itself). Used to help identify multiple candidates
+  /// with a photo when one is already on hand; a candidate with no row here
+  /// simply has no cached photo yet, not an error.
+  Future<Map<String, String?>> cachedPhotosFor(List<String> locationIds) async {
+    if (!SupabaseService.isConfigured || locationIds.isEmpty) return const {};
+    try {
+      final rows = await SupabaseService.client
+          .from('what_is_that_place_data')
+          .select('location_id, photo_url')
+          .inFilter('location_id', locationIds) as List;
+      return {
+        for (final r in rows.cast<Map<String, dynamic>>())
+          (r['location_id'] as String): r['photo_url'] as String?,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// Opportunistically asks the worker to cache a Google Places photo for
+  /// [locationId] — spec: "photo request only as a LAST resort," so this is
+  /// deliberately fire-and-forget: no polling, no waiting, and it never
+  /// blocks the candidate list from showing (with or without a photo) right
+  /// away. Only worth calling for a candidate that has neither our own
+  /// database image nor an already-cached Places photo.
+  Future<void> enqueuePhotoOnly(String locationId) async {
+    if (!SupabaseService.isConfigured) return;
+    try {
+      await SupabaseService.client.from('generation_jobs').insert({
+        'destination': 'what_is_that:$locationId:photo',
+        'job_type': 'audio',
+        'status': 'pending',
+        'progress': 0,
+        'notes': 'what_is_that:photo;location_id=$locationId',
+      });
+      await triggerNarrationWorker();
+    } catch (_) {
+      // Best-effort only — a missing photo is never a failure for this screen.
+    }
+  }
 }
 
 final whatIsThatNarrationRepositoryProvider =
