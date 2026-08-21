@@ -23,6 +23,8 @@ MasterLocation _loc(
   List<String> audioFiles = const [],
   bool active = true,
   bool hidden = false,
+  bool featured = false,
+  int priority = 0,
 }) =>
     MasterLocation(
       id: id,
@@ -33,6 +35,8 @@ MasterLocation _loc(
       images: images,
       description: description,
       audioFiles: audioFiles,
+      featured: featured,
+      priority: priority,
       active: active,
       hidden: hidden,
     );
@@ -78,11 +82,13 @@ void main() {
       expect(result, isEmpty);
     });
 
-    test('excludes ineligible location types (not on the point-at-able list)',
-        () {
+    test('excludes only the small block-list of pure-utility/diffuse-region '
+        'types — everything else in the shared taxonomy is eligible', () {
       final locations = [
         _loc('gas', 'Some Gas Station',
             type: LocationType.gasStation, latitude: 29.05, longitude: -82.0),
+        _loc('parking', 'A Parking Lot',
+            type: LocationType.parking, latitude: 29.05, longitude: -82.0),
         _loc('park', 'A State Park',
             type: LocationType.statePark, latitude: 29.05, longitude: -82.0),
       ];
@@ -92,6 +98,108 @@ void main() {
         headingDegrees: 0,
       );
       expect(result.map((c) => c.locationId), ['park']);
+    });
+
+    test('SEARCH MORE TYPES OF THINGS: buildings/structures and natural '
+        'features across the taxonomy are all found by the SAME unified '
+        'search — no per-category search system', () {
+      final locations = [
+        _loc('bridge', 'Old Bridge',
+            type: LocationType.bridge, latitude: 29.01, longitude: -82.0),
+        _loc('museum', 'Local Museum',
+            type: LocationType.museum, latitude: 29.02, longitude: -82.0),
+        _loc('monument', 'War Monument',
+            type: LocationType.monument, latitude: 29.03, longitude: -82.0),
+        _loc('cave', 'Limestone Cave',
+            type: LocationType.cave, latitude: 29.04, longitude: -82.0),
+        _loc('wma', 'Wildlife Management Area',
+            type: LocationType.wildlifeManagementArea,
+            latitude: 29.05,
+            longitude: -82.0),
+        _loc('overlook', 'Scenic Overlook',
+            type: LocationType.scenicOverlook,
+            latitude: 29.06,
+            longitude: -82.0),
+      ];
+      final result = findWhatIsThatCandidates(
+        locations: locations,
+        userLocation: _origin,
+        headingDegrees: 0,
+        limit: 10,
+      );
+      expect(
+        result.map((c) => c.locationId).toSet(),
+        {'bridge', 'museum', 'monument', 'cave', 'wma', 'overlook'},
+      );
+    });
+
+    test('excludes diffuse administrative regions with no single '
+        'point-at-able spot (county/state/country/neighborhood/area)', () {
+      final locations = [
+        _loc('county', 'Some County',
+            type: LocationType.county, latitude: 29.02, longitude: -82.0),
+        _loc('neighborhood', 'Some Neighborhood',
+            type: LocationType.neighborhood,
+            latitude: 29.02,
+            longitude: -82.0),
+        _loc('town', 'A Real Town',
+            type: LocationType.town, latitude: 29.02, longitude: -82.0),
+      ];
+      final result = findWhatIsThatCandidates(
+        locations: locations,
+        userLocation: _origin,
+        headingDegrees: 0,
+      );
+      expect(result.map((c) => c.locationId), ['town']);
+    });
+
+    test('defaults to the "best 2-3 choices" limit of 3, not the whole cone',
+        () {
+      final locations = [
+        for (var i = 1; i <= 8; i++)
+          _loc('p$i', 'Place $i', latitude: 29.0 + i * 0.01, longitude: -82.0),
+      ];
+      final result = findWhatIsThatCandidates(
+        locations: locations,
+        userLocation: _origin,
+        headingDegrees: 0,
+      );
+      expect(result.length, 3);
+    });
+
+    test('LOCATION RELEVANCE: a featured/high-priority place can outrank a '
+        'slightly closer, unremarkable one', () {
+      final locations = [
+        _loc('plain', 'Unremarkable Spot', latitude: 29.010, longitude: -82.0),
+        _loc('featured', 'Well-Known Landmark',
+            latitude: 29.011, longitude: -82.0, featured: true),
+      ];
+      final result = findWhatIsThatCandidates(
+        locations: locations,
+        userLocation: _origin,
+        headingDegrees: 0,
+        limit: 2,
+      );
+      expect(result.first.locationId, 'featured',
+          reason: 'featured landmark wins the top slot despite being '
+              'marginally farther');
+    });
+
+    test('LOCATION RELEVANCE: a much closer plain place still beats a '
+        'far-away featured one — relevance only breaks close ties, it '
+        'never overrides real distance', () {
+      final locations = [
+        _loc('near', 'Right Here', latitude: 29.002, longitude: -82.0),
+        _loc('far-featured', 'Distant Landmark',
+            latitude: 29.06, longitude: -82.0, featured: true),
+      ];
+      final result = findWhatIsThatCandidates(
+        locations: locations,
+        userLocation: _origin,
+        headingDegrees: 0,
+        limit: 2,
+      );
+      expect(result.first.locationId, 'near');
     });
 
     test('excludes inactive and hidden locations', () {

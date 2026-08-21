@@ -17,6 +17,7 @@ class WhatIsThatCandidate {
     this.description,
     this.audioUrl,
     this.typeLabel,
+    this.relevanceScore = 0,
   });
 
   /// The search result's own id (`loc:<locationId>`), stable across a search.
@@ -39,6 +40,11 @@ class WhatIsThatCandidate {
   final String? description;
   final String? audioUrl;
   final String? typeLabel;
+
+  /// Blended "distance + location relevance" score the search ranked this
+  /// candidate by (higher is better) — exposed mainly for tests; the screen
+  /// itself just shows candidates in the order the search already returned.
+  final double relevanceScore;
 
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
 
