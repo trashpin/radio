@@ -32,6 +32,7 @@ import 'package:explorer_os_mobile/features/radio_director/presentation/radio_di
 import 'package:explorer_os_mobile/features/programming_director/presentation/programming_director_console_page.dart';
 import 'package:explorer_os_mobile/features/settings/presentation/settings_screen.dart';
 import 'package:explorer_os_mobile/features/stories/presentation/stories_screen.dart';
+import 'package:explorer_os_mobile/features/what_is_that/presentation/what_is_that_screen.dart';
 import 'package:explorer_os_mobile/features/wildlife/presentation/wildlife_screen.dart';
 
 /// Central navigation configuration.
@@ -96,6 +97,7 @@ class AppRouter {
       _route(AppRoute.aiRanger.path, const AiRangerScreen()),
       _route(AppRoute.explorerMode.path, const ExplorerModeScreen()),
       _route(AppRoute.iSeeSomething.path, const ISeeSomethingScreen()),
+      _route(AppRoute.whatIsThat.path, const WhatIsThatScreen()),
       _route(AppRoute.localGems.path, const LocalGemsScreen()),
       GoRoute(
         path: AppRoute.tellMeMore.path,

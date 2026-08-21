@@ -407,6 +407,16 @@ class _PlayerState extends ConsumerState<_Player> {
                         if (ref.watch(exploreActiveProvider)) ...[
                           const _ExploreBanner(),
                           const SizedBox(height: RD.sm),
+                          // Sole entry point into the isolated "What Is
+                          // That?" feature (its own route/screen/providers —
+                          // see lib/features/what_is_that/). Nothing about
+                          // Explore's own programming/layout changes beyond
+                          // this one button.
+                          _WhatIsThatButton(
+                            onTap: () =>
+                                context.push(AppRoute.whatIsThat.path),
+                          ),
+                          const SizedBox(height: RD.sm),
                         ],
                         _Hero(
                           imageUrl: heroImage,
@@ -885,6 +895,51 @@ class _ExploreBanner extends StatelessWidget {
       child: Text(
         'MARION COUNTY EXPLORE',
         style: RD.badge.copyWith(color: RD.greenBright, letterSpacing: 1.4),
+      ),
+    );
+  }
+}
+
+/// The single entry point into the isolated "What Is That?" feature — a
+/// small button, nothing more. All the actual functionality (compass,
+/// directional search, candidate picker, narration, Tell Me More, Navigate)
+/// lives entirely on the pushed screen; this widget only navigates there.
+class _WhatIsThatButton extends StatelessWidget {
+  const _WhatIsThatButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(RD.rPill),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
+          decoration: BoxDecoration(
+            color: RD.panel,
+            borderRadius: BorderRadius.circular(RD.rPill),
+            border: Border.all(color: RD.stroke),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.explore_rounded,
+                  size: 16, color: RD.greenBright),
+              const SizedBox(width: RD.xs),
+              Text(
+                'WHAT IS THAT?',
+                style: RD.badge
+                    .copyWith(color: RD.textPrimary, letterSpacing: 1.1),
+              ),
+              const Spacer(),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: RD.textFaint),
+            ],
+          ),
+        ),
       ),
     );
   }
