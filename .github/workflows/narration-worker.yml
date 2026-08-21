@@ -10,6 +10,11 @@ name: Narration Worker
 #   ELEVENLABS_API_KEY    (required for audio)
 #   SUPABASE_SERVICE_KEY  (your Supabase service-role key)
 #   SUPABASE_URL          (optional; defaults to the project URL)
+#   GOOGLE_MAPS_API_KEY   (optional; the same key already used client-side
+#                          for the Maps SDK, with "Places API" enabled —
+#                          powers "What Is That?"'s Google Places supplement.
+#                          Without it, What Is That? still works using our
+#                          own database alone.)
 
 on:
   workflow_dispatch: {}          # "Run workflow" button in the Actions tab
@@ -32,6 +37,7 @@ jobs:
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2

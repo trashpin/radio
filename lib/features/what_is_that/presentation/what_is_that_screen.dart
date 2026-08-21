@@ -14,7 +14,9 @@ import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
+import 'package:explorer_os_mobile/features/what_is_that/data/what_is_that_narration_repository.dart';
 import 'package:explorer_os_mobile/features/what_is_that/models/what_is_that_candidate.dart';
+import 'package:explorer_os_mobile/features/what_is_that/models/what_is_that_topic.dart';
 import 'package:explorer_os_mobile/features/what_is_that/providers/what_is_that_providers.dart';
 
 /// "What Is That?" — point your phone in a direction and see what's out
@@ -470,11 +472,155 @@ class _CandidateDetail extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: RD.lg),
+                _TopicPicker(candidate: candidate),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Per-topic on-demand DJ Sunny narration (spec: "the user should be able to
+/// select topics such as HISTORY, UNIQUE FEATURES, WHAT'S HERE NOW, WILDLIFE
+/// & NATURE, THINGS TO DO, ACCESSIBILITY, TELL ME MORE"). Additive alongside
+/// the existing "DJ Sunny, tell me"/Tell Me More/Navigate actions above —
+/// those keep working unchanged (including with no OpenAI/Google Places key
+/// configured); this adds the richer, verified-facts-grounded narration on
+/// top. Reuses the exact enqueue -> trigger -> poll pattern already proven by
+/// Radio Automation's "Generate & poll" flow, and the exact same
+/// requestInterruption + play-if-idle playback fix already applied to
+/// [WhatIsThatScreen._tellDjSunny] — no new audio player, no new voice.
+class _TopicPicker extends ConsumerStatefulWidget {
+  const _TopicPicker({required this.candidate});
+  final WhatIsThatCandidate candidate;
+
+  @override
+  ConsumerState<_TopicPicker> createState() => _TopicPickerState();
+}
+
+class _TopicPickerState extends ConsumerState<_TopicPicker> {
+  WhatIsThatTopic? _busyTopic;
+  String? _error;
+
+  Future<void> _play(WhatIsThatNarration narration) async {
+    final c = widget.candidate;
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    radio.requestInterruption(
+      AudioSegment(
+        id: 'whatisthat:topic:${c.locationId}:'
+            '${DateTime.now().microsecondsSinceEpoch}',
+        title: c.name,
+        artist: 'DJ Sunny',
+        type: AudioSegmentType.gpsNarration,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        imageUrl: c.imageUrl,
+        audioUrl: narration.hasAudio ? narration.audioUrl : null,
+        spokenText: narration.hasAudio ? null : narration.script,
+        location: GeoPoint(latitude: c.latitude, longitude: c.longitude),
+        tags: const ['what_is_that'],
+        interruptible: true,
+        resumeAfter: true,
+      ),
+    );
+    if (ref.read(radioEngineControllerProvider).status !=
+        PlaybackStatus.playing) {
+      radio.play();
+    }
+  }
+
+  Future<void> _onTopicTap(WhatIsThatTopic topic) async {
+    if (_busyTopic != null) return;
+    setState(() {
+      _busyTopic = topic;
+      _error = null;
+    });
+    final repo = ref.read(whatIsThatNarrationRepositoryProvider);
+    final locationId = widget.candidate.locationId;
+    try {
+      var narration = await repo.narrationFor(locationId, topic);
+      if (narration == null) {
+        final queued = await repo.enqueueTopic(locationId, topic);
+        if (queued) await repo.triggerNarrationWorker();
+        // Poll briefly for the result (mirrors Radio Automation's Create
+        // tab) — OpenAI + Google Places + ElevenLabs together usually take
+        // a few seconds; the job stays queued for the scheduled worker
+        // either way if this tab closes before it's ready.
+        for (var i = 0; i < 10 && narration == null && mounted; i++) {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          narration = await repo.narrationFor(locationId, topic);
+        }
+      }
+      if (!mounted) return;
+      if (narration == null) {
+        setState(() => _error =
+            "DJ Sunny is still putting that together — try again in a "
+            "moment.");
+        return;
+      }
+      await _play(narration);
+    } finally {
+      if (mounted) setState(() => _busyTopic = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'ASK DJ SUNNY ABOUT...',
+          style: RD.badge.copyWith(color: RD.textSecondary, letterSpacing: 1.1),
+        ),
+        const SizedBox(height: RD.sm),
+        Wrap(
+          spacing: RD.sm,
+          runSpacing: RD.sm,
+          children: [
+            for (final topic in WhatIsThatTopic.values)
+              _TopicChip(
+                label: topic.label,
+                busy: _busyTopic == topic,
+                enabled: _busyTopic == null,
+                onTap: () => _onTopicTap(topic),
+              ),
+          ],
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: RD.sm),
+          Text(_error!, style: RD.caption.copyWith(color: RD.amber)),
+        ],
+      ],
+    );
+  }
+}
+
+class _TopicChip extends StatelessWidget {
+  const _TopicChip({
+    required this.label,
+    required this.busy,
+    required this.enabled,
+    required this.onTap,
+  });
+  final String label;
+  final bool busy;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: enabled ? onTap : null,
+      child: busy
+          ? const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(label),
     );
   }
 }
