@@ -19,6 +19,11 @@ const _song = AudioSegment(
   priority: PlaybackPriority.music,
 );
 
+// ElevenLabs "DJ Brittney" — matches kDjSunnyVoiceId in
+// dj_banter_scheduler.dart (not imported to avoid pulling in that whole file
+// just for one constant; this test only needs the literal).
+const _kDjSunnyVoiceId = 'kPzsL2i3teMYv0FxEYQ6';
+
 DjBanterClip _clip(String id,
         {String text = 'Watch for {nearby_wildlife} near {park}.',
         BanterCategory cat = BanterCategory.wildlifeTease,
@@ -30,6 +35,11 @@ DjBanterClip _clip(String id,
       status: BanterStatus.published,
       gpsRegion: 'Ocala National Forest',
       audioUrl: audioUrl,
+      // A clip built here WITH audio represents a properly pre-generated
+      // recording — DJ Sunny only ever selects one voiced in her own voice
+      // (see GpsBanterDirector.eligible), so a fixture with audio needs the
+      // matching voiceId or it would be silently excluded, not played.
+      voiceId: audioUrl == null ? null : _kDjSunnyVoiceId,
     );
 
 void main() {

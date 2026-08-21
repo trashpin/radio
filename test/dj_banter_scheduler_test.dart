@@ -59,8 +59,8 @@ void main() {
     expect(seg.id.startsWith('dj:'), isTrue);
   });
 
-  test('prefers a pre-generated clip (DJ voice URL) over TTS when one matches',
-      () {
+  test('prefers a pre-generated clip (DJ voice URL) over TTS when one matches '
+      'DJ Sunny\'s own voice', () {
     final s = DjBanterScheduler(everyNSongs: 1, rng: Random(0));
     s.setClips(const [
       DjClip(
@@ -68,14 +68,16 @@ void main() {
         station: DjStation.country,
         situation: BanterSituation.songOutro,
         audioUrl: 'https://cdn/dj/country/outro_0.mp3',
-        voiceName: 'Country Casey',
+        voiceId: kDjSunnyVoiceId,
+        voiceName: 'DJ Brittney',
       ),
       DjClip(
         id: 'c2',
         station: DjStation.all,
         situation: BanterSituation.stationId,
         audioUrl: 'https://cdn/dj/all/id_0.mp3',
-        voiceName: 'Country Casey',
+        voiceId: kDjSunnyVoiceId,
+        voiceName: 'DJ Brittney',
       ),
     ]);
     // Try several times; whichever situation is chosen, a clip should match
@@ -85,7 +87,7 @@ void main() {
       expect(seg, isNotNull);
       expect(seg!.audioUrl, isNotNull, reason: 'should play the DJ-voice clip');
       expect(seg.spokenText, isNull);
-      expect(seg.artist, 'Country Casey');
+      expect(seg.artist, 'DJ Brittney');
     }
   });
 
@@ -97,6 +99,7 @@ void main() {
         station: DjStation.rock,
         situation: BanterSituation.songOutro,
         audioUrl: 'https://cdn/dj/rock/outro_0.mp3',
+        voiceId: kDjSunnyVoiceId,
       ),
     ]);
     // Country station → no matching clip → spoken (TTS).
@@ -104,6 +107,30 @@ void main() {
     expect(seg, isNotNull);
     expect(seg!.audioUrl, isNull);
     expect(seg.spokenText, isNotNull);
+  });
+
+  test('DJ SUNNY VOICE CLEANUP: a clip recorded in any OTHER voice is never '
+      'selected, even when it otherwise matches station+situation — falls '
+      'back to TTS instead of ever playing an old-voice recording', () {
+    final s = DjBanterScheduler(everyNSongs: 1, rng: Random(0));
+    s.setClips(const [
+      DjClip(
+        id: 'old-voice',
+        station: DjStation.country,
+        situation: BanterSituation.songOutro,
+        audioUrl: 'https://cdn/dj/country/outro_old.mp3',
+        voiceId: 'some-other-elevenlabs-voice-id',
+        voiceName: 'Old DJ',
+      ),
+    ]);
+    for (var i = 0; i < 10; i++) {
+      final seg = s.onMusicPlayed(song('X'), radioStationName: 'Country Roads Radio');
+      expect(seg, isNotNull);
+      expect(seg!.audioUrl, isNull,
+          reason: 'the old-voice clip must never be selected');
+      expect(seg.spokenText, isNotNull);
+      expect(seg.artist, isNot('Old DJ'));
+    }
   });
 
   test('banter references the finished song across rotations', () {

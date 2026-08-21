@@ -6,6 +6,11 @@ import 'package:explorer_os_mobile/features/dj/banter_studio/dj_banter_clip.dart
 import 'package:explorer_os_mobile/features/dj/banter_studio/gps_banter_director.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// ElevenLabs "DJ Brittney" — matches `kDjSunnyVoiceId` in
+/// `dj_banter_scheduler.dart` (not imported to avoid pulling in that whole
+/// file just for one constant; this test only needs the literal).
+const _kDjSunnyVoiceId = 'kPzsL2i3teMYv0FxEYQ6';
+
 DjBanterClip _clip(
   String id,
   BanterCategory cat, {
@@ -14,6 +19,8 @@ DjBanterClip _clip(
   String? dest,
   String? region,
   String? guide,
+  String? audioUrl,
+  String? voiceId,
 }) =>
     DjBanterClip(
       id: id,
@@ -23,6 +30,8 @@ DjBanterClip _clip(
       destinationCode: dest,
       gpsRegion: region,
       guideMode: guide,
+      audioUrl: audioUrl,
+      voiceId: voiceId,
     );
 
 void main() {
@@ -131,6 +140,22 @@ void main() {
         BanterTrip(),
       );
       expect(e.map((c) => c.id).toSet(), {'any'});
+    });
+
+    test('DJ SUNNY VOICE CLEANUP: a clip recorded in any voice other than DJ '
+        'Sunny\'s own is never eligible — an old-voice recording can never '
+        'be selected again, even though a text-only (not-yet-voiced) clip '
+        'in the same category still is', () {
+      final lib = [
+        _clip('old-voice', BanterCategory.welcome,
+            audioUrl: 'https://cdn/old.mp3', voiceId: 'some-other-voice-id'),
+        _clip('new-voice', BanterCategory.welcome,
+            audioUrl: 'https://cdn/new.mp3', voiceId: _kDjSunnyVoiceId),
+        _clip('unvoiced', BanterCategory.welcome), // text only, no audio yet
+      ];
+      final e = director.eligible(
+          lib, BanterCategory.welcome, const GpsBanterContext(), BanterTrip());
+      expect(e.map((c) => c.id).toSet(), {'new-voice', 'unvoiced'});
     });
   });
 

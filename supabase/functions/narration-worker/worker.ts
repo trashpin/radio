@@ -433,6 +433,64 @@ function noteLocationId(notes: string | null): string | null {
   return m ? m[1] : null;
 }
 
+// ── audio (destination_narration): RE-VOICE an already-published narration ──
+// Triggered by the DJ Sunny voice cleanup — a one-off sweep to replace
+// destination_narrations rows that were voiced with an old, non-DJ-Sunny
+// ElevenLabs voice. Deliberately distinct from doAudio (above): doAudio
+// exists for the DRAFT -> approved -> voiced -> (manually) published
+// workflow and always leaves a row at status "audio_generated" so an admin
+// reviews before it goes live -- correct for brand-new narration, wrong here,
+// since these rows are already-approved, already-published, live content
+// that just needs its RECORDING swapped to the current voice. This handler
+// re-voices in place (same storage path, upsert) and touches ONLY
+// audio_url/voice/voice_id/audio_generated_at -- status/published are never
+// touched, so the row never disappears from Explore during the swap.
+export async function doDestinationNarrationRevoice(
+  job: any,
+): Promise<{ done: boolean; msg: string }> {
+  if (!ELEVEN_KEY) return { done: false, msg: "ELEVENLABS_API_KEY not set" };
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no narration id in notes" };
+  const rows = await sbGet(
+    `destination_narrations?id=eq.${id}&select=id,title,script,voice_id&limit=1`,
+  );
+  const r = rows[0];
+  if (!r) return { done: true, msg: `destination_narrations not found: ${id}` };
+  if (r.voice_id === LOCATION_VOICE_FALLBACK) {
+    return { done: true, msg: "already DJ Sunny's voice" };
+  }
+  const text = String(r.script ?? "").trim();
+  if (!text) return { done: true, msg: "no script to voice" };
+
+  const voiceId = noteVoiceId(job.notes) || LOCATION_VOICE_FALLBACK;
+  const tts = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+    {
+      method: "POST",
+      headers: { "xi-api-key": ELEVEN_KEY, accept: "audio/mpeg", "Content-Type": "application/json" },
+      body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+    },
+  );
+  if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+  const bytes = new Uint8Array(await tts.arrayBuffer());
+  const path = `destinations/${id}.mp3`; // same path doAudio uses -- upsert overwrites in place
+  const up = await fetch(
+    buildSupabaseUrl(`storage/v1/object/${BUCKET}/${path}`),
+    { method: "POST", headers: { ...SB, "x-upsert": "true", "Content-Type": "audio/mpeg" }, body: bytes as BodyInit },
+  );
+  if (!up.ok) throw new Error(`upload ${up.status}`);
+  await sbPatch(`destination_narrations?id=eq.${id}`, {
+    audio_url: buildSupabaseUrl(`storage/v1/object/public/${BUCKET}/${path}`),
+    voice: voiceName(voiceId),
+    voice_id: voiceId,
+    audio_generated_at: new Date().toISOString(),
+  });
+  return {
+    done: true,
+    msg: `re-voiced ${r.title ?? id} (${Math.round(bytes.length / 1024)} KB)`,
+  };
+}
+
 // ── audio: master-location narration -> voiceovers bucket -> audio_files ──
 // Mirrors tool/generate_location_audio.py: write a short OpenAI narration, voice
 // it (ElevenLabs), upload the MP3, and set the location's audio_files (which
@@ -993,6 +1051,7 @@ async function processJob(job: any): Promise<void> {
         //   • `radio_segment:*`          → voice a Radio Automation segment
         //   • `location_content:*`       → voice a Location Content record
         //   • `dj_banter:*`              → voice a batch of DJ Banter Studio clips
+        //   • `destination_narration:*`  → re-voice an already-published narration
         //   • `master_location:content*` → generate TEXT content for a location
         //   • `master_location:*`        → voice a master location
         const note = String(job.notes ?? "");
@@ -1004,6 +1063,8 @@ async function processJob(job: any): Promise<void> {
           res = await doLocationContentAudio(job);
         } else if (note.startsWith("dj_banter")) {
           res = await doDjBanterAudio(job);
+        } else if (note.startsWith("destination_narration")) {
+          res = await doDestinationNarrationRevoice(job);
         } else if (note.includes("master_location:content")) {
           res = await doLocationContent(job);
         } else {
@@ -1101,13 +1162,19 @@ export async function drainQueue(
     `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.dj_banter*` +
       `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
   );
-  // Round-robin across the six pools (gem audio, primary knowledge/script
+  // `audio` jobs that re-voice an already-published destination_narrations
+  // row in DJ Sunny's voice (the one-off old-voice cleanup sweep).
+  const destinationNarrationRevoice = await sbGet(
+    `generation_jobs?status=eq.pending&job_type=eq.audio&notes=like.destination_narration*` +
+      `&order=created_at.asc,id.asc&limit=${limit}&select=*`,
+  );
+  // Round-robin across the seven pools (gem audio, primary knowledge/script
   // types, master-location audio, radio-segment audio, location-content
-  // audio, dj-banter audio) instead of merging-then-taking-the-globally-
-  // oldest-N: a huge, old backlog in ANY one pool (e.g. thousands of
-  // wikimedia_import rows) must never fully starve the others for run after
-  // run. Within each pool, jobs are still oldest-first (from the queries
-  // above).
+  // audio, dj-banter audio, destination-narration re-voice) instead of
+  // merging-then-taking-the-globally-oldest-N: a huge, old backlog in ANY one
+  // pool (e.g. thousands of wikimedia_import rows) must never fully starve
+  // the others for run after run. Within each pool, jobs are still
+  // oldest-first (from the queries above).
   const pools = [
     gemAudio,
     primary,
@@ -1115,8 +1182,9 @@ export async function drainQueue(
     segmentAudio,
     locationContentAudio,
     djBanterAudio,
+    destinationNarrationRevoice,
   ];
-  const cursors = [0, 0, 0, 0, 0, 0];
+  const cursors = [0, 0, 0, 0, 0, 0, 0];
   const jobs: any[] = [];
   while (jobs.length < limit) {
     let addedAny = false;
