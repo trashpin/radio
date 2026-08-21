@@ -916,7 +916,10 @@ export async function doWhatIsThatTopic(
           body: JSON.stringify({ text: script, model_id: "eleven_multilingual_v2" }),
         },
       );
-      if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+      if (!tts.ok) {
+        const errBody = await tts.text();
+        throw new Error(`ElevenLabs ${tts.status}: ${errBody.slice(0, 300)}`);
+      }
       const bytes = new Uint8Array(await tts.arrayBuffer());
       const path = `what_is_that/${id}_${topic}.mp3`;
       const up = await fetch(
@@ -1120,7 +1123,10 @@ export async function doDjBanterAudio(
           body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
         },
       );
-      if (!tts.ok) throw new Error(`ElevenLabs ${tts.status}`);
+      if (!tts.ok) {
+        const errBody = await tts.text();
+        throw new Error(`ElevenLabs ${tts.status}: ${errBody.slice(0, 300)}`);
+      }
       const bytes = new Uint8Array(await tts.arrayBuffer());
       const path = `banter/${r.id}.mp3`;
       const up = await fetch(
