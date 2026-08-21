@@ -1,17 +1,18 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
+import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/what_is_that/models/what_is_that_candidate.dart';
 import 'package:explorer_os_mobile/features/what_is_that/providers/what_is_that_providers.dart';
@@ -26,8 +27,30 @@ import 'package:explorer_os_mobile/features/what_is_that/providers/what_is_that_
 /// existing DJ Sunny narration entry point (`requestInterruption`), and the
 /// existing Tell Me More screen/route. The only genuinely new piece is a
 /// compass (magnetometer) heading source, scoped entirely to this feature.
-class WhatIsThatScreen extends ConsumerWidget {
+class WhatIsThatScreen extends ConsumerStatefulWidget {
   const WhatIsThatScreen({super.key});
+
+  @override
+  ConsumerState<WhatIsThatScreen> createState() => _WhatIsThatScreenState();
+}
+
+class _WhatIsThatScreenState extends ConsumerState<WhatIsThatScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // The compass heading (and therefore the search cone) is only meaningful
+    // relative to a fixed physical edge of the phone. Locking to portrait
+    // while this screen is open guarantees "the direction the TOP of the
+    // phone is pointing" always means the same physical edge, regardless of
+    // how the rest of the app allows rotation — restored on dispose.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    super.dispose();
+  }
 
   TellMeMoreContext _tellMeMoreContextFor(WhatIsThatCandidate c) =>
       TellMeMoreContext(
@@ -40,26 +63,35 @@ class WhatIsThatScreen extends ConsumerWidget {
 
   void _tellDjSunny(WidgetRef ref, WhatIsThatCandidate c) {
     final text = (c.description ?? '').trim();
-    ref.read(radioEngineControllerProvider.notifier).requestInterruption(
-          AudioSegment(
-            id: 'whatisthat:${c.locationId}:'
-                '${DateTime.now().microsecondsSinceEpoch}',
-            title: c.name,
-            artist: 'DJ Sunny',
-            type: AudioSegmentType.gpsNarration,
-            priority: PlaybackPriority.scheduledAnnouncement,
-            imageUrl: c.imageUrl,
-            audioUrl: c.hasAudio ? c.audioUrl : null,
-            spokenText: c.hasAudio
-                ? null
-                : (text.isNotEmpty ? text : "That's ${c.name}."),
-            location: GeoPoint(latitude: c.latitude, longitude: c.longitude),
-            tags: const ['what_is_that'],
-            interruptible: true,
-            resumeAfter: true,
-            tellMeMoreContext: _tellMeMoreContextFor(c),
-          ),
-        );
+    final radio = ref.read(radioEngineControllerProvider.notifier);
+    radio.requestInterruption(
+      AudioSegment(
+        id: 'whatisthat:${c.locationId}:'
+            '${DateTime.now().microsecondsSinceEpoch}',
+        title: c.name,
+        artist: 'DJ Sunny',
+        type: AudioSegmentType.gpsNarration,
+        priority: PlaybackPriority.scheduledAnnouncement,
+        imageUrl: c.imageUrl,
+        audioUrl: c.hasAudio ? c.audioUrl : null,
+        spokenText:
+            c.hasAudio ? null : (text.isNotEmpty ? text : "That's ${c.name}."),
+        location: GeoPoint(latitude: c.latitude, longitude: c.longitude),
+        tags: const ['what_is_that'],
+        interruptible: true,
+        resumeAfter: true,
+        tellMeMoreContext: _tellMeMoreContextFor(c),
+      ),
+    );
+    // requestInterruption only PLAYS immediately if something is already
+    // playing (it interrupts the current segment); when the radio is idle it
+    // just queues the segment silently. Same fix NearbyNarrationController
+    // already applies for "What's Near Me" — kick playback explicitly so
+    // tapping the button is never a silent no-op.
+    if (ref.read(radioEngineControllerProvider).status !=
+        PlaybackStatus.playing) {
+      radio.play();
+    }
   }
 
   Future<void> _navigate(WhatIsThatCandidate c) async {
@@ -69,7 +101,7 @@ class WhatIsThatScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final travel = ref.watch(gpsControllerProvider);
     final hasFix = travel.location != null;
     final heading = ref.watch(whatIsThatHeadingProvider);
@@ -266,28 +298,43 @@ class _CompassDial extends StatelessWidget {
   final double heading;
   final bool usingCompass;
 
+  static const _shortLabel = {
+    CardinalDirection.north: 'N',
+    CardinalDirection.northEast: 'NE',
+    CardinalDirection.east: 'E',
+    CardinalDirection.southEast: 'SE',
+    CardinalDirection.south: 'S',
+    CardinalDirection.southWest: 'SW',
+    CardinalDirection.west: 'W',
+    CardinalDirection.northWest: 'NW',
+  };
+
   @override
   Widget build(BuildContext context) {
+    final cardinal = _shortLabel[CardinalDirection.fromBearing(heading)] ?? '';
     return Column(
       children: [
-        SizedBox(
+        // Deliberately FIXED, always pointing straight up — this represents
+        // the top of the phone itself (the direction "What Is That?" always
+        // searches), never rotated. Rotating it to point at magnetic/true
+        // north (a compass-needle metaphor) was confusing: it made the arrow
+        // look like it was pointing somewhere OTHER than where the phone's
+        // top edge — and therefore the search — was actually aimed.
+        const SizedBox(
           width: 96,
           height: 96,
-          child: Transform.rotate(
-            angle: heading * math.pi / 180,
-            child: const Icon(Icons.navigation_rounded,
-                size: 72, color: RD.greenBright),
-          ),
+          child: Icon(Icons.arrow_upward_rounded,
+              size: 72, color: RD.greenBright),
         ),
         const SizedBox(height: RD.xs),
         Text(
-          '${heading.round()}°',
+          '${heading.round()}° $cardinal',
           style: RD.title.copyWith(color: Colors.white),
         ),
         Text(
           usingCompass
-              ? 'compass heading'
-              : 'based on your direction of travel',
+              ? 'top of phone — compass heading'
+              : 'top of phone — based on your direction of travel',
           style: RD.caption.copyWith(color: RD.textSecondary),
         ),
       ],
