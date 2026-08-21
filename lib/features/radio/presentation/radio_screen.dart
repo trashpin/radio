@@ -175,6 +175,13 @@ class _Player extends ConsumerStatefulWidget {
 }
 
 class _PlayerState extends ConsumerState<_Player> {
+  /// The last real "what's currently playing" image (Explore's current
+  /// subject, the DJ's specific topic, or song cover art) — held over during
+  /// DJ Sunny's own imageless connective lines so the display doesn't flash
+  /// to a generic GPS-derived image mid-transition. See `build()`'s
+  /// `heroImage` computation.
+  String? _lastContentImage;
+
   @override
   void initState() {
     super.initState();
@@ -267,24 +274,39 @@ class _PlayerState extends ConsumerState<_Player> {
 
     // Nearest place → hero art + NEARBY badge.
     final nearest = nearbyStories.isEmpty ? null : nearbyStories.first;
-    // Priority: Explore's own current subject (exploreSegment) > what the DJ
-    // is specifically talking about (djTopic) > the GPS-based event/park/
-    // spring/town/county context (playerCtx) > the normal music artwork >
-    // generic fallbacks. The music itself is unaffected either way — only
-    // what's displayed changes.
+    // What's actually being narrated/played right now, in its own words: the
+    // currently-playing segment's own image (Explore's current subject, or
+    // what the DJ is specifically talking about, or — for a song — its own
+    // cover art). GPS is WHERE the traveler is; this is WHAT is on air —
+    // the two are independent and this must win whenever it has an answer.
+    final contentImage = (exploreSegment?.imageUrl ?? '').isNotEmpty
+        ? exploreSegment!.imageUrl!
+        : ((djTopic?.imageUrl ?? '').isNotEmpty
+            ? djTopic!.imageUrl!
+            : ((songCover ?? '').isNotEmpty ? songCover! : ''));
+    // DJ Sunny's own connective lines (block openers/transitions/station IDs)
+    // carry no image of their own — they're not "about" anything with a
+    // photo, just glue between two real pieces of content. Rather than the
+    // display falling back to a generic GPS/county image mid-transition (a
+    // visible flicker away from what was just shown), hold the last real
+    // content image until the next segment with one of its own takes over.
+    if (contentImage.isNotEmpty) _lastContentImage = contentImage;
+    // Priority: the current segment's own content image > the last real
+    // content image (held through an imageless DJ transition) > the
+    // GPS-based event/park/spring/town/county context > generic fallbacks.
+    // The music itself is unaffected either way — only what's displayed
+    // changes.
     final heroImage =
         obs.species?.heroImageUrl ??
-        ((exploreSegment?.imageUrl ?? '').isNotEmpty
-            ? exploreSegment!.imageUrl
-            : ((djTopic?.imageUrl ?? '').isNotEmpty
-                  ? djTopic!.imageUrl
+        (contentImage.isNotEmpty
+            ? contentImage
+            : (((_lastContentImage ?? '')).isNotEmpty
+                  ? _lastContentImage
                   : ((playerCtx?.imageUrl ?? '').isNotEmpty
                         ? playerCtx!.imageUrl
-                        : ((songCover ?? '').isNotEmpty
-                              ? songCover
-                              : (nearest?.location.images.isNotEmpty ?? false
-                                    ? nearest!.location.images.first
-                                    : widget.station.imageUrl)))));
+                        : (nearest?.location.images.isNotEmpty ?? false
+                              ? nearest!.location.images.first
+                              : widget.station.imageUrl))));
     final nearbyPlace = exploreSegment?.title ??
         djTopic?.title ??
         playerCtx?.title ??
