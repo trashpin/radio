@@ -17,6 +17,10 @@ class WhatIsThatCandidate {
     this.description,
     this.audioUrl,
     this.typeLabel,
+    this.address,
+    this.hours,
+    this.admission,
+    this.wheelchairAccessible,
     this.relevanceScore = 0,
   });
 
@@ -40,6 +44,17 @@ class WhatIsThatCandidate {
   final String? description;
   final String? audioUrl;
   final String? typeLabel;
+
+  /// Used when it helps disambiguate multiple candidates ("show ... address
+  /// when useful") — never invented, straight from our own `locations` row.
+  final String? address;
+  final String? hours;
+  final String? admission;
+
+  /// Known only when our own database has recorded it explicitly (null means
+  /// "unknown," not "no") — used to decide whether the Accessibility topic is
+  /// worth offering at all before ever asking Google Places.
+  final bool? wheelchairAccessible;
 
   /// Blended "distance + location relevance" score the search ranked this
   /// candidate by (higher is better) — exposed mainly for tests; the screen

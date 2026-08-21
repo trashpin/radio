@@ -100,6 +100,10 @@ List<WhatIsThatCandidate> findWhatIsThatCandidates({
       description: loc.bestDescription,
       audioUrl: loc.hasAudio ? loc.audioFiles.first : null,
       typeLabel: loc.type.label,
+      address: loc.address,
+      hours: loc.hours,
+      admission: loc.admission,
+      wheelchairAccessible: loc.wheelchairAccessible,
       relevanceScore: _relevanceScore(loc, r.distanceMeters),
     ));
   }

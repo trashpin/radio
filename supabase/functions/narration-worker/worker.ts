@@ -14,10 +14,13 @@
 //                         OR (notes "dj_banter:*") voice a batch of DJ Banter Studio clips
 //                         OR (notes "destination_narration:*") re-voice an already-published
 //                         narration in the current voice, in place
-//                         OR (notes "what_is_that:*") generate + voice ONE topic (history,
-//                         what's here now, accessibility, ...) for a "What Is That?"
-//                         selection -- combines locations + a Google Places supplement
-//                         (Places API, cached) via OpenAI, then ElevenLabs
+//                         OR (notes "what_is_that:topic;*") generate + voice ONE topic
+//                         (history, what's here now, accessibility, ...) for a "What
+//                         Is That?" selection -- combines locations + a Google Places
+//                         supplement (Places API, cached) via OpenAI, then ElevenLabs
+//                         OR (notes "what_is_that:photo;*") opportunistically cache a
+//                         Places photo for a candidate with no image yet -- no OpenAI/
+//                         ElevenLabs, just the Places lookup
 //                         (ElevenLabs) -> voiceovers bucket + the row's own audio_url column
 //   - wikimedia_import -> find a Commons hero image -> media bucket +
 //                         locations.images + media_assets attribution
@@ -695,15 +698,13 @@ const WIT_TOPICS: Record<string, { label: string; guidance: string }> = {
       "today...\"). If no current information is verified, say plainly " +
       "that current details aren't available -- never guess.",
   },
-  wildlife_nature: {
-    label: "Wildlife & Nature",
-    guidance: "Describe the WILDLIFE AND NATURE associated with this " +
-      "place, using ONLY the verified natural details provided below.",
-  },
-  things_to_do: {
-    label: "Things To Do",
-    guidance: "Describe THINGS TO DO here, using ONLY the verified " +
-      "activities/amenities provided below.",
+  people_stories: {
+    label: "People & Stories",
+    guidance: "Share PEOPLE OR STORIES connected to this place -- who built " +
+      "it, lived there, or is otherwise associated with it -- using ONLY " +
+      "the verified details provided below. If no people or stories are " +
+      "verified, say plainly that none are available -- never invent " +
+      "names or anecdotes.",
   },
   accessibility: {
     label: "Accessibility",
@@ -711,6 +712,13 @@ const WIT_TOPICS: Record<string, { label: string; guidance: string }> = {
       "ONLY verified accessibility details provided below. If none are " +
       "verified, say plainly that accessibility information isn't " +
       "available -- never guess.",
+  },
+  visitor_information: {
+    label: "Visitor Information",
+    guidance: "Share practical VISITOR INFORMATION -- hours, admission, or " +
+      "similar -- using ONLY the verified details provided below. If none " +
+      "are verified, say plainly that visitor information isn't available " +
+      "-- never guess.",
   },
   tell_me_more: {
     label: "Tell Me More",
@@ -833,6 +841,37 @@ async function fetchWitPlaceData(
     console.error(`fetchWitPlaceData ${id} failed: ${e}`);
     return existing;
   }
+}
+
+// ── audio (what_is_that photo-only): opportunistically cache a Places photo ──
+// Triggered by the What Is That? screen's candidate LIST (before any
+// selection) for candidates that have neither our own database image nor an
+// already-cached Places photo -- spec: "photo request only as a LAST
+// resort," so this never blocks the search results and never generates any
+// narration; it purely calls the same fetchWitPlaceData() cache-or-fetch
+// used by doWhatIsThatTopic, so a photo (and the rest of the Places
+// supplement) is ready sooner next time this place comes up, without ever
+// duplicating the Places integration.
+export async function doWhatIsThatPhoto(
+  job: any,
+): Promise<{ done: boolean; msg: string }> {
+  const id = noteLocationId(job.notes);
+  if (!id) return { done: true, msg: "no location id in notes" };
+  const locRows = await sbGet(
+    `locations?id=eq.${id}&select=id,name,latitude,longitude&limit=1`,
+  );
+  const loc = locRows[0];
+  if (!loc) return { done: true, msg: `location not found: ${id}` };
+  if (loc.latitude == null || loc.longitude == null) {
+    return { done: true, msg: "no coordinates to search Places with" };
+  }
+  const place = await fetchWitPlaceData(id, loc.latitude, loc.longitude);
+  return {
+    done: true,
+    msg: place?.photo_url
+      ? `cached a photo for ${loc.name}`
+      : `no Places photo available for ${loc.name}`,
+  };
 }
 
 // ── audio (what_is_that): generate + voice ONE topic for a selected place ──
@@ -1382,6 +1421,8 @@ async function processJob(job: any): Promise<void> {
           res = await doDjBanterAudio(job);
         } else if (note.startsWith("destination_narration")) {
           res = await doDestinationNarrationRevoice(job);
+        } else if (note.startsWith("what_is_that:photo")) {
+          res = await doWhatIsThatPhoto(job);
         } else if (note.startsWith("what_is_that")) {
           res = await doWhatIsThatTopic(job);
         } else if (note.includes("master_location:content")) {
