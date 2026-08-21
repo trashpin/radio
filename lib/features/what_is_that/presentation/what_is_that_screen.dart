@@ -206,6 +206,16 @@ class _StatusMessage extends StatelessWidget {
   }
 }
 
+/// The three phases of the "look around, then commit" flow — spec:
+/// "Do NOT play narration while the user is simply looking around" and
+/// only identify/narrate once the ↑ button is pressed. `scanning` is a pure,
+/// continuously-updating live view of whatever `whatIsThatCandidatesProvider`
+/// currently returns for the phone's current heading (never queries a
+/// photo, never plays audio); pressing ↑ freezes that provider's CURRENT
+/// result into `_lockedCandidates` and moves to `chooser` (when there's a
+/// real choice to make) or straight to `detail` (when there's only one).
+enum _Phase { scanning, chooser, detail }
+
 class _Body extends ConsumerStatefulWidget {
   const _Body({
     required this.heading,
@@ -228,40 +238,18 @@ class _Body extends ConsumerStatefulWidget {
 }
 
 class _BodyState extends ConsumerState<_Body> {
+  _Phase _phase = _Phase.scanning;
+  List<WhatIsThatCandidate> _lockedCandidates = const [];
   String? _selectedId;
 
   /// Cached Google Places photos, keyed by `locationId` — populated by a
   /// cheap read of our own cache table (never a live Places call from this
-  /// screen). Only ever used for candidates whose OWN database has no image
-  /// of its own — spec: "photo request only as a LAST resort," so a Places
-  /// photo is a fallback, never the first thing checked.
+  /// screen), and only once the user has actually pressed ↑ — spec: "Only
+  /// request a photo if reasonable non-photo identification methods cannot
+  /// determine the target," so nothing photo-related is looked up while
+  /// merely scanning around.
   Map<String, String?> _cachedPhotos = const {};
   final Set<String> _photoRequestsSent = {};
-  Set<String> _lastCandidateIds = const {};
-
-  @override
-  void initState() {
-    super.initState();
-    _maybeLoadPhotos();
-  }
-
-  @override
-  void didUpdateWidget(covariant _Body oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _maybeLoadPhotos();
-  }
-
-  void _maybeLoadPhotos() {
-    final candidates = widget.candidates;
-    if (candidates.isEmpty) return;
-    final ids = candidates.map((c) => c.id).toSet();
-    if (ids.length == _lastCandidateIds.length &&
-        ids.difference(_lastCandidateIds).isEmpty) {
-      return; // same candidate set as last time — nothing new to look up
-    }
-    _lastCandidateIds = ids;
-    unawaited(_loadPhotos(candidates));
-  }
 
   Future<void> _loadPhotos(List<WhatIsThatCandidate> candidates) async {
     final repo = ref.read(whatIsThatNarrationRepositoryProvider);
@@ -294,66 +282,290 @@ class _BodyState extends ConsumerState<_Body> {
     return (cached != null && cached.trim().isNotEmpty) ? cached : null;
   }
 
+  /// The ↑ button — spec: "Lock the current compass direction. Determine
+  /// the best matching place/feature. ... If multiple strong candidates
+  /// exist ... show the user the relevant choices."
+  void _onConfirm() {
+    final candidates = widget.candidates;
+    setState(() {
+      _lockedCandidates = candidates;
+      _selectedId = candidates.isNotEmpty ? candidates.first.id : null;
+      _phase = candidates.length > 1 ? _Phase.chooser : _Phase.detail;
+    });
+    if (candidates.isNotEmpty) unawaited(_loadPhotos(candidates));
+  }
+
+  void _onPick(String id) => setState(() {
+        _selectedId = id;
+        _phase = _Phase.detail;
+      });
+
+  void _onScanAgain() => setState(() {
+        _phase = _Phase.scanning;
+        _lockedCandidates = const [];
+        _selectedId = null;
+      });
+
   @override
   Widget build(BuildContext context) {
-    final candidates = widget.candidates;
-    final selected = candidates.isEmpty
-        ? null
-        : candidates.firstWhere(
-            (c) => c.id == _selectedId,
-            orElse: () => candidates.first,
-          );
-
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: RD.lg, vertical: RD.md),
-      children: [
-        _CompassDial(
+    switch (_phase) {
+      case _Phase.scanning:
+        return _ScanningView(
           heading: widget.heading,
           usingCompass: widget.usingCompass,
-        ),
-        const SizedBox(height: RD.lg),
-        if (candidates.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: RD.xl),
-            child: Text(
-              "Nothing known is in that direction within about 5 miles. "
-              "Try turning a little.",
-              textAlign: TextAlign.center,
-              style: RD.body.copyWith(color: RD.textSecondary),
-            ),
-          )
-        else ...[
-          Text(
-            candidates.length == 1
-                ? "1 place that way"
-                : "${candidates.length} places that way — pick the right one",
-            style: RD.badge
-                .copyWith(color: RD.textSecondary, letterSpacing: 1.1),
+          topCandidate:
+              widget.candidates.isNotEmpty ? widget.candidates.first : null,
+          onConfirm: _onConfirm,
+        );
+      case _Phase.chooser:
+        return _ChooserView(
+          candidates: _lockedCandidates,
+          imageFor: _imageFor,
+          onPick: _onPick,
+          onScanAgain: _onScanAgain,
+        );
+      case _Phase.detail:
+        final selected = _lockedCandidates.isEmpty
+            ? null
+            : _lockedCandidates.firstWhere(
+                (c) => c.id == _selectedId,
+                orElse: () => _lockedCandidates.first,
+              );
+        if (selected == null) {
+          return _ChooserView(
+            candidates: const [],
+            imageFor: _imageFor,
+            onPick: _onPick,
+            onScanAgain: _onScanAgain,
+          );
+        }
+        return SingleChildScrollView(
+          padding:
+              const EdgeInsets.symmetric(horizontal: RD.lg, vertical: RD.md),
+          child: _CandidateDetail(
+            key: ValueKey(selected.id),
+            candidate: selected,
+            imageUrl: _imageFor(selected),
+            onTellDjSunny: () => widget.onTellDjSunny(selected),
+            onTellMeMore: () => widget.onTellMeMore(selected),
+            onNavigate: () => widget.onNavigate(selected),
+            onScanAgain: _onScanAgain,
+            onChooseDifferent: _lockedCandidates.length > 1
+                ? () => setState(() => _phase = _Phase.chooser)
+                : null,
           ),
-          const SizedBox(height: RD.sm),
-          for (final c in candidates) ...[
-            _CandidateCard(
-              candidate: c,
-              imageUrl: _imageFor(c),
-              selected: c.id == selected?.id,
-              onTap: () => setState(() => _selectedId = c.id),
-            ),
-            const SizedBox(height: RD.sm),
-          ],
-          const SizedBox(height: RD.sm),
-          if (selected != null)
-            _CandidateDetail(
-              key: ValueKey(selected.id),
-              candidate: selected,
-              imageUrl: _imageFor(selected),
-              onTellDjSunny: () => widget.onTellDjSunny(selected),
-              onTellMeMore: () => widget.onTellMeMore(selected),
-              onNavigate: () => widget.onNavigate(selected),
-            ),
-        ],
+        );
+    }
+  }
+}
+
+/// Live "look around" view — spec: shows the single best-matching place in
+/// whatever direction the top of the phone currently points, updating as
+/// the user rotates, with NO narration and no photo lookups. Just the same
+/// `whatIsThatCandidatesProvider` result already computed for the compass
+/// dial, read straight through with zero extra state.
+class _ScanningView extends StatelessWidget {
+  const _ScanningView({
+    required this.heading,
+    required this.usingCompass,
+    required this.topCandidate,
+    required this.onConfirm,
+  });
+  final double heading;
+  final bool usingCompass;
+  final WhatIsThatCandidate? topCandidate;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = topCandidate;
+    return Column(
+      children: [
+        const SizedBox(height: RD.sm),
+        _CompassDial(heading: heading, usingCompass: usingCompass),
+        Expanded(
+          child: Center(
+            child: c == null
+                ? Padding(
+                    padding: const EdgeInsets.all(RD.xl),
+                    child: Text(
+                      "Nothing known yet in that direction — keep rotating.",
+                      textAlign: TextAlign.center,
+                      style: RD.body.copyWith(color: RD.textSecondary),
+                    ),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_emojiForCandidate(c),
+                          style: const TextStyle(fontSize: 64)),
+                      const SizedBox(height: RD.sm),
+                      Text(c.name,
+                          textAlign: TextAlign.center,
+                          style: RD.title.copyWith(color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text(c.distanceLabel,
+                          style: RD.body.copyWith(color: RD.textSecondary)),
+                    ],
+                  ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: RD.xl),
+          child: Column(
+            children: [
+              _ConfirmArrowButton(onTap: onConfirm),
+              const SizedBox(height: RD.sm),
+              Text("WHAT'S THERE?",
+                  style: RD.badge
+                      .copyWith(color: RD.textSecondary, letterSpacing: 1.4)),
+            ],
+          ),
+        ),
       ],
     );
   }
+}
+
+/// Large, thumb-reachable confirm button — spec: "Place a large, simple
+/// button at the LOWER portion of the screen for easy one-handed access."
+class _ConfirmArrowButton extends StatelessWidget {
+  const _ConfirmArrowButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 88,
+        height: 88,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: RD.greenBright,
+        ),
+        child: const Icon(Icons.arrow_upward_rounded,
+            size: 44, color: RD.onGreen),
+      ),
+    );
+  }
+}
+
+/// Shown only once the user has pressed ↑ and there was more than one
+/// strong candidate in the locked direction — spec: "show the user the
+/// relevant choices, preferably with available photos, and let the user
+/// select the correct one." Reuses [_CandidateCard] unchanged.
+class _ChooserView extends StatelessWidget {
+  const _ChooserView({
+    required this.candidates,
+    required this.imageFor,
+    required this.onPick,
+    required this.onScanAgain,
+  });
+  final List<WhatIsThatCandidate> candidates;
+  final String? Function(WhatIsThatCandidate) imageFor;
+  final void Function(String id) onPick;
+  final VoidCallback onScanAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(RD.sm, RD.sm, RD.lg, 0),
+          child: TextButton.icon(
+            onPressed: onScanAgain,
+            icon: const Icon(Icons.refresh_rounded, color: RD.greenBright),
+            label: Text('SCAN AGAIN',
+                style:
+                    RD.badge.copyWith(color: RD.greenBright, letterSpacing: 1.1)),
+          ),
+        ),
+        Expanded(
+          child: candidates.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(RD.xl),
+                    child: Text(
+                      "Nothing known was in that direction. Point "
+                      "somewhere else and press ↑ again.",
+                      textAlign: TextAlign.center,
+                      style: RD.body.copyWith(color: RD.textSecondary),
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: RD.lg, vertical: RD.sm),
+                  children: [
+                    Text(
+                      "${candidates.length} places that way — which one?",
+                      style: RD.badge
+                          .copyWith(color: RD.textSecondary, letterSpacing: 1.1),
+                    ),
+                    const SizedBox(height: RD.sm),
+                    for (final c in candidates) ...[
+                      _CandidateCard(
+                        candidate: c,
+                        imageUrl: imageFor(c),
+                        selected: false,
+                        onTap: () => onPick(c.id),
+                      ),
+                      const SizedBox(height: RD.sm),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A simple, free, keyword-based icon for the live scanning view — spec's
+/// own examples ("🏛️ Historic Building", "🌊 Lake", "🌳 Park") are exactly
+/// this style. Purely cosmetic — never affects identification or ranking,
+/// which stay driven entirely by [WhatIsThatCandidate.typeLabel] from the
+/// existing database, unchanged.
+String _emojiForCandidate(WhatIsThatCandidate c) {
+  final t = (c.typeLabel ?? '').toLowerCase();
+  const rules = <MapEntry<String, String>>[
+    MapEntry('historic', '🏛️'),
+    MapEntry('museum', '🏛️'),
+    MapEntry('monument', '🗿'),
+    MapEntry('memorial', '🕊️'),
+    MapEntry('lighthouse', '💡'),
+    MapEntry('bridge', '🌉'),
+    MapEntry('cave', '🕳️'),
+    MapEntry('waterfall', '💦'),
+    MapEntry('spring', '💧'),
+    MapEntry('lake', '🌊'),
+    MapEntry('river', '🌊'),
+    MapEntry('beach', '🏖️'),
+    MapEntry('forest', '🌲'),
+    MapEntry('park', '🌳'),
+    MapEntry('trail', '🥾'),
+    MapEntry('campground', '⛺'),
+    MapEntry('boat ramp', '🚤'),
+    MapEntry('visitor center', 'ℹ️'),
+    MapEntry('wildlife', '🦌'),
+    MapEntry('scenic overlook', '🏔️'),
+    MapEntry('scenic road', '🛣️'),
+    MapEntry('coffee', '☕'),
+    MapEntry('restaurant', '🍽️'),
+    MapEntry('festival', '🎪'),
+    MapEntry('event venue', '🎪'),
+    MapEntry('attraction', '🎡'),
+    MapEntry('business', '🏢'),
+    MapEntry('town', '🏘️'),
+    MapEntry('village', '🏘️'),
+    MapEntry('community', '🏘️'),
+    MapEntry('hidden gem', '✨'),
+  ];
+  for (final rule in rules) {
+    if (t.contains(rule.key)) return rule.value;
+  }
+  return '📍';
 }
 
 class _CompassDial extends StatelessWidget {
@@ -498,84 +710,116 @@ class _CandidateDetail extends StatelessWidget {
     required this.onTellDjSunny,
     required this.onTellMeMore,
     required this.onNavigate,
+    required this.onScanAgain,
+    this.onChooseDifferent,
   });
   final WhatIsThatCandidate candidate;
   final String? imageUrl;
   final VoidCallback onTellDjSunny;
   final VoidCallback onTellMeMore;
   final VoidCallback onNavigate;
+  final VoidCallback onScanAgain;
+  final VoidCallback? onChooseDifferent;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: RD.panel,
-        borderRadius: BorderRadius.circular(RD.rLg),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if ((imageUrl ?? '').trim().isNotEmpty)
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Image.network(imageUrl!, fit: BoxFit.cover),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            TextButton.icon(
+              onPressed: onScanAgain,
+              icon: const Icon(Icons.refresh_rounded,
+                  size: 18, color: RD.greenBright),
+              label: Text('SCAN AGAIN',
+                  style: RD.badge
+                      .copyWith(color: RD.greenBright, letterSpacing: 1.0)),
             ),
-          Padding(
-            padding: const EdgeInsets.all(RD.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(candidate.name,
-                    style: RD.title.copyWith(color: Colors.white)),
-                const SizedBox(height: 2),
-                Text(
-                  [
-                    if ((candidate.typeLabel ?? '').isNotEmpty)
-                      candidate.typeLabel,
-                    candidate.distanceLabel,
-                  ].whereType<String>().join('  ·  '),
-                  style: RD.caption.copyWith(color: RD.textSecondary),
+            if (onChooseDifferent != null)
+              TextButton.icon(
+                onPressed: onChooseDifferent,
+                icon: const Icon(Icons.swap_horiz_rounded,
+                    size: 18, color: RD.textSecondary),
+                label: Text('DIFFERENT PLACE',
+                    style: RD.badge
+                        .copyWith(color: RD.textSecondary, letterSpacing: 1.0)),
+              ),
+          ],
+        ),
+        const SizedBox(height: RD.sm),
+        Container(
+          decoration: BoxDecoration(
+            color: RD.panel,
+            borderRadius: BorderRadius.circular(RD.rLg),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if ((imageUrl ?? '').trim().isNotEmpty)
+                AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: Image.network(imageUrl!, fit: BoxFit.cover),
                 ),
-                if ((candidate.address ?? '').trim().isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(candidate.address!,
-                      style: RD.caption.copyWith(color: RD.textSecondary)),
-                ],
-                if ((candidate.description ?? '').isNotEmpty) ...[
-                  const SizedBox(height: RD.sm),
-                  Text(candidate.description!,
-                      style: RD.body.copyWith(color: RD.textPrimary)),
-                ],
-                const SizedBox(height: RD.md),
-                Wrap(
-                  spacing: RD.sm,
-                  runSpacing: RD.sm,
+              Padding(
+                padding: const EdgeInsets.all(RD.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: onTellDjSunny,
-                      icon: const Icon(Icons.replay_rounded, size: 18),
-                      label: const Text('Replay'),
+                    Text(candidate.name,
+                        style: RD.title.copyWith(color: Colors.white)),
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if ((candidate.typeLabel ?? '').isNotEmpty)
+                          candidate.typeLabel,
+                        candidate.distanceLabel,
+                      ].whereType<String>().join('  ·  '),
+                      style: RD.caption.copyWith(color: RD.textSecondary),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: onTellMeMore,
-                      icon: const Icon(Icons.info_outline_rounded, size: 18),
-                      label: const Text('Tell Me More'),
+                    if ((candidate.address ?? '').trim().isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(candidate.address!,
+                          style: RD.caption.copyWith(color: RD.textSecondary)),
+                    ],
+                    if ((candidate.description ?? '').isNotEmpty) ...[
+                      const SizedBox(height: RD.sm),
+                      Text(candidate.description!,
+                          style: RD.body.copyWith(color: RD.textPrimary)),
+                    ],
+                    const SizedBox(height: RD.md),
+                    Wrap(
+                      spacing: RD.sm,
+                      runSpacing: RD.sm,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: onTellDjSunny,
+                          icon: const Icon(Icons.replay_rounded, size: 18),
+                          label: const Text('Replay'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: onTellMeMore,
+                          icon:
+                              const Icon(Icons.info_outline_rounded, size: 18),
+                          label: const Text('Tell Me More'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: onNavigate,
+                          icon: const Icon(Icons.directions_rounded, size: 18),
+                          label: const Text('Navigate'),
+                        ),
+                      ],
                     ),
-                    OutlinedButton.icon(
-                      onPressed: onNavigate,
-                      icon: const Icon(Icons.directions_rounded, size: 18),
-                      label: const Text('Navigate'),
-                    ),
+                    const SizedBox(height: RD.lg),
+                    _TopicPicker(candidate: candidate, imageUrl: imageUrl),
                   ],
                 ),
-                const SizedBox(height: RD.lg),
-                _TopicPicker(candidate: candidate, imageUrl: imageUrl),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -774,7 +1018,7 @@ class _TopicPickerState extends ConsumerState<_TopicPicker> {
           children: [
             for (final topic in topics)
               _TopicChip(
-                label: topic.label,
+                label: '🎧 ${topic.label}',
                 busy: _busyTopic == topic,
                 enabled: _busyTopic == null,
                 onTap: () => _onTopicTap(topic),
