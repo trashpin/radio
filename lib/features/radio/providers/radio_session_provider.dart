@@ -4,6 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/error/app_exception.dart';
+import 'package:explorer_os_mobile/features/copilot/models/copilot_event.dart';
+import 'package:explorer_os_mobile/features/copilot/providers/copilot_providers.dart';
+import 'package:explorer_os_mobile/features/navigation/models/trip_progress.dart';
+import 'package:explorer_os_mobile/features/navigation/providers/trip_provider.dart';
 import 'package:explorer_os_mobile/features/discover_area/data/area_content_repository.dart';
 import 'package:explorer_os_mobile/features/discover_area/models/area_content_block.dart';
 import 'package:explorer_os_mobile/features/gps/data/geofence_repository.dart';
@@ -113,6 +117,14 @@ final radioSessionProvider = FutureProvider<RadioStation>((ref) async {
   // used above, resolve the winning location's existing content, and interrupt
   // the radio via the existing engine. Wildlife stays area-based (untouched).
   _attachGeofenceTriggers(ref);
+
+  // TRAVEL COPILOT: reacts to Start Trip turn-by-turn events (see
+  // lib/features/navigation/). Entering-town/county/interesting-location
+  // events are notified from inside the existing directors above via small,
+  // one-line hooks (_attachCommunityWelcome, _attachCountyWelcome,
+  // _attachLocationTriggers) rather than a second detector — see each
+  // function's own comment.
+  _attachCopilotBrain(ref);
 
   // Load pre-generated DJ voice clips (from dj_banter_clips) + published
   // Radio Automation library segments that have audio, so the DJ speaks
@@ -413,6 +425,51 @@ void _attachCountyDjFacts(Ref ref, RadioEngineService engine) {
       (_, _) => update(ref.read(locationContextProvider).county));
 }
 
+/// TRAVEL COPILOT — reacts to `TripTracker`'s turn-by-turn stream (Start
+/// Trip → maneuvers/missed-turn/recalculating/arrival). A new trip resets the
+/// copilot's per-trip anti-repeat memory (spec §10). Safety/navigation
+/// events always carry Google's own instruction text as `coreText`, spoken
+/// immediately by `CopilotController` with zero AI/network dependency — see
+/// lib/features/copilot/providers/copilot_providers.dart.
+void _attachCopilotBrain(Ref ref) {
+  final controller = ref.read(copilotControllerProvider);
+  final sub = ref.read(tripControllerProvider.notifier).events.listen((event) {
+    switch (event) {
+      case TripStarted(:final destinationName):
+        ref.read(copilotSessionMemoryProvider).resetForNewTrip();
+        controller.notifyEvent(CopilotEvent(
+          type: CopilotEventType.tripStarted,
+          placeName: destinationName,
+        ));
+      case ApproachingManeuver(:final step, :final distanceMeters):
+        controller.notifyEvent(CopilotEvent(
+          type: CopilotEventType.approachingManeuver,
+          placeName: step.instruction,
+          coreText: step.instruction,
+          distanceMeters: distanceMeters,
+        ));
+      case MissedTurn():
+        controller.notifyEvent(const CopilotEvent(
+          type: CopilotEventType.missedTurn,
+          coreText: "You missed that turn.",
+        ));
+      case Recalculating():
+        controller.notifyEvent(const CopilotEvent(
+          type: CopilotEventType.recalculating,
+          coreText: 'Recalculating the route.',
+        ));
+      case TripArrived():
+        controller.notifyEvent(const CopilotEvent(
+          type: CopilotEventType.arrived,
+          coreText: "You've arrived.",
+        ));
+      case TripEnded():
+        break;
+    }
+  });
+  ref.onDispose(sub.cancel);
+}
+
 void _attachCountyWelcome(Ref ref) {
   final director = CountyWelcomeDirector();
   final weather = ref.read(weatherClientProvider);
@@ -473,6 +530,14 @@ void _attachCountyWelcome(Ref ref) {
               resumeAfter: true,
             ),
           );
+      // TRAVEL COPILOT hook — one line, no new county detector: the same
+      // welcome-worthy moment this director already computed also becomes a
+      // CopilotEvent so the brain can add a sarcastic remark alongside it.
+      ref.read(copilotControllerProvider).notifyEvent(CopilotEvent(
+            type: CopilotEventType.enteringCounty,
+            placeName: county,
+            facts: (cfg?.facts.isNotEmpty ?? false) ? [cfg!.facts.first] : const [],
+          ));
     } catch (_) {
       // Never let a weather/network hiccup break the session.
     } finally {
@@ -576,6 +641,12 @@ void _attachCommunityWelcome(Ref ref) {
           resumeAfter: true,
         ),
       );
+      // TRAVEL COPILOT hook — one line, no second town detector.
+      ref.read(copilotControllerProvider).notifyEvent(CopilotEvent(
+            type: CopilotEventType.enteringTown,
+            placeName: cue.place.name,
+            placeId: cue.place.id,
+          ));
     }
   }
 
@@ -675,6 +746,33 @@ void _attachLocationTriggers(Ref ref) {
         resumeAfter: true,
       ),
     );
+
+    // TRAVEL COPILOT hook — one line, no second POI detector. Facts favor
+    // the location's own description; when the traveler is in Marion County,
+    // admin-authored CountyConfig facts are added too (spec §5: "the copilot
+    // should feel like it KNOWS Marion County").
+    if (isArrival) {
+      final facts = <String>[];
+      final desc = loc.bestDescription;
+      if (desc != null && desc.trim().isNotEmpty) facts.add(desc.trim());
+      final county = (ref.read(locationContextProvider).county ?? '').toLowerCase().trim();
+      if (county == 'marion') {
+        final configs = ref.read(countyConfigsProvider).value ?? const <CountyConfig>[];
+        for (final c in configs) {
+          if (c.key == 'marion') {
+            facts.addAll(c.facts);
+            break;
+          }
+        }
+      }
+      ref.read(copilotControllerProvider).notifyEvent(CopilotEvent(
+            type: CopilotEventType.approachingInterestingLocation,
+            placeName: loc.name,
+            placeId: loc.id,
+            typeLabel: loc.type.label,
+            facts: facts,
+          ));
+    }
   }
 
   // Guarded so a location-trigger hiccup can never break the radio session.

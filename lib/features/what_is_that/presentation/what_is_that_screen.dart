@@ -7,8 +7,11 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/copilot/models/copilot_event.dart';
+import 'package:explorer_os_mobile/features/copilot/providers/copilot_providers.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/gps/models/gps_enums.dart';
+import 'package:explorer_os_mobile/features/navigation/presentation/start_trip_button.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
@@ -293,6 +296,13 @@ class _BodyState extends ConsumerState<_Body> {
       _phase = candidates.length > 1 ? _Phase.chooser : _Phase.detail;
     });
     if (candidates.isNotEmpty) unawaited(_loadPhotos(candidates));
+    // TRAVEL COPILOT hook — spec: "Oh, you want to know what THAT is?
+    // Alright, let's find out." Fire-and-forget; never blocks or changes the
+    // existing identification/narration/topic flow above.
+    unawaited(ref.read(copilotControllerProvider).notifyEvent(CopilotEvent(
+          type: CopilotEventType.whatIsThatConfirmed,
+          placeName: candidates.isNotEmpty ? candidates.first.name : null,
+        )));
   }
 
   void _onPick(String id) => setState(() {
@@ -938,6 +948,11 @@ class _CandidateDetail extends StatelessWidget {
                           onPressed: onNavigate,
                           icon: const Icon(Icons.directions_rounded, size: 18),
                           label: const Text('Navigate'),
+                        ),
+                        StartTripButton(
+                          latitude: candidate.latitude,
+                          longitude: candidate.longitude,
+                          name: candidate.name,
                         ),
                       ],
                     ),

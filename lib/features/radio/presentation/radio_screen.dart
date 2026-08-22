@@ -9,6 +9,8 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/gps/presentation/location_prompt.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
+import 'package:explorer_os_mobile/features/navigation/presentation/start_trip_button.dart';
+import 'package:explorer_os_mobile/features/navigation/providers/trip_provider.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/location_engine.dart';
@@ -404,6 +406,7 @@ class _PlayerState extends ConsumerState<_Player> {
                       key: const ValueKey('radio'),
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        const _TripStatusBanner(),
                         if (ref.watch(exploreActiveProvider)) ...[
                           const _ExploreBanner(),
                           const SizedBox(height: RD.sm),
@@ -447,6 +450,12 @@ class _PlayerState extends ConsumerState<_Player> {
                               exploreSegment!.location!.latitude,
                               exploreSegment.location!.longitude,
                             ),
+                          ),
+                          const SizedBox(height: RD.sm),
+                          StartTripButton(
+                            latitude: exploreSegment!.location!.latitude,
+                            longitude: exploreSegment.location!.longitude,
+                            name: exploreSegment.title,
                           ),
                         ],
                         const SizedBox(height: RD.md),
@@ -939,6 +948,51 @@ class _WhatIsThatButton extends StatelessWidget {
                   size: 18, color: RD.textFaint),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// TRAVEL COPILOT — a small, always-visible indicator (not gated by Explore
+/// mode, unlike [_WhatIsThatButton]) while a "Start Trip" is active, so the
+/// traveler always knows the background route tracker is on and can stop it.
+/// Renders nothing when idle. See lib/features/navigation/.
+class _TripStatusBanner extends ConsumerWidget {
+  const _TripStatusBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progress = ref.watch(tripControllerProvider);
+    if (!progress.isActive) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: RD.sm),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
+        decoration: BoxDecoration(
+          color: RD.panel,
+          borderRadius: BorderRadius.circular(RD.rPill),
+          border: Border.all(color: RD.stroke),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.navigation_rounded, size: 16, color: RD.greenBright),
+            const SizedBox(width: RD.xs),
+            Expanded(
+              child: Text(
+                'Tracking trip to '
+                '${progress.destinationName ?? "your destination"}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: RD.badge.copyWith(color: RD.textPrimary, letterSpacing: 0.6),
+              ),
+            ),
+            TextButton(
+              onPressed: () => ref.read(tripControllerProvider.notifier).cancelTrip(),
+              child: Text('STOP',
+                  style: RD.badge.copyWith(color: RD.textSecondary, letterSpacing: 1.0)),
+            ),
+          ],
         ),
       ),
     );
