@@ -313,8 +313,7 @@ class _BodyState extends ConsumerState<_Body> {
         return _ScanningView(
           heading: widget.heading,
           usingCompass: widget.usingCompass,
-          topCandidate:
-              widget.candidates.isNotEmpty ? widget.candidates.first : null,
+          candidates: widget.candidates,
           onConfirm: _onConfirm,
         );
       case _Phase.chooser:
@@ -359,56 +358,52 @@ class _BodyState extends ConsumerState<_Body> {
   }
 }
 
-/// Live "look around" view — spec: shows the single best-matching place in
-/// whatever direction the top of the phone currently points, updating as
-/// the user rotates, with NO narration and no photo lookups. Just the same
-/// `whatIsThatCandidatesProvider` result already computed for the compass
-/// dial, read straight through with zero extra state.
+/// Live "look around" view — spec: a discovery/search screen that feels
+/// active while the user rotates the phone, showing up to 3 results in the
+/// direction the top of the phone currently points, with NO narration and
+/// no photo lookups. Just the same `whatIsThatCandidatesProvider` result
+/// already computed for the compass dial, read straight through with zero
+/// extra state.
 class _ScanningView extends StatelessWidget {
   const _ScanningView({
     required this.heading,
     required this.usingCompass,
-    required this.topCandidate,
+    required this.candidates,
     required this.onConfirm,
   });
   final double heading;
   final bool usingCompass;
-  final WhatIsThatCandidate? topCandidate;
+  final List<WhatIsThatCandidate> candidates;
   final VoidCallback onConfirm;
 
   @override
   Widget build(BuildContext context) {
-    final c = topCandidate;
     return Column(
       children: [
         const SizedBox(height: RD.sm),
         _CompassDial(heading: heading, usingCompass: usingCompass),
+        const SizedBox(height: RD.sm),
+        const _LiveSearchingBadge(),
         Expanded(
-          child: Center(
-            child: c == null
-                ? Padding(
+          child: candidates.isEmpty
+              ? Center(
+                  child: Padding(
                     padding: const EdgeInsets.all(RD.xl),
                     child: Text(
                       "Nothing known yet in that direction — keep rotating.",
                       textAlign: TextAlign.center,
                       style: RD.body.copyWith(color: RD.textSecondary),
                     ),
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_emojiForCandidate(c),
-                          style: const TextStyle(fontSize: 64)),
-                      const SizedBox(height: RD.sm),
-                      Text(c.name,
-                          textAlign: TextAlign.center,
-                          style: RD.title.copyWith(color: Colors.white)),
-                      const SizedBox(height: 2),
-                      Text(c.distanceLabel,
-                          style: RD.body.copyWith(color: RD.textSecondary)),
-                    ],
                   ),
-          ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: RD.lg, vertical: RD.md),
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    for (final c in candidates) _ScanResultRow(candidate: c),
+                  ],
+                ),
         ),
         Padding(
           padding: const EdgeInsets.only(bottom: RD.xl),
@@ -425,6 +420,177 @@ class _ScanningView extends StatelessWidget {
       ],
     );
   }
+}
+
+/// A small pulsing dot + label — spec: "The status should remain visible
+/// while the system is updating the directional results... The screen
+/// should feel active and responsive rather than looking like a static
+/// information page." Reuses the app's existing "equalizer" pulse timing
+/// ([RD.eq]) rather than inventing a new animation rhythm.
+class _LiveSearchingBadge extends StatefulWidget {
+  const _LiveSearchingBadge();
+
+  @override
+  State<_LiveSearchingBadge> createState() => _LiveSearchingBadgeState();
+}
+
+class _LiveSearchingBadgeState extends State<_LiveSearchingBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: RD.eq)
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FadeTransition(
+          opacity: Tween<double>(begin: 0.25, end: 1.0).animate(_controller),
+          child: Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: RD.greenBright,
+            ),
+          ),
+        ),
+        const SizedBox(width: RD.sm),
+        Text('SEARCHING AROUND YOU...',
+            style:
+                RD.badge.copyWith(color: RD.textSecondary, letterSpacing: 1.1)),
+      ],
+    );
+  }
+}
+
+/// One live-scan result row — spec: "Category icon, Place/location name,
+/// Distance, Optional short description when useful." Purely informational
+/// (not tappable) while scanning — the user commits with the ↑ button, per
+/// the identification flow, not by tapping a row here.
+class _ScanResultRow extends StatelessWidget {
+  const _ScanResultRow({required this.candidate});
+  final WhatIsThatCandidate candidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = (candidate.description ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: RD.xs),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _CategoryBadge(icon: _categoryIconFor(candidate), size: 36),
+          const SizedBox(width: RD.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(candidate.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: RD.cardTitle.copyWith(color: Colors.white)),
+                Text(
+                  [
+                    candidate.distanceLabel,
+                    if (description.isNotEmpty) description,
+                  ].join('  ·  '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: RD.caption.copyWith(color: RD.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small circular icon badge — spec: "The icon should be visually
+/// secondary to the location name" (small + muted) and "Do not make the
+/// screen overly colorful." Every category icon renders in the SAME single
+/// accent color; only the glyph itself varies by category, so recognition
+/// comes from shape, not from a rainbow of colors.
+class _CategoryBadge extends StatelessWidget {
+  const _CategoryBadge({required this.icon, this.size = 36});
+  final IconData icon;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        color: RD.bgElevated,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: size * 0.5, color: RD.greenBright),
+    );
+  }
+}
+
+/// A consistent, professional category icon for [c] — spec section 3: one
+/// recognizable icon per category family (water, park/nature, building,
+/// history, museum, town/community, attraction, event, wildlife), used the
+/// same everywhere in this feature (the live scan rows, the chooser cards'
+/// no-photo fallback, and the selected-place detail). Purely cosmetic —
+/// never affects identification or ranking, which stay driven entirely by
+/// [WhatIsThatCandidate.typeLabel] from the existing database, unchanged.
+IconData _categoryIconFor(WhatIsThatCandidate c) {
+  final t = (c.typeLabel ?? '').toLowerCase();
+  const rules = <MapEntry<String, IconData>>[
+    // Most specific first.
+    MapEntry('museum', Icons.museum_rounded),
+    MapEntry('historic', Icons.account_balance_rounded),
+    MapEntry('monument', Icons.account_balance_rounded),
+    MapEntry('memorial', Icons.account_balance_rounded),
+    MapEntry('event', Icons.event_rounded),
+    MapEntry('festival', Icons.event_rounded),
+    MapEntry('wildlife', Icons.pets_rounded),
+    MapEntry('attraction', Icons.attractions_rounded),
+    MapEntry('hidden gem', Icons.attractions_rounded),
+    MapEntry('lake', Icons.water_rounded),
+    MapEntry('river', Icons.water_rounded),
+    MapEntry('spring', Icons.water_rounded),
+    MapEntry('waterfall', Icons.water_rounded),
+    MapEntry('boat ramp', Icons.water_rounded),
+    MapEntry('beach', Icons.beach_access_rounded),
+    MapEntry('forest', Icons.park_rounded),
+    MapEntry('park', Icons.park_rounded),
+    MapEntry('trail', Icons.park_rounded),
+    MapEntry('scenic', Icons.landscape_rounded),
+    MapEntry('cave', Icons.landscape_rounded),
+    MapEntry('campground', Icons.park_rounded),
+    MapEntry('town', Icons.location_city_rounded),
+    MapEntry('village', Icons.location_city_rounded),
+    MapEntry('community', Icons.location_city_rounded),
+    MapEntry('lighthouse', Icons.apartment_rounded),
+    MapEntry('bridge', Icons.apartment_rounded),
+    MapEntry('visitor center', Icons.apartment_rounded),
+    MapEntry('coffee', Icons.apartment_rounded),
+    MapEntry('restaurant', Icons.apartment_rounded),
+    MapEntry('business', Icons.apartment_rounded),
+  ];
+  for (final rule in rules) {
+    if (t.contains(rule.key)) return rule.value;
+  }
+  return Icons.place_rounded;
 }
 
 /// Large, thumb-reachable confirm button — spec: "Place a large, simple
@@ -522,52 +688,6 @@ class _ChooserView extends StatelessWidget {
   }
 }
 
-/// A simple, free, keyword-based icon for the live scanning view — spec's
-/// own examples ("🏛️ Historic Building", "🌊 Lake", "🌳 Park") are exactly
-/// this style. Purely cosmetic — never affects identification or ranking,
-/// which stay driven entirely by [WhatIsThatCandidate.typeLabel] from the
-/// existing database, unchanged.
-String _emojiForCandidate(WhatIsThatCandidate c) {
-  final t = (c.typeLabel ?? '').toLowerCase();
-  const rules = <MapEntry<String, String>>[
-    MapEntry('historic', '🏛️'),
-    MapEntry('museum', '🏛️'),
-    MapEntry('monument', '🗿'),
-    MapEntry('memorial', '🕊️'),
-    MapEntry('lighthouse', '💡'),
-    MapEntry('bridge', '🌉'),
-    MapEntry('cave', '🕳️'),
-    MapEntry('waterfall', '💦'),
-    MapEntry('spring', '💧'),
-    MapEntry('lake', '🌊'),
-    MapEntry('river', '🌊'),
-    MapEntry('beach', '🏖️'),
-    MapEntry('forest', '🌲'),
-    MapEntry('park', '🌳'),
-    MapEntry('trail', '🥾'),
-    MapEntry('campground', '⛺'),
-    MapEntry('boat ramp', '🚤'),
-    MapEntry('visitor center', 'ℹ️'),
-    MapEntry('wildlife', '🦌'),
-    MapEntry('scenic overlook', '🏔️'),
-    MapEntry('scenic road', '🛣️'),
-    MapEntry('coffee', '☕'),
-    MapEntry('restaurant', '🍽️'),
-    MapEntry('festival', '🎪'),
-    MapEntry('event venue', '🎪'),
-    MapEntry('attraction', '🎡'),
-    MapEntry('business', '🏢'),
-    MapEntry('town', '🏘️'),
-    MapEntry('village', '🏘️'),
-    MapEntry('community', '🏘️'),
-    MapEntry('hidden gem', '✨'),
-  ];
-  for (final rule in rules) {
-    if (t.contains(rule.key)) return rule.value;
-  }
-  return '📍';
-}
-
 class _CompassDial extends StatelessWidget {
   const _CompassDial({required this.heading, required this.usingCompass});
   final double heading;
@@ -662,8 +782,8 @@ class _CandidateCard extends StatelessWidget {
                     : Container(
                         color: RD.bgElevated,
                         alignment: Alignment.center,
-                        child: const Icon(Icons.place_rounded,
-                            color: RD.textSecondary),
+                        child: Icon(_categoryIconFor(candidate),
+                            color: RD.greenBright),
                       ),
               ),
             ),
@@ -767,8 +887,18 @@ class _CandidateDetail extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(candidate.name,
-                        style: RD.title.copyWith(color: Colors.white)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        _CategoryBadge(
+                            icon: _categoryIconFor(candidate), size: 32),
+                        const SizedBox(width: RD.sm),
+                        Expanded(
+                          child: Text(candidate.name,
+                              style: RD.title.copyWith(color: Colors.white)),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       [
