@@ -23,6 +23,7 @@ enum AppRoute {
   explorerMode('/explorer-mode'),
   iSeeSomething('/i-see-something'),
   whatIsThat('/what-is-that'),
+  ocalaForest('/ocala-forest'),
   localGems('/local-gems'),
   tellMeMore('/tell-me-more'),
   stationSelect('/station-select'),

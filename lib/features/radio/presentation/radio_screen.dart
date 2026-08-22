@@ -407,6 +407,16 @@ class _PlayerState extends ConsumerState<_Player> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         const _TripStatusBanner(),
+                        // Sole entry point into the isolated, experimental
+                        // "Ocala Forest Explorer" feature (its own route/
+                        // screen/providers/tables — see
+                        // lib/features/ocala_forest/). Not tied to Explore
+                        // mode since it's a separate experiment; nothing
+                        // else on this screen changes.
+                        _OcalaForestButton(
+                          onTap: () => context.push(AppRoute.ocalaForest.path),
+                        ),
+                        const SizedBox(height: RD.sm),
                         if (ref.watch(exploreActiveProvider)) ...[
                           const _ExploreBanner(),
                           const SizedBox(height: RD.sm),
@@ -993,6 +1003,49 @@ class _TripStatusBanner extends ConsumerWidget {
                   style: RD.badge.copyWith(color: RD.textSecondary, letterSpacing: 1.0)),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Entry point into the isolated, experimental Ocala Forest Explorer —
+/// styled identically to [_WhatIsThatButton] for visual consistency, but a
+/// separate, unrelated feature (own route, own data, own map).
+class _OcalaForestButton extends StatelessWidget {
+  const _OcalaForestButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(RD.rPill),
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
+          decoration: BoxDecoration(
+            color: RD.panel,
+            borderRadius: BorderRadius.circular(RD.rPill),
+            border: Border.all(color: RD.stroke),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.forest_rounded, size: 16, color: RD.greenBright),
+              const SizedBox(width: RD.xs),
+              Text(
+                'OCALA FOREST EXPLORER (EXPERIMENTAL)',
+                style: RD.badge
+                    .copyWith(color: RD.textPrimary, letterSpacing: 1.1),
+              ),
+              const Spacer(),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 18, color: RD.textFaint),
+            ],
+          ),
         ),
       ),
     );

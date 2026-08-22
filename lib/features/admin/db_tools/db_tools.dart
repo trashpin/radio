@@ -28,6 +28,10 @@ const List<DbTable> kDbTables = [
   DbTable('trails', 'Trails', group: 'Map'),
   DbTable('wildlife_alerts', 'Wildlife Alerts', group: 'Audio'),
   DbTable('safety_messages', 'Safety Messages', group: 'Audio'),
+  // Ocala Forest Explorer — isolated experimental feature (never mixed
+  // with the Marion County `locations` table above).
+  DbTable('forest_boundaries', 'Ocala Forest Boundary', group: 'Ocala Forest'),
+  DbTable('forest_locations', 'Ocala Forest Locations', group: 'Ocala Forest'),
 ];
 
 /// Which tables to surface as headline counts on the dashboard.

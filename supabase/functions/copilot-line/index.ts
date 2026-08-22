@@ -178,8 +178,9 @@ async function openaiText(system: string, user: string): Promise<string> {
 /// raw-bytes response to the client). Returns null on any failure — a
 /// missing audioUrl is never fatal for this endpoint; the client falls back
 /// to on-device TTS of the returned text.
-async function voiceLine(text: string): Promise<string | null> {
-  if (!ELEVEN_KEY || !SERVICE_KEY) return null;
+async function voiceLine(text: string): Promise<{ url: string | null; err?: string }> {
+  if (!ELEVEN_KEY) return { url: null, err: "ELEVENLABS_API_KEY not set" };
+  if (!SERVICE_KEY) return { url: null, err: "SUPABASE_SERVICE_ROLE_KEY not set" };
   try {
     const voiceId = (await globalDefaultVoiceId()) || LOCATION_VOICE_FALLBACK;
     const tts = await fetch(
@@ -195,10 +196,9 @@ async function voiceLine(text: string): Promise<string | null> {
       },
     );
     if (!tts.ok) {
-      console.error(
-        `copilot-line ElevenLabs ${tts.status}: ${(await tts.text()).slice(0, 300)}`,
-      );
-      return null;
+      const errText = `ElevenLabs ${tts.status}: ${(await tts.text()).slice(0, 300)}`;
+      console.error(`copilot-line ${errText}`);
+      return { url: null, err: errText };
     }
     const bytes = new Uint8Array(await tts.arrayBuffer());
     const path = `copilot/${crypto.randomUUID()}.mp3`;
@@ -211,17 +211,18 @@ async function voiceLine(text: string): Promise<string | null> {
       },
     );
     if (!up.ok) {
-      console.error(
-        `copilot-line upload ${up.status}: ${(await up.text()).slice(0, 300)}`,
-      );
-      return null;
+      const errText = `upload ${up.status}: ${(await up.text()).slice(0, 300)}`;
+      console.error(`copilot-line ${errText}`);
+      return { url: null, err: errText };
     }
-    return buildSupabaseUrl(
-      `storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`,
-    );
+    return {
+      url: buildSupabaseUrl(
+        `storage/v1/object/public/${VOICEOVERS_BUCKET}/${path}`,
+      ),
+    };
   } catch (err) {
     console.error("copilot-line voiceLine error", err);
-    return null;
+    return { url: null, err: String((err as Error)?.message ?? err) };
   }
 }
 
@@ -237,8 +238,8 @@ Deno.serve(async (req: Request) => {
   try {
     const text = await openaiText(SYSTEM_PROMPT, buildUserPrompt(body));
     if (!text) return json({ error: "empty_response" }, 500);
-    const audioUrl = await voiceLine(text);
-    return json({ text, audioUrl });
+    const voice = await voiceLine(text);
+    return json({ text, audioUrl: voice.url, audioError: voice.err });
   } catch (err) {
     console.error("copilot-line error", err);
     return json({ error: "internal_server_error", detail: String((err as Error)?.message ?? err) }, 500);
