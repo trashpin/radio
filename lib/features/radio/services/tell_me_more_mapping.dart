@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/locations/models/master_location.dar
 import 'package:explorer_os_mobile/features/nearby_gems/data/nearby_gems_repository.dart';
 import 'package:explorer_os_mobile/features/narration/data/destination_narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/models/destination_narration.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/data/forest_location_repository.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/shared/models/destination.dart';
 
@@ -295,6 +296,34 @@ final _gemTellMeMoreProvider = FutureProvider.autoDispose
   return null;
 });
 
+/// Ocala Forest Explorer's own "Tell Me More" source (isolated
+/// `forest_locations` table, never the shared `locations`/`MasterLocation`
+/// table the other cases above use) — mirrors [_gemTellMeMoreProvider]'s
+/// exact shape.
+final _forestTellMeMoreProvider = FutureProvider.autoDispose
+    .family<TellMeMoreResult?, String>((ref, locationId) async {
+  final loc =
+      await ref.watch(forestLocationRepositoryProvider).getById(locationId);
+  if (loc == null) return null;
+  final fullText = (loc.narrationLong ?? '').trim().isNotEmpty
+      ? loc.narrationLong!.trim()
+      : ((loc.tellMeMore ?? '').trim().isNotEmpty
+          ? loc.tellMeMore!.trim()
+          : loc.description);
+  return TellMeMoreResult(
+    title: loc.name,
+    imageUrl: loc.imageUrl,
+    history: fullText,
+    website: (loc.sourceUrl ?? '').trim().isNotEmpty ? loc.sourceUrl : null,
+    latitude: loc.latitude,
+    longitude: loc.longitude,
+    goodToKnow: [
+      if ((loc.source ?? '').trim().isNotEmpty) 'Source: ${loc.source}',
+    ],
+    audioUrl: loc.hasAudio ? loc.audioUrl : null,
+  );
+});
+
 /// The single entry point [TellMeMoreScreen] uses: routes to the right
 /// content source based on [TellMeMoreContext.contextKind] (park/spring/town
 /// via the master location, event via `events`, county via the county
@@ -319,6 +348,10 @@ final tellMeMoreResultProvider = FutureProvider.autoDispose
       final id = ctx.locationId;
       if (id == null || id.isEmpty) return null;
       return ref.watch(_gemTellMeMoreProvider(id).future);
+    case 'forest':
+      final id = ctx.locationId;
+      if (id == null || id.isEmpty) return null;
+      return ref.watch(_forestTellMeMoreProvider(id).future);
     case 'county':
       final county = ctx.subject;
       if (county == null || county.isEmpty) return null;

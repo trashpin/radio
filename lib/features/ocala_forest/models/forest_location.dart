@@ -15,8 +15,14 @@ import 'package:explorer_os_mobile/core/data/model.dart';
 ///
 /// Every field spec section 8 asks for ("prepare for geofenced audio") is
 /// already present, so this is compatible with the existing geofence/audio
-/// architecture the moment that gets wired up — nothing here plays audio or
-/// creates a geofence yet.
+/// architecture the moment that gets wired up.
+///
+/// [experienceType]/[storyCategory]/[qrCodeId]/[triggerType] (migration
+/// 0049) are the v2 "Experience layer": [experienceType] is which primary
+/// experience (Trails/Discoveries/Forest Stories) a location surfaces
+/// under; [qrCodeId]/[triggerType] reserve the spec's "future QR-code
+/// trail stops" without building it yet — only `triggerType == 'geofence'`
+/// is implemented today.
 class ForestLocation implements Model {
   const ForestLocation({
     required this.id,
@@ -35,6 +41,10 @@ class ForestLocation implements Model {
     this.tellMeMore,
     this.imageUrl,
     this.active = true,
+    this.experienceType = 'discovery',
+    this.storyCategory,
+    this.qrCodeId,
+    this.triggerType = 'geofence',
   });
 
   @override
@@ -59,7 +69,20 @@ class ForestLocation implements Model {
   final String? imageUrl;
   final bool active;
 
+  /// 'discovery' | 'trail_stop' | 'story'.
+  final String experienceType;
+  final String? storyCategory;
+
+  /// Reserved for future QR-code trail stops — unused today.
+  final String? qrCodeId;
+
+  /// 'geofence' (implemented) | 'qr_code' | 'manual' (reserved).
+  final String triggerType;
+
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
+  bool get isTrailStop => experienceType == 'trail_stop';
+  bool get isStory => experienceType == 'story';
+  bool get isDiscovery => experienceType == 'discovery';
 
   factory ForestLocation.fromJson(Json json) => ForestLocation(
         id: json['id']?.toString() ?? '',
@@ -78,5 +101,9 @@ class ForestLocation implements Model {
         tellMeMore: json['tell_me_more'] as String?,
         imageUrl: json['image_url'] as String?,
         active: (json['active'] as bool?) ?? true,
+        experienceType: (json['experience_type'] as String?) ?? 'discovery',
+        storyCategory: json['story_category'] as String?,
+        qrCodeId: json['qr_code_id'] as String?,
+        triggerType: (json['trigger_type'] as String?) ?? 'geofence',
       );
 }
