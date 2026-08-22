@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_repository.dart';
 import 'package:explorer_os_mobile/features/locations/models/master_location.dart';
+import 'package:explorer_os_mobile/features/navigation/providers/trip_provider.dart';
 import 'package:explorer_os_mobile/features/radio/discovery/nearby_narration_controller.dart';
 
 /// The ONE Destination Detail card used by every location in ExplorerOS —
@@ -159,6 +160,22 @@ class DestinationDetailCard extends ConsumerWidget {
                         label: 'Navigate',
                         enabled: canNavigate,
                         onTap: () => _navigate(context),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _ActionChip(
+                        icon: Icons.explore_rounded,
+                        label: ref.watch(tripControllerProvider).isActive
+                            ? 'Trip Active'
+                            : 'Start Trip',
+                        enabled: canNavigate &&
+                            !ref.watch(tripControllerProvider).isActive,
+                        onTap: () => ref.read(tripControllerProvider.notifier).startTrip(
+                              lat: l.latitude!,
+                              lng: l.longitude!,
+                              name: l.name,
+                            ),
                       ),
                     ),
                     const SizedBox(width: 10),
