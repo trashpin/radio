@@ -7,7 +7,11 @@
 // the Flutter client can play it immediately.
 //
 // Deploy:
-//   supabase functions deploy copilot-line --no-verify-jwt
+//   supabase functions deploy copilot-line
+// Deployed WITH JWT verification (unlike narration-worker, which is invoked
+// from a cron/workflow with no user session) -- the Flutter client's
+// `functions.invoke()` call already sends a valid Supabase key (anon/
+// publishable, or the current session) as its bearer token.
 // Reuses the SAME secrets narration-worker already has configured:
 //   OPENAI_API_KEY, ELEVENLABS_API_KEY, SUPABASE_SERVICE_ROLE_KEY / SUPABASE_URL
 //
@@ -237,6 +241,6 @@ Deno.serve(async (req: Request) => {
     return json({ text, audioUrl });
   } catch (err) {
     console.error("copilot-line error", err);
-    return json({ error: "internal_server_error" }, 500);
+    return json({ error: "internal_server_error", detail: String((err as Error)?.message ?? err) }, 500);
   }
 });
