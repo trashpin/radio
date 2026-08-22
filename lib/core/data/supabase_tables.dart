@@ -40,6 +40,11 @@ class SupabaseTables {
   static const String locationHistory = 'location_history';
   static const String travelSessions = 'travel_sessions';
 
+  /// Ocala Forest Explorer — an isolated experimental feature, stored
+  /// separately from `locations`/`county_boundaries`/`park_boundaries`.
+  static const String forestBoundaries = 'forest_boundaries';
+  static const String forestLocations = 'forest_locations';
+
   // Music library.
   static const String albums = 'albums';
   static const String genres = 'genres';

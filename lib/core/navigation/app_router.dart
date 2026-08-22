@@ -21,6 +21,7 @@ import 'package:explorer_os_mobile/features/downloads/presentation/downloads_scr
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_forest_screen.dart';
 import 'package:explorer_os_mobile/features/profile/presentation/profile_screen.dart';
 import 'package:explorer_os_mobile/features/radio/models/tell_me_more_context.dart';
 import 'package:explorer_os_mobile/features/radio/presentation/i_see_something_screen.dart';
@@ -98,6 +99,7 @@ class AppRouter {
       _route(AppRoute.explorerMode.path, const ExplorerModeScreen()),
       _route(AppRoute.iSeeSomething.path, const ISeeSomethingScreen()),
       _route(AppRoute.whatIsThat.path, const WhatIsThatScreen()),
+      _route(AppRoute.ocalaForest.path, const OcalaForestScreen()),
       _route(AppRoute.localGems.path, const LocalGemsScreen()),
       GoRoute(
         path: AppRoute.tellMeMore.path,
