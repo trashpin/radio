@@ -1,69 +1,115 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
-import 'package:explorer_os_mobile/features/ocala_forest/models/forest_boundary.dart';
-import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/controllers/forest_experience_controller.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_around_me_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_discoveries_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_stories_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_trails_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_explorer_map_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
+import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
+import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-/// OCALA NATIONAL FOREST EXPLORER — a completely isolated experimental page
-/// (own route `/ocala-forest`, own providers, own Supabase tables). Reuses,
-/// without modifying: `google_maps_flutter` (the same map package
-/// `MapsScreen` already uses, just the app's first `Polygon` usage), the
-/// existing `gpsControllerProvider` GPS stream, and the existing generic
-/// admin DB Tools table browser (see `db_tools.dart`) for data management.
+/// OCALA NATIONAL FOREST EXPLORER — an isolated experimental feature (own
+/// route `/ocala-forest`, own providers, own Supabase tables; see v1's
+/// migration 0048 + v2's 0049). This hub is a category-grid, mirroring
+/// `DiscoverAreaScreen`'s existing "Discover This Area" pattern
+/// (`lib/features/discover_area/presentation/discover_area_screen.dart`):
+/// four PRIMARY interactive experiences (Trails, Discoveries, Forest
+/// Stories, What's Around Me) plus the original map, now demoted to one
+/// more option ("Explorer Map") rather than the whole page.
 ///
-/// Keeps the interface deliberately simple per spec section 6 — the
-/// important thing for v1 is that the geographic filtering (a REAL,
-/// authoritative USFS boundary, not a circle or Marion County substitute)
-/// actually works.
-class OcalaForestScreen extends ConsumerWidget {
+/// Starts/stops the shared [ForestExperienceController] — the GPS/geofence
+/// trigger engine every sub-experience's automatic narration relies on —
+/// for exactly as long as the user is anywhere in this feature.
+class OcalaForestScreen extends ConsumerStatefulWidget {
   const OcalaForestScreen({super.key});
 
-  static const _initialCenter = LatLng(29.15, -81.75); // Ocala NF, roughly
-  static const _initialZoom = 10.0;
+  @override
+  ConsumerState<OcalaForestScreen> createState() => _OcalaForestScreenState();
+}
+
+class _OcalaForestScreenState extends ConsumerState<OcalaForestScreen> {
+  late final ForestExperienceController _experience;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final boundaryAsync = ref.watch(ocalaForestBoundaryProvider);
-    final locationsAsync = ref.watch(forestLocationsProvider);
+  void initState() {
+    super.initState();
+    _experience = ref.read(forestExperienceControllerProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _experience.start());
+  }
+
+  @override
+  void dispose() {
+    _experience.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final hasGpsFix = ref.watch(gpsControllerProvider).location != null;
     final insideForest = ref.watch(isInsideOcalaForestProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('OCALA NATIONAL FOREST EXPLORER'),
-        backgroundColor: const Color(0xFF1B3B24),
-        foregroundColor: Colors.white,
-      ),
-      body: boundaryAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Could not load the forest boundary: $e')),
-        data: (boundary) {
-          if (boundary == null) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'No forest boundary is loaded yet. Run migration '
-                  '0048_ocala_forest.sql to seed the Ocala National Forest '
-                  'boundary.',
-                  textAlign: TextAlign.center,
-                ),
+      backgroundColor: RD.bg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const RadioSubPageBar(title: 'Ocala National Forest Explorer'),
+            _StatusBanner(hasGpsFix: hasGpsFix, insideForest: insideForest),
+            const SizedBox(height: RD.sm),
+            Expanded(
+              child: GridView.count(
+                padding: const EdgeInsets.all(RD.lg),
+                crossAxisCount: 2,
+                mainAxisSpacing: RD.md,
+                crossAxisSpacing: RD.md,
+                childAspectRatio: 1.05,
+                children: [
+                  _ExperienceTile(
+                    icon: Icons.hiking_rounded,
+                    label: 'Trails',
+                    color: const Color(0xFFCF7A3A),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestTrailsScreen())),
+                  ),
+                  _ExperienceTile(
+                    icon: Icons.explore_rounded,
+                    label: 'Discoveries',
+                    color: const Color(0xFF4C9BE0),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestDiscoveriesScreen())),
+                  ),
+                  _ExperienceTile(
+                    icon: Icons.auto_stories_rounded,
+                    label: 'Forest Stories',
+                    color: const Color(0xFF9B6ACB),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestStoriesScreen())),
+                  ),
+                  _ExperienceTile(
+                    icon: Icons.near_me_rounded,
+                    label: "What's Around Me",
+                    color: const Color(0xFF5CA85C),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestAroundMeScreen())),
+                  ),
+                  _ExperienceTile(
+                    icon: Icons.map_outlined,
+                    label: 'Explorer Map',
+                    color: RD.textSecondary,
+                    secondary: true,
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const OcalaExplorerMapScreen())),
+                  ),
+                ],
               ),
-            );
-          }
-          final locations = locationsAsync.value ?? const <ForestLocation>[];
-          return Column(
-            children: [
-              _StatusBanner(hasGpsFix: hasGpsFix, insideForest: insideForest),
-              Expanded(
-                child: _ForestMap(boundary: boundary, locations: locations),
-              ),
-            ],
-          );
-        },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -80,118 +126,57 @@ class _StatusBanner extends StatelessWidget {
     final Color color;
     if (!hasGpsFix) {
       text = 'Waiting for a GPS fix…';
-      color = Colors.grey.shade700;
+      color = RD.textSecondary;
     } else if (insideForest == true) {
       text = '🌲 You are INSIDE Ocala National Forest';
-      color = const Color(0xFF2E7D32);
+      color = RD.greenBright;
     } else {
       text = '📍 You are OUTSIDE Ocala National Forest';
-      color = Colors.grey.shade700;
+      color = RD.textSecondary;
     }
-    return Container(
-      width: double.infinity,
-      color: color,
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-      child: Text(text,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: RD.lg),
+      child: Text(text, style: RD.body.copyWith(color: color)),
     );
   }
 }
 
-class _ForestMap extends StatelessWidget {
-  const _ForestMap({required this.boundary, required this.locations});
-  final ForestBoundary boundary;
-  final List<ForestLocation> locations;
-
-  Set<Polygon> _polygons() {
-    final out = <Polygon>{};
-    for (var i = 0; i < boundary.parts.length; i++) {
-      final part = boundary.parts[i];
-      out.add(Polygon(
-        polygonId: PolygonId('ocala-forest-$i'),
-        points: [for (final p in part.outer.points) LatLng(p.lat, p.lng)],
-        holes: [
-          for (final hole in part.holes)
-            [for (final p in hole.points) LatLng(p.lat, p.lng)],
-        ],
-        strokeColor: const Color(0xFF2E7D32),
-        strokeWidth: 2,
-        fillColor: const Color(0x332E7D32),
-      ));
-    }
-    return out;
-  }
-
-  Set<Marker> _markers(BuildContext context) {
-    return {
-      for (final loc in locations)
-        Marker(
-          markerId: MarkerId(loc.id),
-          position: LatLng(loc.latitude, loc.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(_hueForCategory(loc.category)),
-          infoWindow: InfoWindow(title: loc.name, snippet: loc.category),
-          onTap: () => _showDetail(context, loc),
-        ),
-    };
-  }
-
-  double _hueForCategory(String category) {
-    final c = category.toLowerCase();
-    if (c.contains('spring')) return BitmapDescriptor.hueAzure;
-    if (c.contains('lake') || c.contains('river') || c.contains('water')) {
-      return BitmapDescriptor.hueBlue;
-    }
-    if (c.contains('trail')) return BitmapDescriptor.hueOrange;
-    if (c.contains('camp')) return BitmapDescriptor.hueYellow;
-    return BitmapDescriptor.hueGreen;
-  }
-
-  void _showDetail(BuildContext context, ForestLocation loc) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(loc.name, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 4),
-            Text(loc.category,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      letterSpacing: 1.1,
-                      color: Colors.grey.shade600,
-                    )),
-            if ((loc.description ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(loc.description!.trim()),
-            ],
-            if ((loc.source ?? '').trim().isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text('Source: ${loc.source}',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey.shade600,
-                        fontStyle: FontStyle.italic,
-                      )),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
+/// One primary-experience tile. [secondary] mutes an option visually (used
+/// only for Explorer Map, per spec: "keep the existing map available...
+/// rather than making it the entire experience").
+class _ExperienceTile extends StatelessWidget {
+  const _ExperienceTile({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.secondary = false,
+  });
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final bool secondary;
 
   @override
   Widget build(BuildContext context) {
-    return GoogleMap(
-      initialCameraPosition: const CameraPosition(
-        target: OcalaForestScreen._initialCenter,
-        zoom: OcalaForestScreen._initialZoom,
+    return GlassPanel(
+      onTap: onTap,
+      color: secondary ? RD.bgElevated : RD.panel,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: secondary ? 32 : 40, color: color),
+          const SizedBox(height: RD.sm),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: secondary
+                ? RD.caption.copyWith(color: RD.textSecondary)
+                : RD.cardTitle.copyWith(color: Colors.white),
+          ),
+        ],
       ),
-      polygons: _polygons(),
-      markers: _markers(context),
-      myLocationEnabled: true,
-      myLocationButtonEnabled: true,
-      mapType: MapType.terrain,
     );
   }
 }
