@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_sto
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_trails_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_explorer_map_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/tour/presentation/forest_tour_screen.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
@@ -62,6 +63,21 @@ class _OcalaForestScreenState extends ConsumerState<OcalaForestScreen> {
           children: [
             const RadioSubPageBar(title: 'Ocala National Forest Explorer'),
             _StatusBanner(hasGpsFix: hasGpsFix, insideForest: insideForest),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(RD.lg, RD.sm, RD.lg, 0),
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const ForestTourScreen())),
+                icon: const Icon(Icons.headphones_rounded),
+                label: const Text('🎧 TAKE ME ON A TOUR'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: RD.green,
+                  foregroundColor: RD.onGreen,
+                  minimumSize: const Size(double.infinity, 56),
+                  textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
             const SizedBox(height: RD.sm),
             Expanded(
               child: GridView.count(
