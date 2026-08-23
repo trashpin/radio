@@ -31,6 +31,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/story_studio_page
 import 'package:explorer_os_mobile/features/admin/presentation/species_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/species_images/species_image_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/sightings_page.dart';
+import 'package:explorer_os_mobile/features/admin/forest_discovery/forest_discovery_moderation_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
 /// The admin control center: responsive layout with a left sidebar, a top bar
@@ -90,6 +91,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const RundownBuilderPage();
       case AdminModule.explorerSightings:
         return const SightingsAdminPage();
+      case AdminModule.forestDiscoveryModeration:
+        return const ForestDiscoveryModerationPage();
       case AdminModule.djStudio:
         return const DjStudioPage();
       case AdminModule.radioAutomation:

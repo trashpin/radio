@@ -35,6 +35,12 @@ const List<DbTable> kDbTables = [
   DbTable('forest_trail_segments', 'Ocala Forest Trail Segments (raw USFS)',
       group: 'Ocala Forest'),
   DbTable('forest_trails', 'Ocala Forest Trails (grouped)', group: 'Ocala Forest'),
+  // forest_discovery_reports is deliberately NOT registered here: its base
+  // table has no anon/authenticated SELECT policy at all (see migration
+  // 0051), so this generic `select()`-based browser would just show an
+  // empty table rather than real data. Moderation instead uses the
+  // dedicated forest_discovery_admin_list/_set_status RPC functions — see
+  // lib/features/admin/forest_discovery/.
 ];
 
 /// Which tables to surface as headline counts on the dashboard.

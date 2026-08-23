@@ -198,6 +198,15 @@ enum AdminModule {
       ready: true,
       description: 'Citizen-science observations from "I See Something".',
       table: 'explorer_sightings'),
+  forestDiscoveryModeration('Forest Discover Moderation', Icons.travel_explore_rounded,
+      AdminGroup.nature,
+      ready: true,
+      description: 'Moderate Ocala Forest Explorer DISCOVER reports — '
+          'community photo-identified discoveries. Review AI suggestions '
+          'vs. visitor-confirmed identifications, set moderation status '
+          '(pending/confirmed/needs review/rejected) and location '
+          'visibility (public/generalized/private) for sensitive finds.',
+      table: 'forest_discovery_reports'),
   databaseTools('Database Tools', Icons.storage_rounded, AdminGroup.platform,
       ready: true,
       description: 'Dashboard, table browser, maintenance, and CSV export — '

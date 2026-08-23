@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <!-- Bluetooth (future: car head-units / A2DP route awareness). -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <!-- Camera (image_picker) for the Ocala Forest Explorer DISCOVER feature. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="explorer_os_mobile"
         android:name="${applicationName}"

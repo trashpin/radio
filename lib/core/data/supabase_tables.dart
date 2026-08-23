@@ -51,6 +51,13 @@ class SupabaseTables {
   /// trail geometry as plain GeoJSON text over PostgREST.
   static const String forestTrailsWithGeojson = 'forest_trails_with_geojson';
 
+  /// DISCOVER (spec: community photo-identified discoveries). The base
+  /// table (writes go here) has no anon/authenticated SELECT policy at all
+  /// — every public read must go through the `_public` view below, which
+  /// generalizes sensitive-location coordinates server-side.
+  static const String forestDiscoveryReports = 'forest_discovery_reports';
+  static const String forestDiscoveryReportsPublic = 'forest_discovery_reports_public';
+
   // Music library.
   static const String albums = 'albums';
   static const String genres = 'genres';
