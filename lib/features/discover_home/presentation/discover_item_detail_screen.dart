@@ -134,7 +134,8 @@ class _Body extends ConsumerWidget {
               categoryIconFor(
                   item.category ?? (item.kind == DiscoverItemKind.gem ? 'gem' : null)),
               size: 15,
-              color: RD.green,
+              color: categoryColorFor(
+                  item.category ?? (item.kind == DiscoverItemKind.gem ? 'gem' : null)),
             ),
             const SizedBox(width: RD.xs),
             Expanded(

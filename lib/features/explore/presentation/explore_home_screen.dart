@@ -304,7 +304,7 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Row(children: [
-            Icon(categoryIconFor(title), size: 20, color: _P.green),
+            Icon(categoryIconFor(title), size: 20, color: categoryColorFor(title)),
             const SizedBox(width: 8),
             Text(title,
                 style: const TextStyle(
@@ -375,7 +375,8 @@ class _DestinationCard extends StatelessWidget {
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
                     Row(children: [
-                      Icon(categoryIconFor(location.type.label), size: 13, color: _P.green),
+                      Icon(categoryIconFor(location.type.label),
+                          size: 13, color: categoryColorFor(location.type.label)),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
@@ -407,7 +408,7 @@ class _DestinationCard extends StatelessWidget {
   Widget _fallback(String categoryLabel) => Container(
         color: const Color(0xFF223028),
         child: Center(
-          child: CategoryIcon(categoryLabel, size: 48, color: _P.green),
+          child: CategoryIcon(categoryLabel, size: 48),
         ),
       );
 }

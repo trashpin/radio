@@ -53,10 +53,27 @@ final discoverRecentBehaviorFlavorProvider =
 });
 
 class DiscoverGreetingState {
-  const DiscoverGreetingState({required this.id, required this.text, this.name});
+  const DiscoverGreetingState({
+    required this.id,
+    required this.text,
+    this.name,
+    this.hasSpoken = false,
+  });
   final String id;
   final String text;
   final String? name;
+
+  /// Whether THIS particular greeting instance has already been spoken.
+  /// Living here (not in a widget's State) is what makes "speak once per
+  /// visit" robust against scrolling or any other in-page rebuild — a
+  /// widget can be rebuilt any number of times without that ever
+  /// re-triggering audio, because the flag travels with the data, not the
+  /// widget. [DiscoverGreetingController.reroll] is the only thing that
+  /// produces a fresh, unspoken instance.
+  final bool hasSpoken;
+
+  DiscoverGreetingState withSpoken() =>
+      DiscoverGreetingState(id: id, text: text, name: name, hasSpoken: true);
 }
 
 /// Picks and remembers the Discover opening line for this app session.
@@ -144,11 +161,21 @@ class DiscoverGreetingController extends AsyncNotifier<DiscoverGreetingState> {
     return WeatherFlavor.none;
   }
 
-  /// Picks a fresh line without waiting for a new app session — e.g. a
-  /// "shuffle" tap on the greeting header.
+  /// Picks a fresh, unspoken line — called when the visitor genuinely
+  /// leaves and comes back (switches away from and back to the Discover
+  /// tab, or backgrounds and resumes the app), never on an ordinary
+  /// in-page rebuild.
   Future<void> reroll() async {
     ref.invalidateSelf();
     await future;
+  }
+
+  /// Marks the current greeting as spoken so it's never repeated until the
+  /// next [reroll]. A plain field flip — no new pick, no history write.
+  void markSpoken() {
+    final current = state.value;
+    if (current == null || current.hasSpoken) return;
+    state = AsyncData(current.withSpoken());
   }
 }
 

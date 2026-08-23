@@ -77,7 +77,8 @@ class DiscoverItemCard extends ConsumerWidget {
                     if (subtitleParts.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Row(children: [
-                        Icon(categoryIconFor(_iconCategory), size: 13, color: RD.green),
+                        Icon(categoryIconFor(_iconCategory),
+                            size: 13, color: categoryColorFor(_iconCategory)),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(subtitleParts.join(' · '),
@@ -113,7 +114,7 @@ class DiscoverItemCard extends ConsumerWidget {
   Widget _placeholder() => Container(
         color: RD.panelAlt,
         alignment: Alignment.center,
-        child: CategoryIcon(_iconCategory, size: 56, color: RD.green),
+        child: CategoryIcon(_iconCategory, size: 56),
       );
 }
 

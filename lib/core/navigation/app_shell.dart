@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:explorer_os_mobile/core/navigation/active_tab_provider.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_shadows.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
@@ -25,7 +27,7 @@ import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 /// The bar is styled as a dark, floating pill with a gold active state (a
 /// premium National-Geographic feel) regardless of the app's light/dark mode,
 /// so it matches the immersive Radio/Map screens.
-class AppShell extends StatelessWidget {
+class AppShell extends ConsumerWidget {
   const AppShell({super.key, required this.navigationShell});
 
   final StatefulNavigationShell navigationShell;
@@ -42,7 +44,13 @@ class AppShell extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Runs on every branch switch (go_router rebuilds this shell whenever
+    // navigationShell.currentIndex changes) — deferred a frame so it never
+    // tries to update a provider mid-build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activeTabIndexProvider.notifier).value = navigationShell.currentIndex;
+    });
     final navTheme = NavigationBarThemeData(
       height: 68,
       backgroundColor: _barColor,
