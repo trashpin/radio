@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/core/navigation/active_tab_provider.dart';
 import 'package:explorer_os_mobile/features/discover_home/controllers/discover_audio_controller.dart';
 import 'package:explorer_os_mobile/features/discover_home/data/discover_narration_service.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
@@ -64,8 +65,20 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen>
     }
   }
 
+  // Discover is bottom-nav slot 0. `StatefulShellRoute.indexedStack` keeps
+  // this screen mounted even while another tab is showing, so switching
+  // away and back does NOT re-run initState/dispose — this listener is
+  // what actually detects "the visitor left and came back" in that case,
+  // as opposed to just scrolling while already on this tab.
+  void _onActiveTabChanged(int? previous, int next) {
+    if (next == 0 && previous != null && previous != 0) {
+      ref.read(discoverGreetingProvider.notifier).reroll();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(activeTabIndexProvider, _onActiveTabChanged);
     final items = ref.watch(discoverAllItemsProvider);
     final interests = ref.watch(discoverInterestsProvider);
     final hasRealLocation = ref.watch(discoverHasRealLocationProvider);
@@ -137,8 +150,6 @@ class _GreetingHeader extends ConsumerStatefulWidget {
 }
 
 class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
-  bool _spoken = false;
-
   /// Speaks the greeting through the app's real ElevenLabs voice — the same
   /// one every other Discover narration uses. On-device TTS is only ever a
   /// last-resort fallback (handled inside [DiscoverAudioController] itself)
@@ -155,9 +166,15 @@ class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
         );
   }
 
+  // `state.hasSpoken` (not a local widget flag) decides whether to speak —
+  // that's what makes this immune to scrolling or any other in-page
+  // rebuild: the same greeting instance is always already "spoken" no
+  // matter how many times this widget rebuilds. Only a genuine reroll
+  // (leaving and returning to the tab, or resuming the app) produces a new,
+  // unspoken instance.
   void _maybeAutoSpeak(DiscoverGreetingState state) {
-    if (_spoken) return;
-    _spoken = true;
+    if (state.hasSpoken) return;
+    ref.read(discoverGreetingProvider.notifier).markSpoken();
     WidgetsBinding.instance.addPostFrameCallback((_) => _speak(state));
   }
 
