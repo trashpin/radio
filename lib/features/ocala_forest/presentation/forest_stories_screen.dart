@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_audio_bar.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/services/forest_playback.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/services/forest_story_selector.dart';
@@ -76,6 +77,10 @@ class _ForestStoriesScreenState extends ConsumerState<ForestStoriesScreen> {
               Text(_status!,
                   style: RD.caption.copyWith(color: RD.textSecondary)),
             ],
+            const Padding(
+              padding: EdgeInsets.fromLTRB(RD.lg, RD.sm, RD.lg, 0),
+              child: ForestAudioBar(),
+            ),
             const SizedBox(height: RD.md),
             Expanded(
               child: stories.isEmpty
