@@ -479,19 +479,11 @@ class _PlayerState extends ConsumerState<_Player> {
                           active: onAir,
                         ),
                         const SizedBox(height: RD.xl),
-                        // DISCOVER: gems, events, parks & springs,
-                        // attractions/historical sites, towns, and county —
-                        // reusing the exact same nearby providers and
-                        // TellMeMoreContext builders as the player's own
-                        // image/teaser — tapping one opens the same info page
-                        // ("TELL ME MORE") for that exact place.
-                        PrimaryActionCard(
-                          icon: Icons.explore_rounded,
-                          title: 'DISCOVER',
-                          subtitle:
-                              'Gems, events, parks, springs & attractions nearby',
-                          onTap: () => context.push(AppRoute.nearbyPlaces.path),
-                        ),
+                        // DISCOVER's card here was superseded by the
+                        // dedicated Discover tab (see lib/features/
+                        // discover_home/) — Gems/Events/Parks/Springs/
+                        // Attractions now live there, personalized, instead
+                        // of duplicated on this screen too.
                       ],
                     ),
             ),
@@ -620,17 +612,6 @@ class _PlayerState extends ConsumerState<_Player> {
                     builder: (_) => const StationsScreen(),
                   ),
                 );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.explore_rounded, color: RD.green),
-              title: const Text(
-                'Discover this area',
-                style: TextStyle(color: RD.textPrimary),
-              ),
-              onTap: () {
-                Navigator.pop(sheet);
-                context.push(AppRoute.discoverArea.path);
               },
             ),
             ListTile(

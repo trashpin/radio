@@ -118,6 +118,12 @@ class TellMeMoreResult {
     this.eventTimeLabel,
     this.locationLabel,
     this.audioUrl,
+    this.costInfo,
+    this.registrationUrl,
+    this.ticketUrl,
+    this.phone,
+    this.accessibilityInfo,
+    this.familyFriendly,
   });
 
   final String title;
@@ -148,9 +154,20 @@ class TellMeMoreResult {
 
   final String? audioUrl;
 
+  /// Discover Marion County fields (migration 0053) — events only today;
+  /// null for every other source, and simply not rendered when absent.
+  final String? costInfo;
+  final String? registrationUrl;
+  final String? ticketUrl;
+  final String? phone;
+  final String? accessibilityInfo;
+  final bool? familyFriendly;
+
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
   bool get canNavigate => latitude != null && longitude != null;
   bool get hasWebsite => (website ?? '').trim().isNotEmpty;
+  bool get hasRegistration => (registrationUrl ?? '').trim().isNotEmpty;
+  bool get hasTicket => (ticketUrl ?? '').trim().isNotEmpty;
 }
 
 List<String> _goodToKnowFor(MasterLocation loc) => [
@@ -231,6 +248,13 @@ final _eventTellMeMoreProvider = FutureProvider.autoDispose
       eventDateLabel: dateLabel,
       eventTimeLabel: timeParts.isEmpty ? null : timeParts.join(' – '),
       locationLabel: locationLabel.isEmpty ? null : locationLabel,
+      costInfo: (e.costInfo ?? '').trim().isNotEmpty ? e.costInfo : null,
+      registrationUrl: (e.registrationUrl ?? '').trim().isNotEmpty ? e.registrationUrl : null,
+      ticketUrl: (e.ticketUrl ?? '').trim().isNotEmpty ? e.ticketUrl : null,
+      phone: (e.phone ?? '').trim().isNotEmpty ? e.phone : null,
+      accessibilityInfo:
+          (e.accessibilityInfo ?? '').trim().isNotEmpty ? e.accessibilityInfo : null,
+      familyFriendly: e.familyFriendly,
     );
   }
   return null;

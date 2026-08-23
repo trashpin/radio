@@ -17,6 +17,14 @@ class LocalEvent {
     this.endTime,
     this.externalWebsite,
     this.active = true,
+    this.category,
+    this.interestTags = const [],
+    this.costInfo,
+    this.registrationUrl,
+    this.ticketUrl,
+    this.phone,
+    this.accessibilityInfo,
+    this.familyFriendly,
   });
 
   final String id;
@@ -39,6 +47,19 @@ class LocalEvent {
   final String? externalWebsite;
   final bool active;
 
+  /// Discover Marion County fields (migration 0053) — all optional; admin
+  /// tagging is a future step, so these are commonly empty today. See
+  /// `interestTagsForEvent` for the keyword-heuristic fallback used until
+  /// then.
+  final String? category;
+  final List<String> interestTags;
+  final String? costInfo;
+  final String? registrationUrl;
+  final String? ticketUrl;
+  final String? phone;
+  final String? accessibilityInfo;
+  final bool? familyFriendly;
+
   bool get hasCoordinates =>
       latitude != null && longitude != null && !(latitude == 0 && longitude == 0);
 
@@ -52,6 +73,8 @@ class LocalEvent {
 
   static double? _d(dynamic v) =>
       v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+  static List<String> _strs(dynamic v) =>
+      v is List ? v.map((e) => e.toString()).toList() : const [];
 
   factory LocalEvent.fromJson(Map<String, dynamic> j) => LocalEvent(
         id: (j['id'] ?? '').toString(),
@@ -71,5 +94,13 @@ class LocalEvent {
         endTime: j['end_time'] as String?,
         externalWebsite: j['external_website'] as String?,
         active: (j['active'] ?? true) as bool,
+        category: j['category'] as String?,
+        interestTags: _strs(j['interest_tags']),
+        costInfo: j['cost_info'] as String?,
+        registrationUrl: j['registration_url'] as String?,
+        ticketUrl: j['ticket_url'] as String?,
+        phone: j['phone'] as String?,
+        accessibilityInfo: j['accessibility_info'] as String?,
+        familyFriendly: j['family_friendly'] as bool?,
       );
 }

@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/auth/presentation/sign_in_screen.dar
 import 'package:explorer_os_mobile/features/auth/presentation/welcome_screen.dart';
 import 'package:explorer_os_mobile/features/companion/presentation/ai_ranger_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
+import 'package:explorer_os_mobile/features/discover_home/presentation/discover_home_screen.dart';
 import 'package:explorer_os_mobile/features/explore/presentation/explore_home_screen.dart';
 import 'package:explorer_os_mobile/features/explore/presentation/explorer_mode_screen.dart';
 import 'package:explorer_os_mobile/features/around_me/presentation/around_me_screen.dart';
@@ -47,7 +48,7 @@ class AppRouter {
   const AppRouter._();
 
   static final GoRouter router = GoRouter(
-    initialLocation: AppRoute.radio.path,
+    initialLocation: AppRoute.discoverHome.path,
     // Re-run [redirect] whenever auth state changes (sign in/out, guest).
     refreshListenable: authController,
     // Auth gate: require sign-in or guest before entering the app. When there's
@@ -66,7 +67,7 @@ class AppRouter {
         return atAuth ? null : AppRoute.welcome.path;
       }
       // Already signed in / guest — don't sit on an auth screen.
-      if (atAuth) return AppRoute.radio.path;
+      if (atAuth) return AppRoute.discoverHome.path;
       return null;
     },
     routes: [
@@ -74,9 +75,11 @@ class AppRouter {
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
         // Branch order MUST match the nav bar in AppShell:
-        // Radio, Map, Wildlife Guide, More.
+        // Discover, Map, Wildlife Guide, More. Radio moved to a pushed route
+        // (see below) — music is now a supporting feature reachable via the
+        // persistent mini-player on Discover, not the primary tab itself.
         branches: [
-          _branch(AppRoute.radio.path, const RadioScreen()),
+          _branch(AppRoute.discoverHome.path, const DiscoverHomeScreen()),
           _branch(AppRoute.map.path, const MapsScreen()),
           _branch(AppRoute.wildlife.path, const WildlifeScreen()),
           _branch(AppRoute.more.path, const MoreScreen()),
@@ -91,7 +94,11 @@ class AppRouter {
       // Pushed / full-screen routes reachable from More and links. Explore
       // and Stories moved here from the shell branches (no longer bottom-nav
       // tabs — spec: remove from primary nav, keep the underlying screens
-      // reachable, e.g. from the More tab).
+      // reachable, e.g. from the More tab). Radio joined them when Discover
+      // took its place in the primary nav — the full Radio screen (stations,
+      // DJ, Marion County Explore toggle) is unchanged, just reached via the
+      // Discover mini-player instead of being the default tab.
+      _route(AppRoute.radio.path, const RadioScreen()),
       _route(AppRoute.explore.path, const ExploreHomeScreen()),
       _route(AppRoute.stories.path, const StoriesScreen()),
       _route(AppRoute.aroundMe.path, const AroundMeScreen()),
