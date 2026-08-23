@@ -8,6 +8,7 @@ enum AppRoute {
   aroundMe('/around-me'),
   home('/home'),
   radio('/radio'),
+  discoverHome('/discover-home'),
   aiRanger('/ai-ranger'),
   stories('/stories'),
   map('/map'),

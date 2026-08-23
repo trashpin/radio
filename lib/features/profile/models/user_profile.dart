@@ -18,6 +18,7 @@ class UserProfile {
     this.preferredMusicStyle,
     this.downloadedAudio = const [],
     this.settings = const {},
+    this.interests = const [],
   });
 
   final String id;
@@ -37,6 +38,9 @@ class UserProfile {
   final String? preferredMusicStyle;
   final List<String> downloadedAudio;
   final Map<String, dynamic> settings;
+
+  /// Discover Marion County interest tokens (see `discoverInterests`).
+  final List<String> interests;
 
   bool get isAdmin => role.toLowerCase() == 'admin';
 
@@ -74,5 +78,6 @@ class UserProfile {
         settings: j['settings'] is Map
             ? Map<String, dynamic>.from(j['settings'] as Map)
             : const {},
+        interests: _strs(j['interests']),
       );
 }

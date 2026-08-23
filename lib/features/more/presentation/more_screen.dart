@@ -6,10 +6,12 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 
 /// The "More" tab — a menu for the sections that don't have a dedicated tab
-/// (Explore, Stories, Downloads, Profile, Settings). Wildlife Guide moved out
-/// of here to its own primary tab; Explore and Stories moved in when they
-/// were removed from the primary bottom navigation (their screens are
-/// unchanged — only the entry point moved).
+/// (Radio, Explore, Stories, Downloads, Profile, Settings). Wildlife Guide
+/// moved out of here to its own primary tab; Explore and Stories moved in
+/// when they were removed from the primary bottom navigation, and Radio
+/// joined them when Discover took its place (their screens are unchanged —
+/// only the entry point moved; Radio is also reachable via Discover's
+/// persistent mini player).
 ///
 /// Keeps the primary nav focused on the four core experiences while remaining
 /// a single tap from everything else.
@@ -19,8 +21,10 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <_MoreItem>[
+      const _MoreItem(Icons.podcasts_rounded, 'Radio', AppRoute.radio),
       const _MoreItem(Icons.explore_rounded, 'Explore', AppRoute.explore),
       const _MoreItem(Icons.menu_book_rounded, 'Stories', AppRoute.stories),
+      const _MoreItem(Icons.travel_explore_rounded, 'Discover This Area', AppRoute.discoverArea),
       const _MoreItem(Icons.download_rounded, 'Downloads', AppRoute.downloads),
       const _MoreItem(Icons.person_rounded, 'Profile', AppRoute.profile),
       const _MoreItem(Icons.settings_rounded, 'Settings', AppRoute.settings),
