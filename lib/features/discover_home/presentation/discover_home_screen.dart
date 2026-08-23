@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/discover_home/controllers/discover_audio_controller.dart';
+import 'package:explorer_os_mobile/features/discover_home/data/discover_narration_service.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_ask_input.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_interests_screen.dart';
@@ -27,10 +28,12 @@ class DiscoverHomeScreen extends ConsumerStatefulWidget {
   ConsumerState<DiscoverHomeScreen> createState() => _DiscoverHomeScreenState();
 }
 
-class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen> {
+class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Best-effort GPS start — NEAR YOU still works (county-wide fallback)
     // without it, per spec.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -39,6 +42,26 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen> {
           .requestAndStart()
           .catchError((_) => ref.read(gpsStatusProvider));
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // `discoverGreetingProvider` deliberately holds one line for the life of
+  // the app process (spec: computed once, not re-rolled on every rebuild) —
+  // but Android/iOS keep that process alive across a simple background/
+  // foreground cycle, so without this the SAME line would still be showing
+  // the next time someone opens the app, which reads as "it's not varying."
+  // Re-rolling on resume is what actually delivers "a fresh line each visit"
+  // rather than only each cold start.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(discoverGreetingProvider.notifier).reroll();
+    }
   }
 
   @override
@@ -116,14 +139,26 @@ class _GreetingHeader extends ConsumerStatefulWidget {
 class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
   bool _spoken = false;
 
-  void _maybeAutoSpeak(String text) {
+  /// Speaks the greeting through the app's real ElevenLabs voice — the same
+  /// one every other Discover narration uses. On-device TTS is only ever a
+  /// last-resort fallback (handled inside [DiscoverAudioController] itself)
+  /// for when generation genuinely fails, never the default path.
+  Future<void> _speak(DiscoverGreetingState state) async {
+    final narration = await ref
+        .read(discoverNarrationServiceProvider)
+        .requestForGreeting(state.text, state.id, state.name);
+    if (!mounted) return;
+    await ref.read(discoverAudioControllerProvider.notifier).play(
+          title: 'Discover',
+          audioUrl: narration?.audioUrl,
+          spokenText: state.text,
+        );
+  }
+
+  void _maybeAutoSpeak(DiscoverGreetingState state) {
     if (_spoken) return;
     _spoken = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(discoverAudioControllerProvider.notifier)
-          .play(title: 'Discover', spokenText: text);
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _speak(state));
   }
 
   @override
@@ -132,7 +167,7 @@ class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
 
     final text = greeting.when(
       data: (s) {
-        _maybeAutoSpeak(s.text);
+        _maybeAutoSpeak(s);
         return s.text;
       },
       loading: () => "Here's what you might enjoy around Marion County.",
@@ -148,9 +183,10 @@ class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
         IconButton(
           icon: const Icon(Icons.volume_up_rounded, color: RD.textSecondary),
           tooltip: 'Hear it',
-          onPressed: () => ref
-              .read(discoverAudioControllerProvider.notifier)
-              .play(title: 'Discover', spokenText: text),
+          onPressed: () {
+            final s = greeting.value;
+            if (s != null) _speak(s);
+          },
         ),
         IconButton(
           icon: const Icon(Icons.tune_rounded, color: RD.textSecondary),

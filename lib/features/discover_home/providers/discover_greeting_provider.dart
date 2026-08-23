@@ -53,9 +53,10 @@ final discoverRecentBehaviorFlavorProvider =
 });
 
 class DiscoverGreetingState {
-  const DiscoverGreetingState({required this.id, required this.text});
+  const DiscoverGreetingState({required this.id, required this.text, this.name});
   final String id;
   final String text;
+  final String? name;
 }
 
 /// Picks and remembers the Discover opening line for this app session.
@@ -122,7 +123,7 @@ class DiscoverGreetingController extends AsyncNotifier<DiscoverGreetingState> {
       await prefs?.setStringList(_historyKey, nextHistory);
     } catch (_) {}
 
-    return DiscoverGreetingState(id: template.id, text: template.render(name));
+    return DiscoverGreetingState(id: template.id, text: template.render(name), name: name);
   }
 
   WeatherFlavor _weatherFlavor(WeatherData? w) {

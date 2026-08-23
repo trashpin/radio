@@ -13,6 +13,7 @@ import 'package:explorer_os_mobile/features/maps/providers/nearby_provider.dart'
 import 'package:explorer_os_mobile/features/profile/data/user_profile_repository.dart';
 import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
 import 'package:explorer_os_mobile/features/weather/weather_service.dart';
+import 'package:explorer_os_mobile/shared/design/category_visuals.dart';
 
 /// The new Home / Explore landing — a professional travel-companion feed that
 /// answers "What should I discover next?" instead of a map full of pins.
@@ -302,9 +303,13 @@ class _ExploreHomeScreenState extends ConsumerState<ExploreHomeScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-          child: Text(title,
-              style: const TextStyle(
-                  color: _P.text, fontSize: 19, fontWeight: FontWeight.w800)),
+          child: Row(children: [
+            Icon(categoryIconFor(title), size: 20, color: _P.green),
+            const SizedBox(width: 8),
+            Text(title,
+                style: const TextStyle(
+                    color: _P.text, fontSize: 19, fontWeight: FontWeight.w800)),
+          ]),
         ),
         SizedBox(
           height: 210,
@@ -353,8 +358,8 @@ class _DestinationCard extends StatelessWidget {
                 width: double.infinity,
                 child: hero != null
                     ? Image.network(hero, fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => _fallback())
-                    : _fallback(),
+                        errorBuilder: (_, _, _) => _fallback(location.type.label))
+                    : _fallback(location.type.label),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -369,16 +374,22 @@ class _DestinationCard extends StatelessWidget {
                             fontSize: 15,
                             fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
-                    Text(
-                      [
-                        location.type.label,
-                        if (miles != null)
-                          '${miles < 10 ? miles.toStringAsFixed(1) : miles.round()} mi',
-                      ].join(' · '),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: _P.dim, fontSize: 12),
-                    ),
+                    Row(children: [
+                      Icon(categoryIconFor(location.type.label), size: 13, color: _P.green),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          [
+                            location.type.label,
+                            if (miles != null)
+                              '${miles < 10 ? miles.toStringAsFixed(1) : miles.round()} mi',
+                          ].join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _P.dim, fontSize: 12),
+                        ),
+                      ),
+                    ]),
                   ],
                 ),
               ),
@@ -389,9 +400,14 @@ class _DestinationCard extends StatelessWidget {
     );
   }
 
-  Widget _fallback() => Container(
+  /// No photo yet — the category's own icon fills the space instead of a
+  /// generic placeholder, so a Spring, a Trail, or a Museum is immediately
+  /// recognizable even before a photo exists. Visual-only: the destination's
+  /// type/category itself is unchanged.
+  Widget _fallback(String categoryLabel) => Container(
         color: const Color(0xFF223028),
-        child: const Center(
-            child: Icon(Icons.image_rounded, color: _P.green, size: 40)),
+        child: Center(
+          child: CategoryIcon(categoryLabel, size: 48, color: _P.green),
+        ),
       );
 }

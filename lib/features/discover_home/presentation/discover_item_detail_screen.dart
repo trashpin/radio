@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/locations/data/location_favorites.da
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/services/tell_me_more_mapping.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
+import 'package:explorer_os_mobile/shared/design/category_visuals.dart';
 
 /// The Discover favorites key for [item] — plain location ids for `location`
 /// kind items (so a park favorited here matches the SAME
@@ -128,7 +129,18 @@ class _Body extends ConsumerWidget {
         Text(item.title, style: RD.title.copyWith(fontSize: 22)),
         if (subtitleParts.isNotEmpty) ...[
           const SizedBox(height: RD.xs),
-          Text(subtitleParts.join(' · '), style: RD.caption.copyWith(color: RD.green)),
+          Row(children: [
+            Icon(
+              categoryIconFor(
+                  item.category ?? (item.kind == DiscoverItemKind.gem ? 'gem' : null)),
+              size: 15,
+              color: RD.green,
+            ),
+            const SizedBox(width: RD.xs),
+            Expanded(
+              child: Text(subtitleParts.join(' · '), style: RD.caption.copyWith(color: RD.green)),
+            ),
+          ]),
         ],
         const SizedBox(height: RD.lg),
         Row(children: [
