@@ -16,13 +16,13 @@ import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 /// `extendBody` lets screen content flow underneath the floating bar for the
 /// premium edge-to-edge look.
 ///
-/// Tab order (fixed): Discover, Map, Wildlife Guide, More. To change tabs,
-/// keep this bar and the branch list in `AppRouter` index-aligned. Explore
-/// and Stories were removed from the primary nav (still reachable from the
-/// More tab) — see `more_screen.dart`. Radio previously held the first slot;
-/// it moved to a pushed route reachable via Discover's persistent mini
-/// player once music became a supporting feature rather than the primary
-/// experience.
+/// Sunshine Travel Radio is exactly two primary tabs (fixed order): Explore
+/// (index 0 — the radio player, "Listen to Marion County") and Discover
+/// (index 1 — "Find something to do"). To change tabs, keep this bar and the
+/// branch list in `AppRouter` index-aligned. Map, Wildlife Guide, and
+/// everything else live one tap away via More — reachable from Explore's own
+/// menu sheet and a button on Discover's greeting header, not a third bottom
+/// tab (see `more_screen.dart`).
 ///
 /// The bar is styled as a dark, floating pill with a gold active state (a
 /// premium National-Geographic feel) regardless of the app's light/dark mode,
@@ -97,24 +97,14 @@ class AppShell extends ConsumerWidget {
                   onDestinationSelected: _goToBranch,
                   destinations: const [
                     NavigationDestination(
+                      icon: Icon(Icons.podcasts_outlined),
+                      selectedIcon: Icon(Icons.podcasts_rounded),
+                      label: 'Explore',
+                    ),
+                    NavigationDestination(
                       icon: Icon(Icons.recommend_outlined),
                       selectedIcon: Icon(Icons.recommend_rounded),
                       label: 'Discover',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.map_outlined),
-                      selectedIcon: Icon(Icons.map_rounded),
-                      label: 'Map',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.pets_outlined),
-                      selectedIcon: Icon(Icons.pets_rounded),
-                      label: 'Wildlife Guide',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.more_horiz_rounded),
-                      selectedIcon: Icon(Icons.more_horiz_rounded),
-                      label: 'More',
                     ),
                   ],
                 ),

@@ -31,7 +31,9 @@ class KeywordDiscoverIntentParser implements DiscoverIntentParser {
     'outside', 'outdoor', 'outdoors', 'hike', 'hiking', 'trail', 'trails',
     'nature', 'park', 'spring', 'springs', 'fresh air', 'get out',
   ];
-  static const _tonightWords = ['tonight', 'this evening'];
+  static const _tonightWords = [
+    'tonight', 'this evening', 'after 8', 'after eight', 'late night', 'late-night',
+  ];
   static const _todayWords = ['today', 'right now'];
   static const _weekendWords = ['weekend', 'saturday', 'sunday'];
   static const _cheapWords = [
@@ -79,6 +81,19 @@ class KeywordDiscoverIntentParser implements DiscoverIntentParser {
     'art': 'arts_culture',
     'craft': 'arts_culture',
     'nightlife': 'nightlife',
+    'band': 'live_music',
+    'comedy': 'arts_culture',
+    'comedian': 'arts_culture',
+    'dance': 'arts_culture',
+    'dancing': 'arts_culture',
+    // These don't have a dedicated interest token in the 22-item Discover
+    // taxonomy (see interestTagsForEvent) — 'nightlife' is the closest real
+    // match, since every event these words describe is an evening social
+    // activity. Never invents a new interest token beyond the taxonomy.
+    'karaoke': 'nightlife',
+    'trivia': 'nightlife',
+    'date night': 'nightlife',
+    'entertainment': 'nightlife',
   };
 
   @override
@@ -99,7 +114,9 @@ class KeywordDiscoverIntentParser implements DiscoverIntentParser {
         interests.add(entry.value);
       }
     }
-    if (interests.contains('live_music') || interests.contains('festivals')) {
+    if (interests.contains('live_music') ||
+        interests.contains('festivals') ||
+        interests.contains('nightlife')) {
       kinds.add(DiscoverItemKind.event);
     }
 

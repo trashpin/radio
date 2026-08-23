@@ -56,4 +56,51 @@ void main() {
     expect(fest.kinds, contains(DiscoverItemKind.event));
     expect(fest.timeframe, DiscoverTimeframe.weekend);
   });
+
+  group('nightlife/evening-entertainment phrases', () {
+    test('"Where can I hear a band?" maps band -> live_music + event', () {
+      final i = parser.parse('Where can I hear a band?');
+      expect(i.interestTokens, contains('live_music'));
+      expect(i.kinds, contains(DiscoverItemKind.event));
+    });
+
+    test('"Find me something for date night" maps to nightlife + event', () {
+      final i = parser.parse('Find me something for date night');
+      expect(i.interestTokens, contains('nightlife'));
+      expect(i.kinds, contains(DiscoverItemKind.event));
+    });
+
+    test('"Anything happening after 8?" sets the tonight timeframe', () {
+      final i = parser.parse('Anything happening after 8?');
+      expect(i.timeframe, DiscoverTimeframe.tonight);
+    });
+
+    test('"Find something family-friendly tonight" sets tonight + family', () {
+      final i = parser.parse('Find something family-friendly tonight');
+      expect(i.timeframe, DiscoverTimeframe.tonight);
+      expect(i.interestTokens, contains('family'));
+    });
+
+    test('"I want dinner and entertainment" maps to gem + event kinds', () {
+      final i = parser.parse('I want dinner and entertainment');
+      expect(i.kinds, containsAll({DiscoverItemKind.gem, DiscoverItemKind.event}));
+      expect(i.interestTokens, contains('nightlife'));
+    });
+
+    test('comedy and dancing map to arts_culture (no invented interest token)', () {
+      final comedy = parser.parse('Find me a comedy show');
+      expect(comedy.interestTokens, contains('arts_culture'));
+
+      final dancing = parser.parse('I want to go dancing');
+      expect(dancing.interestTokens, contains('arts_culture'));
+    });
+
+    test('karaoke and trivia map to nightlife, the closest real taxonomy token', () {
+      final karaoke = parser.parse('Is there karaoke tonight?');
+      expect(karaoke.interestTokens, contains('nightlife'));
+
+      final trivia = parser.parse('Any trivia night nearby?');
+      expect(trivia.interestTokens, contains('nightlife'));
+    });
+  });
 }

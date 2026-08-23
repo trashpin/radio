@@ -26,6 +26,7 @@ class DiscoverableItem {
     this.eventDate,
     this.featured = false,
     this.priority = 0,
+    this.timeOfDay,
   });
 
   final DiscoverItemKind kind;
@@ -44,6 +45,12 @@ class DiscoverableItem {
   /// picked any interests yet.
   final bool featured;
   final int priority;
+
+  /// Events only — see [LocalEvent.timeOfDay]. Derived from the event's own
+  /// start time, never guessed from category.
+  final String? timeOfDay;
+
+  bool get isEveningOrLater => timeOfDay == 'evening' || timeOfDay == 'late_night';
 
   String? get imageUrl => context.imageUrl;
   String? get teaser => context.teaser;
@@ -77,6 +84,7 @@ DiscoverableItem discoverItemFromEvent(NearbyEvent n) => DiscoverableItem(
       context: playerContextForEvent(n),
       distanceMeters: n.distanceMeters,
       eventDate: n.event.eventDate,
+      timeOfDay: n.event.timeOfDay,
     );
 
 DiscoverableItem discoverItemFromLocation(PlayerLocationKind kind, NearbyLocation n) =>

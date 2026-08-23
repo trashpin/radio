@@ -78,5 +78,52 @@ void main() {
       );
       expect(find.byIcon(Icons.place_rounded), findsOneWidget);
     });
+
+    testWidgets('a categoryPhotoUrl renders a real image instead of the icon tile',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: CategoryImagePlaceholder(
+            'Festivals',
+            categoryPhotoUrl: 'https://example.com/festival.jpg',
+          ),
+        ),
+      );
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.byIcon(Icons.celebration_rounded), findsNothing);
+    });
+
+    testWidgets('a null/empty categoryPhotoUrl falls through to the icon tile',
+        (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: CategoryImagePlaceholder('Festivals', categoryPhotoUrl: ''),
+        ),
+      );
+      expect(find.byType(Image), findsNothing);
+      expect(find.byIcon(Icons.celebration_rounded), findsOneWidget);
+    });
+  });
+
+  group('categoryVisualKeyFor — canonical bucket keys', () {
+    test('groups keyword variants into the same stable key', () {
+      expect(categoryVisualKeyFor('Festivals'), 'festivals');
+      expect(categoryVisualKeyFor('firework show'), 'festivals');
+      expect(categoryVisualKeyFor('Live Music'), 'live_music');
+      expect(categoryVisualKeyFor('concert'), 'live_music');
+      expect(categoryVisualKeyFor('Nightlife'), 'nightlife');
+      expect(categoryVisualKeyFor('Restaurant'), 'food');
+      expect(categoryVisualKeyFor('Hidden Gem'), 'gems');
+    });
+
+    test('unrecognized categories resolve to the general fallback key', () {
+      expect(categoryVisualKeyFor('Something Totally New'), 'general');
+      expect(categoryVisualKeyFor(null), 'general');
+    });
+
+    test('categoryVisualKeys is non-empty and every value is unique', () {
+      expect(categoryVisualKeys, isNotEmpty);
+      expect(categoryVisualKeys.toSet().length, categoryVisualKeys.length);
+    });
   });
 }

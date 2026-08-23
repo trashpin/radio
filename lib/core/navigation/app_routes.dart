@@ -1,9 +1,11 @@
 /// Strongly-typed route table for ExplorerOS.
 ///
 /// Using an enum instead of raw path strings ("/home", "/map"…) prevents typos
-/// and makes navigation refactors safe. The bottom-navigation tabs (see
-/// AppShell/AppRouter) are exactly: radio, map, wildlife, more. The rest are
-/// pushed detail routes.
+/// and makes navigation refactors safe. Sunshine Travel Radio is a two-tab
+/// experience — the bottom-navigation tabs (see AppShell/AppRouter) are
+/// exactly: explore (the radio player — "Listen to Marion County"), and
+/// discoverHome ("Find something to do"). Everything else is one tap away
+/// via the More screen (reachable from either tab's own menu).
 enum AppRoute {
   aroundMe('/around-me'),
   home('/home'),
@@ -13,6 +15,11 @@ enum AppRoute {
   stories('/stories'),
   map('/map'),
   more('/more'),
+  // The pre-two-tab "Explore" content (a Nature & Parks/Springs & Water/etc.
+  // browsing feed) — kept exactly as it was, just relabeled "Places &
+  // Categories" and reached from More now that the primary Explore tab is
+  // the radio player itself (see AppRoute.explore below).
+  placesGuide('/places-guide'),
 
   // Authentication (outside the tab shell).
   welcome('/welcome'),
@@ -31,6 +38,10 @@ enum AppRoute {
   discover('/discover'),
   discoverArea('/discover-area'),
   nearbyPlaces('/nearby-places'),
+  // The primary "Explore" tab — Sunshine Travel Radio itself (RadioScreen).
+  // "Explore" as a word now means the audio/listening experience; the old
+  // browsing-feed screen that used to live at this path moved to
+  // AppRoute.placesGuide above.
   explore('/explore'),
   profile('/profile'),
   settings('/settings'),

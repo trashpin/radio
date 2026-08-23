@@ -5,24 +5,21 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 
-/// The "More" tab — a menu for the sections that don't have a dedicated tab
-/// (Radio, Explore, Stories, Downloads, Profile, Settings). Wildlife Guide
-/// moved out of here to its own primary tab; Explore and Stories moved in
-/// when they were removed from the primary bottom navigation, and Radio
-/// joined them when Discover took its place (their screens are unchanged —
-/// only the entry point moved; Radio is also reachable via Discover's
-/// persistent mini player).
-///
-/// Keeps the primary nav focused on the four core experiences while remaining
-/// a single tap from everything else.
+/// The "More" screen — everything that isn't one of Sunshine Travel Radio's
+/// two primary tabs (Explore = the radio player, Discover = things to do).
+/// Reached via a menu item on Explore's own menu sheet and a button on
+/// Discover's greeting header, not a bottom-nav tab of its own. Map and
+/// Wildlife Guide moved in here when the primary nav was cut down to exactly
+/// two tabs; their screens are unchanged, only the entry point moved.
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final items = <_MoreItem>[
-      const _MoreItem(Icons.podcasts_rounded, 'Radio', AppRoute.radio),
-      const _MoreItem(Icons.explore_rounded, 'Explore', AppRoute.explore),
+      const _MoreItem(Icons.map_rounded, 'Map', AppRoute.map),
+      const _MoreItem(Icons.pets_rounded, 'Wildlife Guide', AppRoute.wildlife),
+      const _MoreItem(Icons.category_rounded, 'Places & Categories', AppRoute.placesGuide),
       const _MoreItem(Icons.menu_book_rounded, 'Stories', AppRoute.stories),
       const _MoreItem(Icons.travel_explore_rounded, 'Discover This Area', AppRoute.discoverArea),
       const _MoreItem(Icons.download_rounded, 'Downloads', AppRoute.downloads),

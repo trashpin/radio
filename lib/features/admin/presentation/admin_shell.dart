@@ -14,6 +14,7 @@ import 'package:explorer_os_mobile/features/admin/presentation/admin_settings_pa
 import 'package:explorer_os_mobile/features/admin/presentation/database_tools_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/destination_dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/categories/category_manager_page.dart';
+import 'package:explorer_os_mobile/features/admin/categories/category_photos_page.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_completion_dashboard_page.dart';
 import 'package:explorer_os_mobile/features/admin/counties/county_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/location_tester/location_tester_page.dart';
@@ -69,6 +70,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const CountyManagerPage();
       case AdminModule.categoryManager:
         return const CategoryManagerPage();
+      case AdminModule.categoryPhotos:
+        return const CategoryPhotosPage();
       case AdminModule.countyCompletionDashboard:
         return const CountyCompletionDashboardPage();
       case AdminModule.nearbyGems:

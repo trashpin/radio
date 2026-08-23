@@ -625,6 +625,17 @@ class _PlayerState extends ConsumerState<_Player> {
                 context.push(AppRoute.settings.path);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.more_horiz_rounded, color: RD.green),
+              title: const Text(
+                'More',
+                style: TextStyle(color: RD.textPrimary),
+              ),
+              onTap: () {
+                Navigator.pop(sheet);
+                context.push(AppRoute.more.path);
+              },
+            ),
             const SizedBox(height: RD.sm),
           ],
         ),

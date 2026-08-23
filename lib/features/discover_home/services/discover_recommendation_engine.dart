@@ -66,6 +66,16 @@ class DiscoverRecommendationEngine {
     return out;
   }
 
+  /// TONIGHT — today's events genuinely classified evening/late_night by
+  /// their own start time (never guessed from category — see
+  /// `deriveTimeOfDay` in the discovery engine). An event with no known
+  /// start time is excluded rather than assumed to be an evening event.
+  List<DiscoverableItem> tonight(List<DiscoverableItem> items, {DateTime? now}) {
+    final out = today(items, now: now).where((i) => i.isEveningOrLater).toList();
+    out.sort(_byDistance);
+    return out;
+  }
+
   /// THIS WEEKEND — the next occurring Saturday/Sunday (inclusive of today
   /// if today already is one), nearest-first.
   List<DiscoverableItem> thisWeekend(List<DiscoverableItem> items, {DateTime? now}) {
@@ -154,10 +164,14 @@ class DiscoverRecommendationEngine {
     // today" shouldn't be zeroed out by a same-day-events filter).
     final wantsEventTimeframe =
         intent.kinds.isEmpty || intent.kinds.contains(DiscoverItemKind.event);
-    if (wantsEventTimeframe &&
-        (intent.timeframe == DiscoverTimeframe.today ||
-            intent.timeframe == DiscoverTimeframe.tonight)) {
+    if (wantsEventTimeframe && intent.timeframe == DiscoverTimeframe.today) {
       final ids = today(items, now: now).map((i) => i.id).toSet();
+      pool = pool.where((i) => ids.contains(i.id)).toList();
+    } else if (wantsEventTimeframe && intent.timeframe == DiscoverTimeframe.tonight) {
+      // "What's happening tonight?" — genuinely evening/late_night events
+      // only, not just anything scheduled for today (spec's 2 PM vs 7 PM
+      // distinction applies here too).
+      final ids = tonight(items, now: now).map((i) => i.id).toSet();
       pool = pool.where((i) => ids.contains(i.id)).toList();
     } else if (wantsEventTimeframe && intent.timeframe == DiscoverTimeframe.weekend) {
       final ids = thisWeekend(items, now: now).map((i) => i.id).toSet();

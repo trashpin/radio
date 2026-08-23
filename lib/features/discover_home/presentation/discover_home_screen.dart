@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/active_tab_provider.dart';
+import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/discover_home/controllers/discover_audio_controller.dart';
 import 'package:explorer_os_mobile/features/discover_home/data/discover_narration_service.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
@@ -18,10 +20,12 @@ import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.da
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-/// "What can I do in Marion County?" — the Discover tab replacing Radio's
-/// former primary-nav slot. A personalized feed built entirely from existing
-/// content (`nearby_gems`/`events`/`locations` via [discoverAllItemsProvider])
-/// — no new content system, no duplicate database.
+/// "What can I do in Marion County?" — the DISCOVER half of Sunshine Travel
+/// Radio's two-tab experience (the other half, EXPLORE, is the radio player
+/// itself — see `RadioScreen`). A personalized feed built entirely from
+/// existing content (`nearby_gems`/`events`/`locations` via
+/// [discoverAllItemsProvider]) — no new content system, no duplicate
+/// database.
 class DiscoverHomeScreen extends ConsumerStatefulWidget {
   const DiscoverHomeScreen({super.key});
 
@@ -65,13 +69,15 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen>
     }
   }
 
-  // Discover is bottom-nav slot 0. `StatefulShellRoute.indexedStack` keeps
-  // this screen mounted even while another tab is showing, so switching
-  // away and back does NOT re-run initState/dispose — this listener is
-  // what actually detects "the visitor left and came back" in that case,
-  // as opposed to just scrolling while already on this tab.
+  // Discover is bottom-nav slot 1 (Explore is slot 0).
+  // `StatefulShellRoute.indexedStack` keeps this screen mounted even while
+  // another tab is showing, so switching away and back does NOT re-run
+  // initState/dispose — this listener is what actually detects "the visitor
+  // left and came back" in that case, as opposed to just scrolling while
+  // already on this tab.
+  static const _tabIndex = 1;
   void _onActiveTabChanged(int? previous, int next) {
-    if (next == 0 && previous != null && previous != 0) {
+    if (next == _tabIndex && previous != null && previous != _tabIndex) {
       ref.read(discoverGreetingProvider.notifier).reroll();
     }
   }
@@ -85,11 +91,13 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen>
     const engine = DiscoverRecommendationEngine();
 
     final picked = engine.pickedForYou(items, interests);
+    final tonight = engine.tonight(items);
     final today = engine.today(items);
     final weekend = engine.thisWeekend(items);
     final near = engine.nearYou(items);
     final shownIds = <String>{
       for (final r in picked) r.item.id,
+      for (final i in tonight) i.id,
       for (final i in today) i.id,
       for (final i in weekend) i.id,
       for (final i in near) i.id,
@@ -113,6 +121,8 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen>
                     if (interests.isEmpty) const _InterestsPrompt(),
                     if (picked.isNotEmpty)
                       _RecommendationSection(title: 'PICKED FOR YOU', items: picked),
+                    if (tonight.isNotEmpty)
+                      _ItemSection(title: 'TONIGHT', items: tonight),
                     if (today.isNotEmpty)
                       _ItemSection(title: 'TODAY', items: today),
                     if (weekend.isNotEmpty)
@@ -211,6 +221,11 @@ class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute(builder: (_) => const DiscoverInterestsScreen()),
           ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.more_horiz_rounded, color: RD.textSecondary),
+          tooltip: 'More',
+          onPressed: () => context.push(AppRoute.more.path),
         ),
       ],
     );

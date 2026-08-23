@@ -7,13 +7,13 @@ import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_contr
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 
-/// "▶ Sunshine Travel Radio" — music becomes a supporting feature (spec:
-/// "make music a supporting feature rather than the primary Radio
-/// experience"). Reads the SAME `radioEngineControllerProvider` the full
-/// Radio screen already uses — no second playback engine, no rebuilt music
-/// system. Tapping it opens the full Radio screen (now a pushed route, not
-/// the primary tab); nothing here controls playback directly beyond the one
-/// play/pause button, which calls the same engine every other play/pause
+/// "▶ Sunshine Travel Radio" — a glanceable now-playing bar so a visitor
+/// browsing Discover always knows music is available without Discover
+/// becoming a second radio player. Reads the SAME `radioEngineControllerProvider`
+/// the full Radio screen already uses — no second playback engine, no
+/// rebuilt music system. Tapping it switches to the Explore tab (the radio
+/// player's actual home); nothing here controls playback directly beyond the
+/// one play/pause button, which calls the same engine every other play/pause
 /// button in the app calls.
 class DiscoverMiniPlayer extends ConsumerWidget {
   const DiscoverMiniPlayer({super.key});
@@ -32,7 +32,7 @@ class DiscoverMiniPlayer extends ConsumerWidget {
       borderRadius: BorderRadius.circular(RD.rPill),
       child: InkWell(
         borderRadius: BorderRadius.circular(RD.rPill),
-        onTap: () => context.push(AppRoute.radio.path),
+        onTap: () => context.go(AppRoute.explore.path),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
           child: Row(children: [
