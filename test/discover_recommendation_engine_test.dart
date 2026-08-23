@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/features/discover_home/models/discover_intent.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
 import 'package:explorer_os_mobile/features/discover_home/services/discover_recommendation_engine.dart';
 import 'package:explorer_os_mobile/features/radio/models/geo_point.dart';
@@ -123,6 +124,75 @@ void main() {
       final partial = _item(id: 'partial', title: 'Partial', interests: {'birds'});
       final result = engine.youMightLike([noMatch, partial], {'birds', 'history'}, const {});
       expect(result.first.id, 'partial');
+    });
+  });
+
+  group('respondToIntent', () {
+    test('a gem-kind intent (e.g. "somewhere to eat") only returns gems', () {
+      final gem = _item(id: 'g', title: 'Diner', kind: DiscoverItemKind.gem);
+      final park = _item(id: 'p', title: 'Park', kind: DiscoverItemKind.location);
+      final result = engine.respondToIntent(
+        [gem, park],
+        const DiscoverIntent(kinds: {DiscoverItemKind.gem}),
+        const {},
+      );
+      expect(result.map((i) => i.id), ['g']);
+    });
+
+    test('interest tokens from the intent override the visitor\'s standing interests', () {
+      final fishing = _item(id: 'f', title: 'Lake', interests: const {'fishing'});
+      final history = _item(id: 'h', title: 'Fort', interests: const {'history'});
+      final result = engine.respondToIntent(
+        [fishing, history],
+        const DiscoverIntent(interestTokens: {'fishing'}),
+        const {'history'}, // standing interests — should NOT win here
+      );
+      expect(result.first.id, 'f');
+    });
+
+    test('price-sensitive answers prefer items tagged free_things when scores tie', () {
+      final free = _item(id: 'free', title: 'Free Thing', interests: const {'free_things', 'outdoors'});
+      final paid = _item(id: 'paid', title: 'Paid Thing', interests: const {'outdoors'});
+      final result = engine.respondToIntent(
+        [paid, free],
+        const DiscoverIntent(interestTokens: {'outdoors'}, priceSensitive: true),
+        const {},
+      );
+      expect(result.first.id, 'free');
+    });
+
+    test('"I don\'t know" returns a mix rather than one narrow list', () {
+      final picked = _item(id: 'picked', title: 'Picked', interests: const {'history'}, featured: true);
+      final near = _item(id: 'near', title: 'Near', distanceMeters: 50);
+      final result = engine.respondToIntent(
+        [picked, near],
+        const DiscoverIntent(undecided: true),
+        const {'history'},
+      );
+      expect(result.map((i) => i.id).toSet(), {'picked', 'near'});
+    });
+
+    test('an unmatched intent never returns empty — falls back to nearYou', () {
+      final only = _item(id: 'only', title: 'Only', interests: const {'shopping'}, distanceMeters: 10);
+      final result = engine.respondToIntent(
+        [only],
+        const DiscoverIntent(interestTokens: {'nonexistent_token'}),
+        const {},
+      );
+      expect(result, isNotEmpty);
+    });
+
+    test('a same-day timeframe with no kind restriction only returns today\'s events', () {
+      final now = DateTime(2026, 8, 15);
+      final todayEvent = _item(id: 'e1', title: 'Fair', kind: DiscoverItemKind.event, eventDate: now);
+      final park = _item(id: 'p', title: 'Park', kind: DiscoverItemKind.location);
+      final result = engine.respondToIntent(
+        [todayEvent, park],
+        const DiscoverIntent(timeframe: DiscoverTimeframe.today),
+        const {},
+        now: now,
+      );
+      expect(result.map((i) => i.id), ['e1']);
     });
   });
 }
