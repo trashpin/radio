@@ -41,7 +41,10 @@ class _ForestTourScreenState extends ConsumerState<ForestTourScreen> {
             const RadioSubPageBar(title: '🌲 Ocala Forest Tour', subtitle: 'Ocala National Forest'),
             Expanded(
               child: tour.status == TourStatus.idle
-                  ? _StartCard(onStart: () => ref.read(forestTourControllerProvider.notifier).startTour())
+                  ? _StartCard(
+                      error: tour.error,
+                      onStart: () => ref.read(forestTourControllerProvider.notifier).startTour(),
+                    )
                   : tour.status == TourStatus.ended
                       ? _EndedCard(
                           onRestart: () =>
@@ -57,8 +60,9 @@ class _ForestTourScreenState extends ConsumerState<ForestTourScreen> {
 }
 
 class _StartCard extends StatelessWidget {
-  const _StartCard({required this.onStart});
+  const _StartCard({required this.onStart, this.error});
   final VoidCallback onStart;
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +79,10 @@ class _StartCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: RD.title.copyWith(color: Colors.white),
             ),
+            if (error != null) ...[
+              const SizedBox(height: RD.md),
+              Text(error!, textAlign: TextAlign.center, style: RD.body.copyWith(color: RD.live)),
+            ],
             const SizedBox(height: RD.xl),
             ElevatedButton.icon(
               onPressed: onStart,
@@ -156,9 +164,45 @@ class _ActiveTour extends ConsumerWidget {
     final audioState = ref.watch(forestAudioControllerProvider);
     final audioController = ref.read(forestAudioControllerProvider.notifier);
 
+    // spec §9: "Finding your location…" / "Finding stories near you…" —
+    // shown only before the first real segment exists.
+    if (state.statusMessage != null && state.currentText == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(RD.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: RD.lg),
+              Text(state.statusMessage!,
+                  textAlign: TextAlign.center, style: RD.title.copyWith(color: Colors.white)),
+              if (state.error != null) ...[
+                const SizedBox(height: RD.lg),
+                Text(state.error!, textAlign: TextAlign.center, style: RD.body.copyWith(color: RD.live)),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(RD.lg),
       children: [
+        if (state.gpsWarning != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(RD.sm),
+            decoration: BoxDecoration(
+              color: RD.amber.withValues(alpha: 0.14),
+              borderRadius: RD.brMd,
+            ),
+            child: Text('📶 ${state.gpsWarning!}',
+                textAlign: TextAlign.center, style: RD.caption.copyWith(color: RD.amber)),
+          ),
+          const SizedBox(height: RD.sm),
+        ],
         Text("You're here:", style: RD.caption.copyWith(color: RD.textSecondary)),
         Text(state.currentSubjectName ?? 'Ocala National Forest',
             style: RD.title.copyWith(color: Colors.white)),
