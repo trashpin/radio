@@ -5,12 +5,52 @@ import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_discovery_repository.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 
+/// The nightlife/time-of-day filter for the review queue (spec: "All
+/// Events/Daytime/Evening/Nightlife/Live Music/Comedy/Karaoke/Dancing").
+/// Karaoke isn't a Ticketmaster-derivable experience tag today (no source
+/// has produced one yet), so it's omitted rather than added as a filter
+/// that could never match anything.
+enum _ReviewFilter { all, daytime, evening, nightlife, liveMusic, comedy, dancing }
+
+extension on _ReviewFilter {
+  String get label => switch (this) {
+        _ReviewFilter.all => 'All events',
+        _ReviewFilter.daytime => 'Daytime',
+        _ReviewFilter.evening => 'Evening',
+        _ReviewFilter.nightlife => 'Nightlife',
+        _ReviewFilter.liveMusic => 'Live music',
+        _ReviewFilter.comedy => 'Comedy',
+        _ReviewFilter.dancing => 'Dancing',
+      };
+
+  bool matches(DiscoveredEventRow item) => switch (this) {
+        _ReviewFilter.all => true,
+        _ReviewFilter.daytime =>
+          item.timeOfDay == 'morning' || item.timeOfDay == 'afternoon',
+        _ReviewFilter.evening => item.isEveningOrLater,
+        _ReviewFilter.nightlife => item.interestTags.contains('nightlife'),
+        _ReviewFilter.liveMusic => item.interestTags.contains('live_music'),
+        _ReviewFilter.comedy => item.experienceTags.contains('comedy'),
+        _ReviewFilter.dancing => item.experienceTags.contains('dancing'),
+      };
+}
+
+class _ReviewFilterNotifier extends Notifier<_ReviewFilter> {
+  @override
+  _ReviewFilter build() => _ReviewFilter.all;
+  void select(_ReviewFilter f) => state = f;
+}
+
+final _reviewFilterProvider =
+    NotifierProvider<_ReviewFilterNotifier, _ReviewFilter>(_ReviewFilterNotifier.new);
+
 /// Admin -> Event Discovery: the multi-source pipeline's control room.
 /// Shows each source's last-run stats (spec's "Found/New/Duplicates/Needs
-/// Review/Rejected" summary) and a review queue for anything the engine
-/// couldn't classify with confidence. Nothing here writes to `events`
-/// except [EventDiscoveryRepository.approve] — every other action is
-/// discovery-side only.
+/// Review/Rejected" summary) and an approval queue for every candidate the
+/// engine hasn't published on its own — both low-confidence "needs review"
+/// rows and clean "verified" matches waiting on a non-auto_publish source.
+/// Nothing here writes to `events` except [EventDiscoveryRepository.approve]
+/// — every other action is discovery-side only.
 class EventDiscoveryPage extends ConsumerWidget {
   const EventDiscoveryPage({super.key});
 
@@ -97,22 +137,45 @@ class EventDiscoveryPage extends ConsumerWidget {
                 ]),
         ),
         const Gap.v(AppSpacing.xl),
-        Text('Needs Review', style: Theme.of(context).textTheme.titleMedium),
+        Text('Awaiting Approval', style: Theme.of(context).textTheme.titleMedium),
+        const Gap.v(AppSpacing.md),
+        Wrap(
+          spacing: AppSpacing.xs,
+          runSpacing: AppSpacing.xs,
+          children: [
+            for (final f in _ReviewFilter.values)
+              ChoiceChip(
+                label: Text(f.label),
+                selected: ref.watch(_reviewFilterProvider) == f,
+                onSelected: (_) => ref.read(_reviewFilterProvider.notifier).select(f),
+              ),
+          ],
+        ),
         const Gap.v(AppSpacing.md),
         reviewAsync.when(
           loading: () => const Padding(
               padding: EdgeInsets.all(AppSpacing.xl),
               child: Center(child: CircularProgressIndicator())),
           error: (e, _) => AdminEmptyState(message: 'Could not load review queue: $e'),
-          data: (items) => items.isEmpty
-              ? const AdminEmptyState(
-                  message: 'Nothing waiting on review.', icon: Icons.inbox_rounded)
-              : Column(children: [
-                  for (final item in items) ...[
-                    _ReviewCard(item: item),
-                    const Gap.v(AppSpacing.sm),
-                  ],
-                ]),
+          data: (allItems) {
+            final filter = ref.watch(_reviewFilterProvider);
+            final items = allItems.where(filter.matches).toList();
+            if (allItems.isEmpty) {
+              return const AdminEmptyState(
+                  message: 'Nothing waiting on approval.', icon: Icons.inbox_rounded);
+            }
+            if (items.isEmpty) {
+              return AdminEmptyState(
+                  message: 'No ${filter.label.toLowerCase()} events waiting.',
+                  icon: Icons.filter_alt_off_rounded);
+            }
+            return Column(children: [
+              for (final item in items) ...[
+                _ReviewCard(item: item),
+                const Gap.v(AppSpacing.sm),
+              ],
+            ]);
+          },
         ),
       ],
     );
@@ -217,6 +280,18 @@ class _ReviewCard extends ConsumerWidget {
         if ((item.category ?? '').isNotEmpty) ...[
           const Gap.v(AppSpacing.xs),
           Text('Category: ${item.category}', style: theme.textTheme.bodySmall),
+        ],
+        if (item.timeOfDay != null || item.experienceTags.isNotEmpty) ...[
+          const Gap.v(AppSpacing.xs),
+          Wrap(spacing: AppSpacing.xs, runSpacing: AppSpacing.xs, children: [
+            if (item.timeOfDay != null)
+              StatusBadge(
+                item.isEveningOrLater ? BadgeStatus.published : BadgeStatus.draft,
+                label: item.timeOfDay!,
+              ),
+            for (final tag in item.experienceTags)
+              StatusBadge(BadgeStatus.review, label: tag),
+          ]),
         ],
         if (item.sourceUrl != null) ...[
           const Gap.v(AppSpacing.xs),

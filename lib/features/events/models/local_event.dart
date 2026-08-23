@@ -25,6 +25,8 @@ class LocalEvent {
     this.phone,
     this.accessibilityInfo,
     this.familyFriendly,
+    this.timeOfDay,
+    this.experienceTags = const [],
   });
 
   final String id;
@@ -59,6 +61,17 @@ class LocalEvent {
   final String? phone;
   final String? accessibilityInfo;
   final bool? familyFriendly;
+
+  /// Nightlife/evening-entertainment expansion (migration 0057). Derived
+  /// ONLY from this event's own start time — never guessed from category —
+  /// so a 2 PM show and a 7 PM show of the same production carry different
+  /// values. `experienceTags` is a descriptive-only vocabulary (comedy,
+  /// dancing, evening, family_evening, ...); it is never used for interest
+  /// matching, which stays scoped to `interestTags`.
+  final String? timeOfDay;
+  final List<String> experienceTags;
+
+  bool get isEveningOrLater => timeOfDay == 'evening' || timeOfDay == 'late_night';
 
   bool get hasCoordinates =>
       latitude != null && longitude != null && !(latitude == 0 && longitude == 0);
@@ -102,5 +115,7 @@ class LocalEvent {
         phone: j['phone'] as String?,
         accessibilityInfo: j['accessibility_info'] as String?,
         familyFriendly: j['family_friendly'] as bool?,
+        timeOfDay: j['time_of_day'] as String?,
+        experienceTags: _strs(j['experience_tags']),
       );
 }

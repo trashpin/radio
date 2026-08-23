@@ -84,6 +84,8 @@ class DiscoveredEventRow {
     this.costInfo,
     this.category,
     this.interestTags = const [],
+    this.timeOfDay,
+    this.experienceTags = const [],
   });
 
   final String id;
@@ -108,6 +110,14 @@ class DiscoveredEventRow {
   final String? costInfo;
   final String? category;
   final List<String> interestTags;
+
+  /// Nightlife/evening-entertainment expansion (migration 0057) — see
+  /// [LocalEvent.timeOfDay]/[LocalEvent.experienceTags] for the same fields
+  /// on a published event.
+  final String? timeOfDay;
+  final List<String> experienceTags;
+
+  bool get isEveningOrLater => timeOfDay == 'evening' || timeOfDay == 'late_night';
 
   factory DiscoveredEventRow.fromJson(Map<String, dynamic> j) => DiscoveredEventRow(
         id: j['id'] as String,
@@ -134,6 +144,10 @@ class DiscoveredEventRow {
         interestTags: j['interest_tags'] is List
             ? (j['interest_tags'] as List).map((e) => e.toString()).toList()
             : const [],
+        timeOfDay: j['time_of_day'] as String?,
+        experienceTags: j['experience_tags'] is List
+            ? (j['experience_tags'] as List).map((e) => e.toString()).toList()
+            : const [],
       );
 }
 
@@ -154,12 +168,17 @@ class EventDiscoveryRepository {
     return rows.cast<Map<String, dynamic>>().map(EventSourceRow.fromJson).toList();
   }
 
+  /// Everything still awaiting a human decision — both the engine's
+  /// low-confidence "needs_review" rows AND its clean "verified" matches.
+  /// A non-auto_publish source (Ticketmaster today) never promotes a
+  /// "verified" row on its own, so without including it here those rows
+  /// would pass every check and then sit invisible forever.
   Future<List<DiscoveredEventRow>> needsReview() async {
     if (!SupabaseService.isConfigured) return const [];
     final rows = await SupabaseService.client
         .from('discovered_events')
         .select()
-        .eq('status', 'needs_review')
+        .inFilter('status', ['needs_review', 'verified'])
         .order('created_at', ascending: false) as List;
     return rows.cast<Map<String, dynamic>>().map(DiscoveredEventRow.fromJson).toList();
   }
@@ -199,6 +218,8 @@ class EventDiscoveryRepository {
       'cost_info': row.costInfo,
       'category': row.category,
       'interest_tags': row.interestTags,
+      'time_of_day': row.timeOfDay,
+      'experience_tags': row.experienceTags,
       'active': true,
     }).select('id').single();
 

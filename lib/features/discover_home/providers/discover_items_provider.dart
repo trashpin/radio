@@ -38,7 +38,13 @@ final discoverAllItemsProvider = Provider<List<DiscoverableItem>>((ref) {
 
   final allLocations = ref.watch(masterLocationsProvider).value ?? const [];
   final allEvents = ref.watch(eventsProvider).value ?? const [];
-  final allGems = ref.watch(activeNearbyGemsProvider).value ?? const [];
+  // Discover's GEMS/FOOD content is scoped to restaurants specifically — the
+  // Nearby Gems system itself is untouched (still admin-curated, still spans
+  // coffee/shopping/attractions/etc. for its own screen); Discover just only
+  // ever surfaces the restaurant-category subset of it.
+  final allGems = (ref.watch(activeNearbyGemsProvider).value ?? const [])
+      .where((g) => (g.category ?? '').trim().toLowerCase() == 'restaurant')
+      .toList();
 
   final localParks =
       discoverLocationsOfTypes(allLocations, discoverLocalParkTypes, lat: lat, lng: lng);

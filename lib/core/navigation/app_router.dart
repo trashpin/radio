@@ -75,15 +75,16 @@ class AppRouter {
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
-        // Branch order MUST match the nav bar in AppShell:
-        // Discover, Map, Wildlife Guide, More. Radio moved to a pushed route
-        // (see below) — music is now a supporting feature reachable via the
-        // persistent mini-player on Discover, not the primary tab itself.
+        // Sunshine Travel Radio is exactly two primary tabs, in this order:
+        // Explore (RadioScreen — "Listen to Marion County") and Discover
+        // ("Find something to do"). Branch order MUST match the nav bar in
+        // AppShell. Map, Wildlife Guide, and everything else live one tap
+        // away via More (see the pushed routes below) — same demotion
+        // mechanism this router already used for Explore/Stories/Radio
+        // before this change, just applied to a different pair of screens.
         branches: [
+          _branch(AppRoute.explore.path, const RadioScreen()),
           _branch(AppRoute.discoverHome.path, const DiscoverHomeScreen()),
-          _branch(AppRoute.map.path, const MapsScreen()),
-          _branch(AppRoute.wildlife.path, const WildlifeScreen()),
-          _branch(AppRoute.more.path, const MoreScreen()),
         ],
       ),
       // Authentication (outside the tab shell).
@@ -92,15 +93,20 @@ class AppRouter {
       _route(AppRoute.createAccount.path, const CreateAccountScreen()),
       _route(AppRoute.forgotPassword.path, const ForgotPasswordScreen()),
 
-      // Pushed / full-screen routes reachable from More and links. Explore
-      // and Stories moved here from the shell branches (no longer bottom-nav
-      // tabs — spec: remove from primary nav, keep the underlying screens
-      // reachable, e.g. from the More tab). Radio joined them when Discover
-      // took its place in the primary nav — the full Radio screen (stations,
-      // DJ, Marion County Explore toggle) is unchanged, just reached via the
-      // Discover mini-player instead of being the default tab.
+      // Pushed / full-screen routes reachable from More and links. Map and
+      // Wildlife Guide moved here (out of the primary shell branches) so the
+      // bottom nav can be exactly Explore + Discover; both screens are
+      // otherwise completely unchanged, still one tap away via More.
+      // AppRoute.radio stays a second, independent entry point to the exact
+      // same RadioScreen the Explore tab shows (e.g. the Discover
+      // mini-player and a couple of older internal links still reach it
+      // this way) — harmless, since it's just two doors to one shared,
+      // provider-backed playback state.
       _route(AppRoute.radio.path, const RadioScreen()),
-      _route(AppRoute.explore.path, const ExploreHomeScreen()),
+      _route(AppRoute.map.path, const MapsScreen()),
+      _route(AppRoute.wildlife.path, const WildlifeScreen()),
+      _route(AppRoute.more.path, const MoreScreen()),
+      _route(AppRoute.placesGuide.path, const ExploreHomeScreen()),
       _route(AppRoute.stories.path, const StoriesScreen()),
       _route(AppRoute.aroundMe.path, const AroundMeScreen()),
       _route(AppRoute.aiRanger.path, const AiRangerScreen()),

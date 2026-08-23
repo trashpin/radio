@@ -88,6 +88,15 @@ enum AdminModule {
           'adds. Immediately assignable in Master Locations, no app update '
           'required.',
       table: 'categories'),
+  categoryPhotos('Category Photos', Icons.photo_library_rounded,
+      AdminGroup.content,
+      ready: true,
+      description: 'Assigns a real photograph to each Discover category '
+          'bucket (Festivals, Springs, Food, Nightlife, ...) via the same '
+          'Wikimedia/Openverse Media Search Center used for events and '
+          'locations. Used whenever an individual item has no photo of its '
+          'own; the vivid icon+color tile remains the fallback otherwise.',
+      table: 'category_fallback_images'),
   countyCompletionDashboard('County Completion Dashboard',
       Icons.fact_check_rounded, AdminGroup.content,
       ready: true,

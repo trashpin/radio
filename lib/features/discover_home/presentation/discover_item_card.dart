@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/discover_home/presentation/discover_
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_item_detail_screen.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
+import 'package:explorer_os_mobile/shared/design/category_fallback_image_repository.dart';
 import 'package:explorer_os_mobile/shared/design/category_visuals.dart';
 
 /// A "why recommended" caption from what actually matched — never fabricated,
@@ -44,6 +45,8 @@ class DiscoverItemCard extends ConsumerWidget {
       ?item.category,
       ?item.context.distanceLabel,
     ];
+    final categoryPhotos = ref.watch(categoryFallbackImagesProvider).value ?? const {};
+    final categoryPhotoUrl = categoryPhotos[categoryVisualKeyFor(_iconCategory)];
     return SizedBox(
       width: 240,
       child: GestureDetector(
@@ -61,8 +64,9 @@ class DiscoverItemCard extends ConsumerWidget {
                   aspectRatio: 16 / 10,
                   child: (item.imageUrl ?? '').isNotEmpty
                       ? Image.network(item.imageUrl!,
-                          fit: BoxFit.cover, errorBuilder: (_, _, _) => _placeholder())
-                      : _placeholder(),
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _placeholder(categoryPhotoUrl))
+                      : _placeholder(categoryPhotoUrl),
                 ),
               ),
               Padding(
@@ -108,11 +112,16 @@ class DiscoverItemCard extends ConsumerWidget {
     );
   }
 
-  /// No photo yet — never a blank/generic box. A vivid, category-colored
+  /// No photo yet — never a blank/generic box. An admin-assigned category
+  /// photograph is used when one exists; otherwise a vivid, category-colored
   /// placeholder fills the space instead, so a Festival, a Spring, or a Gem
   /// is immediately recognizable and eye-catching even before a real photo
   /// exists.
-  Widget _placeholder() => CategoryImagePlaceholder(_iconCategory, iconSize: 48);
+  Widget _placeholder(String? categoryPhotoUrl) => CategoryImagePlaceholder(
+        _iconCategory,
+        iconSize: 48,
+        categoryPhotoUrl: categoryPhotoUrl,
+      );
 }
 
 class _HearAboutItButton extends ConsumerWidget {

@@ -101,7 +101,29 @@ interface NormalizedEvent {
   costInfo?: string | null;
   category?: string | null;
   interestTags?: string[];
+  // Nightlife/evening-entertainment expansion (migration 0057). timeOfDay is
+  // ALWAYS derived from the event's own start/end time, never assumed from
+  // category -- see deriveTimeOfDay(). experienceTags is a descriptive-only
+  // vocabulary (comedy/karaoke/dancing/etc.), deliberately kept separate
+  // from interestTags (which must stay within the 22-token Discover
+  // taxonomy the matching/notification engine actually understands).
+  timeOfDay?: string | null;
+  experienceTags?: string[];
   raw?: unknown;
+}
+
+/** Classifies an event's time of day from its OWN start time -- never from
+ * category (spec: "A 2 PM concert should not automatically be classified
+ * as nightlife. A 7 PM concert can be classified as an evening event.").
+ * Returns null (not a guess) when no start time is available at all. */
+function deriveTimeOfDay(startTime: string | null | undefined): string | null {
+  if (!startTime) return null;
+  const hour = Number(startTime.split(":")[0]);
+  if (Number.isNaN(hour)) return null;
+  if (hour >= 4 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 22) return "evening";
+  return "late_night"; // 22:00-03:59
 }
 
 // ---------------------------------------------------------------------------
@@ -263,23 +285,84 @@ const MARION_CENTER_LAT = 29.1872;
 const MARION_CENTER_LNG = -82.1401;
 const SEARCH_RADIUS_MILES = 40; // over-fetch; verifyMarionCounty() is the real filter
 
+/** Base category + interest tags from Ticketmaster's own classification --
+ * NOT yet time-aware (see deriveTimeOfDay/finalizeNightlifeTags below,
+ * which is where 'nightlife' actually gets added, and only when the
+ * event's own time genuinely earns it). experienceTags here are the
+ * classification-derived ones only (comedy/dancing/music) -- time-derived
+ * ones (evening/late_night/family_evening) are added afterward once the
+ * time of day is known. */
 function mapTicketmasterClassification(
   segment?: string,
   genre?: string,
-): { category: string; interestTags: string[] } {
+): { category: string; interestTags: string[]; experienceTags: string[] } {
   const seg = (segment ?? "").toLowerCase();
   const gen = (genre ?? "").toLowerCase();
-  if (seg === "music") return { category: segment!, interestTags: ["live_music", "nightlife"] };
+
+  if (seg === "music") {
+    return { category: segment!, interestTags: ["live_music"], experienceTags: ["music"] };
+  }
   if (seg === "arts & theatre") {
-    return { category: segment!, interestTags: ["arts_culture", "family"] };
+    if (gen.includes("comedy")) {
+      return {
+        category: genre ?? segment!,
+        interestTags: ["arts_culture"],
+        experienceTags: ["comedy"],
+      };
+    }
+    if (gen.includes("dance") || gen.includes("ballet")) {
+      return {
+        category: genre ?? segment!,
+        interestTags: ["arts_culture"],
+        experienceTags: ["dancing"],
+      };
+    }
+    return { category: segment!, interestTags: ["arts_culture", "family"], experienceTags: [] };
   }
-  if (seg === "family") return { category: segment!, interestTags: ["family", "kids"] };
-  if (seg === "film") return { category: segment!, interestTags: ["arts_culture"] };
-  if (seg === "sports") return { category: segment!, interestTags: ["adventure", "family"] };
+  if (seg === "family") {
+    return { category: segment!, interestTags: ["family", "kids"], experienceTags: [] };
+  }
+  if (seg === "film") {
+    return { category: segment!, interestTags: ["arts_culture"], experienceTags: [] };
+  }
+  if (seg === "sports") {
+    return { category: segment!, interestTags: ["adventure", "family"], experienceTags: [] };
+  }
   if (gen.includes("fair") || gen.includes("festival") || gen.includes("rodeo")) {
-    return { category: genre ?? "Festival", interestTags: ["festivals", "local_events"] };
+    return {
+      category: genre ?? "Festival",
+      interestTags: ["festivals", "local_events"],
+      experienceTags: [],
+    };
   }
-  return { category: segment ?? genre ?? "Event", interestTags: ["local_events"] };
+  return {
+    category: segment ?? genre ?? "Event",
+    interestTags: ["local_events"],
+    experienceTags: [],
+  };
+}
+
+/** Adds the TIME-EARNED tags once (and only once) the event's own start
+ * time is known -- 'nightlife' (a real Discover interest token) and the
+ * descriptive evening/late_night/family_evening experience tags. Never
+ * applied just because the category "sounds like" nightlife (spec's own
+ * 2 PM vs 7 PM concert example). */
+function finalizeNightlifeTags(
+  interestTags: string[],
+  experienceTags: string[],
+  timeOfDay: string | null,
+  hasFamilyTag: boolean,
+): { interestTags: string[]; experienceTags: string[] } {
+  if (timeOfDay !== "evening" && timeOfDay !== "late_night") {
+    return { interestTags, experienceTags };
+  }
+  const nextInterests = interestTags.includes("nightlife")
+    ? interestTags
+    : [...interestTags, "nightlife"];
+  const nextExperience = new Set(experienceTags);
+  nextExperience.add(timeOfDay === "late_night" ? "late_night" : "evening");
+  nextExperience.add(hasFamilyTag ? "family_evening" : "live_entertainment");
+  return { interestTags: nextInterests, experienceTags: [...nextExperience] };
 }
 function bestTicketmasterImage(
   images?: { url: string; width?: number; ratio?: string }[],
@@ -324,9 +407,14 @@ async function connectTicketmaster(): Promise<NormalizedEvent[]> {
       const lat = venue?.location?.latitude ? Number(venue.location.latitude) : null;
       const lng = venue?.location?.longitude ? Number(venue.location.longitude) : null;
       const cls = ev.classifications?.[0];
-      const { category, interestTags } = mapTicketmasterClassification(
-        cls?.segment?.name,
-        cls?.genre?.name,
+      const base = mapTicketmasterClassification(cls?.segment?.name, cls?.genre?.name);
+      const startTime: string | null = ev.dates?.start?.localTime ?? null;
+      const timeOfDay = deriveTimeOfDay(startTime);
+      const { interestTags, experienceTags } = finalizeNightlifeTags(
+        base.interestTags,
+        base.experienceTags,
+        timeOfDay,
+        base.interestTags.includes("family"),
       );
       out.push({
         sourceEventId: ev.id,
@@ -334,7 +422,7 @@ async function connectTicketmaster(): Promise<NormalizedEvent[]> {
         name: ev.name,
         description: ev.info ?? ev.pleaseNote ?? null,
         startDate: ev.dates?.start?.localDate ?? null,
-        startTime: ev.dates?.start?.localTime ?? null,
+        startTime,
         venueName: venue?.name ?? null,
         address: venue?.address?.line1 ?? null,
         city: venue?.city?.name ?? null,
@@ -344,7 +432,10 @@ async function connectTicketmaster(): Promise<NormalizedEvent[]> {
         costInfo: formatTicketmasterCost(ev.priceRanges),
         contact: null,
         organizer: null,
-        category, interestTags,
+        category: base.category,
+        interestTags,
+        timeOfDay,
+        experienceTags,
         raw: ev,
       });
     }
@@ -602,6 +693,8 @@ async function writeDiscovered(
     cost_info: ev.costInfo ?? null,
     category: ev.category ?? null,
     interest_tags: ev.interestTags ?? [],
+    time_of_day: ev.timeOfDay ?? null,
+    experience_tags: ev.experienceTags ?? [],
     raw_payload: ev.raw ?? null,
     updated_at: new Date().toISOString(),
   };
@@ -630,6 +723,8 @@ async function publishToEvents(ev: NormalizedEvent, sourceKey: string): Promise<
     cost_info: ev.costInfo ?? null,
     category: ev.category ?? null,
     interest_tags: ev.interestTags ?? [],
+    time_of_day: ev.timeOfDay ?? null,
+    experience_tags: ev.experienceTags ?? [],
     active: true,
     source: sourceKey,
     source_id: ev.sourceEventId ?? null,

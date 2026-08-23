@@ -15,6 +15,7 @@ DiscoverableItem _item({
   bool featured = false,
   int priority = 0,
   DiscoverItemKind kind = DiscoverItemKind.location,
+  String? timeOfDay,
 }) {
   final context = PlayerLocationContext(
     kind: PlayerLocationKind.park,
@@ -32,6 +33,7 @@ DiscoverableItem _item({
     eventDate: eventDate,
     featured: featured,
     priority: priority,
+    timeOfDay: timeOfDay,
   );
 }
 
@@ -84,6 +86,32 @@ void main() {
       final farEvent = _item(id: 'far', title: 'Far', kind: DiscoverItemKind.event, eventDate: nextMonday);
       final result = engine.thisWeekend([satEvent, sunEvent, farEvent], now: monday);
       expect(result.map((i) => i.id).toSet(), {'sat', 'sun'});
+    });
+
+    test('tonight only includes today\'s events genuinely classified evening/late_night, '
+        'never a same-day event whose time is merely unknown or daytime '
+        '(the 2 PM vs 7 PM concert distinction)', () {
+      final now = DateTime(2026, 8, 15);
+      final afternoonShow = _item(
+          id: 'matinee', title: 'Matinee', kind: DiscoverItemKind.event,
+          eventDate: now, timeOfDay: 'afternoon');
+      final eveningShow = _item(
+          id: 'evening', title: 'Evening Show', kind: DiscoverItemKind.event,
+          eventDate: now, timeOfDay: 'evening');
+      final lateShow = _item(
+          id: 'late', title: 'Late Show', kind: DiscoverItemKind.event,
+          eventDate: now, timeOfDay: 'late_night');
+      final unknownTimeShow = _item(
+          id: 'unknown', title: 'Mystery Time', kind: DiscoverItemKind.event,
+          eventDate: now, timeOfDay: null);
+      final tomorrowEvening = _item(
+          id: 'tomorrow', title: 'Tomorrow', kind: DiscoverItemKind.event,
+          eventDate: now.add(const Duration(days: 1)), timeOfDay: 'evening');
+      final result = engine.tonight(
+        [afternoonShow, eveningShow, lateShow, unknownTimeShow, tomorrowEvening],
+        now: now,
+      );
+      expect(result.map((i) => i.id).toSet(), {'evening', 'late'});
     });
 
     test('thisWeekend includes today when today already is Saturday or Sunday', () {
