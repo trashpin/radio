@@ -107,6 +107,15 @@ enum AdminModule {
       description: 'Local events — the EVENT tier of the location-aware '
           'player, highest priority ahead of Park/Spring/Town/County.',
       table: 'events'),
+  eventDiscovery('Event Discovery', Icons.travel_explore_rounded,
+      AdminGroup.content,
+      ready: true,
+      description: 'Multi-source Marion County Event Discovery Engine — '
+          'runs each connected source (Ticketmaster today), verifies the '
+          'venue is actually in Marion County, deduplicates against '
+          'existing events, and queues anything uncertain for review '
+          'before it reaches the Events table.',
+      table: 'discovered_events'),
   locationTester('Location Tester', Icons.wrong_location_rounded,
       AdminGroup.content,
       ready: true,
