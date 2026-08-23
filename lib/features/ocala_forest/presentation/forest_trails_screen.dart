@@ -5,6 +5,7 @@ import 'package:explorer_os_mobile/features/discover_area/models/tour_mode.dart'
 import 'package:explorer_os_mobile/features/ocala_forest/controllers/forest_experience_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_trail.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_trail_detail_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/services/forest_playback.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -15,9 +16,9 @@ import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 /// 1. "Official Trails": the real, official USFS trail records imported by
 ///    the ocala-trails-import edge function (migration 0050) — name,
 ///    official number, length/type/managing org when the source provided
-///    them, source attribution. Deliberately NO "Start Trail"/"Audio
-///    Tour"/"QR Start" buttons yet — the spec explicitly says not to
-///    fabricate interface content ahead of real experience content.
+///    them, source attribution. Selecting one (VIEW TRAIL) opens the
+///    dedicated trail page (ForestTrailDetailScreen) — trail info, the
+///    actual trail map, and the ElevenLabs Trail Audio Tour.
 /// 2. The existing trail-stop checklist from v2 (`experienceType ==
 ///    'trail_stop'` forest_locations) — unchanged; GPS arrival narration is
 ///    already live via the shared `ForestExperienceController`.
@@ -168,6 +169,8 @@ class _OfficialTrailCard extends StatelessWidget {
         'Managing org ${trail.managingOrg}',
     ];
     return GlassPanel(
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ForestTrailDetailScreen(trail: trail))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -187,6 +190,17 @@ class _OfficialTrailCard extends StatelessWidget {
           Text(
             'Source: ${trail.source ?? 'U.S. Forest Service'}',
             style: RD.caption.copyWith(color: RD.textFaint),
+          ),
+          const SizedBox(height: RD.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('VIEW TRAIL', style: RD.caption.copyWith(color: RD.green)),
+                const Icon(Icons.chevron_right_rounded, color: RD.green, size: 18),
+              ],
+            ),
           ),
         ],
       ),
