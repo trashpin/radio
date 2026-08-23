@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/discover_home/presentation/discover_
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_item_detail_screen.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
+import 'package:explorer_os_mobile/shared/design/category_visuals.dart';
 
 /// A "why recommended" caption from what actually matched — never fabricated,
 /// only ever names interests the item genuinely carries (spec example:
@@ -28,6 +29,13 @@ class DiscoverItemCard extends ConsumerWidget {
 
   final DiscoverableItem item;
   final Set<String> matchedInterests;
+
+  /// A gem with no specific category (e.g. "Other") still reads as a Gem
+  /// visually rather than falling through to a generic marker — the icon
+  /// only ever changes what's DISPLAYED, never what a Gem IS (still exactly
+  /// the existing submitted-restaurant content).
+  String? get _iconCategory =>
+      item.category ?? (item.kind == DiscoverItemKind.gem ? 'gem' : null);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -68,10 +76,16 @@ class DiscoverItemCard extends ConsumerWidget {
                         style: RD.cardTitle.copyWith(color: RD.textPrimary)),
                     if (subtitleParts.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(subtitleParts.join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: RD.caption.copyWith(color: RD.textSecondary)),
+                      Row(children: [
+                        Icon(categoryIconFor(_iconCategory), size: 13, color: RD.green),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(subtitleParts.join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: RD.caption.copyWith(color: RD.textSecondary)),
+                        ),
+                      ]),
                     ],
                     if (reason != null) ...[
                       const SizedBox(height: RD.xs),
@@ -93,10 +107,13 @@ class DiscoverItemCard extends ConsumerWidget {
     );
   }
 
+  /// No photo yet — never a blank/generic box. The category's own icon
+  /// (large, tinted) fills the space instead, so a Festival, a Spring, or a
+  /// Gem is immediately recognizable even before a photo exists.
   Widget _placeholder() => Container(
         color: RD.panelAlt,
         alignment: Alignment.center,
-        child: const Icon(Icons.image_rounded, color: RD.textFaint, size: 32),
+        child: CategoryIcon(_iconCategory, size: 56, color: RD.green),
       );
 }
 

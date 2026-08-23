@@ -52,6 +52,40 @@ class DiscoverNarrationService {
       return null;
     }
   }
+
+  /// The opening greeting's audio — speaks [text] EXACTLY as given (OpenAI is
+  /// skipped server-side for this subject type) through the same ElevenLabs
+  /// voice every other Discover narration uses, instead of the on-device TTS
+  /// fallback. Cached per (greeting template, visitor name) so the same line
+  /// for the same name is never re-synthesized.
+  Future<DiscoverNarrationResult?> requestForGreeting(
+    String text,
+    String templateId,
+    String? name,
+  ) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final res = await SupabaseService.client.functions.invoke(
+        'discover-narration',
+        body: {
+          'subjectType': 'greeting',
+          'subjectId': '$templateId::${(name ?? '').trim().isEmpty ? 'guest' : name!.trim().toLowerCase()}',
+          'kind': 'greeting',
+          'text': text,
+        },
+      ).timeout(const Duration(seconds: 45));
+      final data = res.data;
+      if (data is Map) {
+        final t = (data['text'] as String?)?.trim();
+        if (t != null && t.isNotEmpty) {
+          return DiscoverNarrationResult(text: t, audioUrl: data['audioUrl'] as String?);
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 final discoverNarrationServiceProvider =
