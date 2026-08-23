@@ -1,3 +1,4 @@
+import 'package:explorer_os_mobile/features/discover_home/models/discover_intent.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
 
 /// One scored recommendation — [matchedInterests] is what "Recommended
@@ -111,6 +112,79 @@ class DiscoverRecommendationEngine {
       return _distanceOf(a).compareTo(_distanceOf(b));
     });
     return candidates.take(limit).toList();
+  }
+
+  /// Turns a parsed [DiscoverIntent] (the opening question's answer, spec:
+  /// "the user's response should eventually drive Discover recommendations")
+  /// into a ranked result list. [fallbackInterests] (the visitor's saved
+  /// interests) are used only when the intent itself named none — a specific
+  /// answer always takes priority over standing preferences. Never returns
+  /// empty: falls back to [nearYou] so an unmatched or vague answer still
+  /// shows something useful.
+  List<DiscoverableItem> respondToIntent(
+    List<DiscoverableItem> items,
+    DiscoverIntent intent,
+    Set<String> fallbackInterests, {
+    int limit = 12,
+    DateTime? now,
+  }) {
+    if (intent.undecided) {
+      // "I don't know" — spec: "give a few different choices," not one
+      // more of the same kind of thing.
+      final out = <DiscoverableItem>[];
+      final seen = <String>{};
+      void addAll(Iterable<DiscoverableItem> src) {
+        for (final i in src) {
+          if (seen.add(i.id)) out.add(i);
+        }
+      }
+
+      addAll(pickedForYou(items, fallbackInterests, limit: 3).map((r) => r.item));
+      addAll(today(items, now: now).take(2));
+      addAll(nearYou(items, limit: 4));
+      return out.take(limit).toList();
+    }
+
+    var pool = items;
+    if (intent.kinds.isNotEmpty) {
+      pool = pool.where((i) => intent.kinds.contains(i.kind)).toList();
+    }
+    // Date-based timeframes only mean anything for events — only apply them
+    // when the intent didn't also ask for a non-event kind (e.g. "hiking
+    // today" shouldn't be zeroed out by a same-day-events filter).
+    final wantsEventTimeframe =
+        intent.kinds.isEmpty || intent.kinds.contains(DiscoverItemKind.event);
+    if (wantsEventTimeframe &&
+        (intent.timeframe == DiscoverTimeframe.today ||
+            intent.timeframe == DiscoverTimeframe.tonight)) {
+      final ids = today(items, now: now).map((i) => i.id).toSet();
+      pool = pool.where((i) => ids.contains(i.id)).toList();
+    } else if (wantsEventTimeframe && intent.timeframe == DiscoverTimeframe.weekend) {
+      final ids = thisWeekend(items, now: now).map((i) => i.id).toSet();
+      pool = pool.where((i) => ids.contains(i.id)).toList();
+    }
+
+    final interests =
+        intent.interestTokens.isNotEmpty ? intent.interestTokens : fallbackInterests;
+    final scored = <(DiscoverableItem, int)>[];
+    for (final item in pool) {
+      scored.add((item, item.interestTags.intersection(interests).length));
+    }
+    scored.sort((a, b) {
+      final byOverlap = b.$2.compareTo(a.$2);
+      if (byOverlap != 0) return byOverlap;
+      if (intent.priceSensitive) {
+        final aFree = a.$1.interestTags.contains('free_things') ? 1 : 0;
+        final bFree = b.$1.interestTags.contains('free_things') ? 1 : 0;
+        if (aFree != bFree) return bFree.compareTo(aFree);
+      }
+      final byEditorial = _editorialScore(b.$1).compareTo(_editorialScore(a.$1));
+      if (byEditorial != 0) return byEditorial;
+      return _distanceOf(a.$1).compareTo(_distanceOf(b.$1));
+    });
+
+    final ranked = scored.map((e) => e.$1).toList();
+    return ranked.isNotEmpty ? ranked.take(limit).toList() : nearYou(items, limit: limit);
   }
 }
 

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/discover_home/controllers/discover_audio_controller.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
+import 'package:explorer_os_mobile/features/discover_home/presentation/discover_ask_input.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_interests_screen.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_item_card.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_mini_player.dart';
+import 'package:explorer_os_mobile/features/discover_home/providers/discover_greeting_provider.dart';
 import 'package:explorer_os_mobile/features/discover_home/providers/discover_interests_provider.dart';
 import 'package:explorer_os_mobile/features/discover_home/providers/discover_items_provider.dart';
 import 'package:explorer_os_mobile/features/discover_home/services/discover_recommendation_engine.dart';
 import 'package:explorer_os_mobile/features/gps/presentation/location_prompt.dart';
 import 'package:explorer_os_mobile/features/gps/providers/gps_status_provider.dart';
-import 'package:explorer_os_mobile/features/profile/data/user_profile_repository.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
@@ -39,18 +41,10 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen> {
     });
   }
 
-  String get _greeting {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Good morning!';
-    if (h < 17) return 'Good afternoon!';
-    return 'Good evening!';
-  }
-
   @override
   Widget build(BuildContext context) {
     final items = ref.watch(discoverAllItemsProvider);
     final interests = ref.watch(discoverInterestsProvider);
-    final profile = ref.watch(currentUserProfileProvider).value;
     final hasRealLocation = ref.watch(discoverHasRealLocationProvider);
     const engine = DiscoverRecommendationEngine();
 
@@ -75,7 +69,9 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(RD.lg, RD.sm, RD.lg, 96),
                   children: [
-                    _Header(greeting: _greeting, name: profile?.firstName),
+                    const _GreetingHeader(),
+                    const SizedBox(height: RD.sm),
+                    const DiscoverAskInput(),
                     const SizedBox(height: RD.md),
                     const LocationPrompt(margin: EdgeInsets.only(bottom: RD.md)),
                     if (interests.isEmpty) const _InterestsPrompt(),
@@ -105,26 +101,56 @@ class _DiscoverHomeScreenState extends ConsumerState<DiscoverHomeScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.greeting, this.name});
-  final String greeting;
-  final String? name;
+/// "Hey Steve, what are you in the mood to do today?" — a fresh, varied,
+/// context-aware opening line each session (see `discover_greeting_provider`
+/// / `discover_greeting_selector`), spoken aloud once via the same narration
+/// player every other Discover audio uses (so the radio ducks/resumes around
+/// it exactly like a "Hear About It" tap would).
+class _GreetingHeader extends ConsumerStatefulWidget {
+  const _GreetingHeader();
+
+  @override
+  ConsumerState<_GreetingHeader> createState() => _GreetingHeaderState();
+}
+
+class _GreetingHeaderState extends ConsumerState<_GreetingHeader> {
+  bool _spoken = false;
+
+  void _maybeAutoSpeak(String text) {
+    if (_spoken) return;
+    _spoken = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(discoverAudioControllerProvider.notifier)
+          .play(title: 'Discover', spokenText: text);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final greeting = ref.watch(discoverGreetingProvider);
+
+    final text = greeting.when(
+      data: (s) {
+        _maybeAutoSpeak(s.text);
+        return s.text;
+      },
+      loading: () => "Here's what you might enjoy around Marion County.",
+      error: (_, _) => "Here's what you might enjoy around Marion County.",
+    );
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(greeting, style: RD.title.copyWith(fontSize: 24)),
-              const SizedBox(height: 2),
-              Text("Here's what you might enjoy around Marion County.",
-                  style: RD.body.copyWith(color: RD.textSecondary)),
-            ],
-          ),
+          child: Text(text, style: RD.title.copyWith(fontSize: 22)),
+        ),
+        IconButton(
+          icon: const Icon(Icons.volume_up_rounded, color: RD.textSecondary),
+          tooltip: 'Hear it',
+          onPressed: () => ref
+              .read(discoverAudioControllerProvider.notifier)
+              .play(title: 'Discover', spokenText: text),
         ),
         IconButton(
           icon: const Icon(Icons.tune_rounded, color: RD.textSecondary),
