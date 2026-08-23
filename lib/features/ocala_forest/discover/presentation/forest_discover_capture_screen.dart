@@ -5,9 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:explorer_os_mobile/features/discovery/models/species.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/models/discovery_category.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/models/discovery_species_mapping.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/presentation/forest_discovery_saved_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/providers/forest_discover_known_matches_provider.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/services/forest_discovery_ai_service.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/services/forest_discovery_submit_service.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/services/nearest_trail_finder.dart';
@@ -16,12 +19,15 @@ import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-enum _Step { subtype, photo, identifying, suggestion, notes, saving }
+enum _Step { subtype, knownMatch, photo, identifying, suggestion, notes, saving }
 
-/// The core DISCOVER flow (spec §3–§6): pick a subtype (if the group has
-/// any) → take/pick a photo → AI suggests an identification (never a fact,
-/// spec §4) → the visitor accepts/edits/rejects it → optional notes → save
-/// with GPS + date/time captured via the EXISTING GPS system.
+/// The core DISCOVER flow: pick a subtype (if the group has any) → check
+/// whether it's already a KNOWN, referenced species/feature ("is it one of
+/// these?") → if not, take/pick a photo and let AI suggest an
+/// identification (never a fact, spec §4; this is the "unknown subject,
+/// goes to admin for review" path) → the visitor accepts/edits/rejects it
+/// → optional notes → save with GPS + date/time captured via the EXISTING
+/// GPS system.
 class ForestDiscoverCaptureScreen extends ConsumerStatefulWidget {
   const ForestDiscoverCaptureScreen({super.key, required this.group});
   final DiscoveryGroup group;
@@ -32,17 +38,29 @@ class ForestDiscoverCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCaptureScreen> {
-  late _Step _step = widget.group.subtypes.isEmpty ? _Step.photo : _Step.subtype;
+  late _Step _step =
+      widget.group.subtypes.isEmpty ? _knownMatchOrPhotoStep(null) : _Step.subtype;
   String? _subtype;
   Uint8List? _photoBytes;
   String _mimeType = 'image/jpeg';
   DiscoveryIdentification? _aiResult;
   String? _confirmedIdentification;
+  String? _confirmedScientificName;
   String _userConfirmation = 'unknown';
+
+  /// True once the visitor has self-identified against a KNOWN reference
+  /// (species table) — the photo step still happens (a real photo of
+  /// THEIR sighting is always captured), but the AI-guess step is skipped
+  /// since they've already told us what it is.
+  bool _skipAiIdentify = false;
+
   final _notesController = TextEditingController();
   final _editController = TextEditingController();
   bool _editing = false;
   String? _error;
+
+  _Step _knownMatchOrPhotoStep(String? subtype) =>
+      speciesCategoriesFor(widget.group, subtype).isEmpty ? _Step.photo : _Step.knownMatch;
 
   @override
   void dispose() {
@@ -60,6 +78,17 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
       final bytes = await file.readAsBytes();
       final mime = file.mimeType ??
           (file.path.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg');
+      if (_skipAiIdentify) {
+        // Already self-identified against a known reference — the photo
+        // documents the visitor's own sighting, but there's nothing for AI
+        // to guess.
+        setState(() {
+          _photoBytes = bytes;
+          _mimeType = mime;
+          _step = _Step.notes;
+        });
+        return;
+      }
       setState(() {
         _photoBytes = bytes;
         _mimeType = mime;
@@ -110,7 +139,7 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
       category: widget.group.id,
       subtype: _subtype,
       identification: _confirmedIdentification,
-      scientificName: _userConfirmation == 'accepted' ? _aiResult?.scientificName : null,
+      scientificName: _confirmedScientificName,
       userConfirmation: _userConfirmation,
       latitude: fix.latitude,
       longitude: fix.longitude,
@@ -173,6 +202,8 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
     switch (_step) {
       case _Step.subtype:
         return _subtypeStep();
+      case _Step.knownMatch:
+        return _knownMatchStep();
       case _Step.photo:
         return _photoStep();
       case _Step.identifying:
@@ -196,7 +227,7 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
           GlassPanel(
             onTap: () => setState(() {
               _subtype = s;
-              _step = _Step.photo;
+              _step = _knownMatchOrPhotoStep(s);
             }),
             child: Row(
               children: [
@@ -211,6 +242,93 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
     );
   }
 
+  /// "Is it one of these?" — a KNOWN reference list (the `species` table)
+  /// for this group/subtype, shown BEFORE the camera. Matching here skips
+  /// the AI-guess step entirely (the visitor has already told us what it
+  /// is); not matching falls through to the photo step, which is now
+  /// explicitly the "I don't know what this is" path that goes to admin
+  /// for review.
+  Widget _knownMatchStep() {
+    final categoriesKey = speciesCategoriesFor(widget.group, _subtype).join(',');
+    final async = ref.watch(forestDiscoverKnownMatchesProvider(categoriesKey));
+    final matches = async.value ?? const <Species>[];
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(RD.lg, RD.md, RD.lg, RD.sm),
+          child: Text('Is it one of these?',
+              style: RD.title.copyWith(color: Colors.white)),
+        ),
+        Expanded(
+          child: async.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : matches.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(RD.xl),
+                        child: Text(
+                          "We don't have a reference listing for this yet.",
+                          textAlign: TextAlign.center,
+                          style: RD.body.copyWith(color: RD.textSecondary),
+                        ),
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: RD.lg),
+                      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 180,
+                        mainAxisSpacing: RD.sm,
+                        crossAxisSpacing: RD.sm,
+                        childAspectRatio: 0.85,
+                      ),
+                      itemCount: matches.length,
+                      itemBuilder: (context, i) => _KnownMatchCard(
+                        species: matches[i],
+                        onTap: () => _confirmKnownMatch(matches[i]),
+                      ),
+                    ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(RD.lg),
+          child: OutlinedButton(
+            onPressed: () => setState(() {
+              _skipAiIdentify = false;
+              _step = _Step.photo;
+            }),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+            child: const Text("I DON'T SEE IT — TAKE A PHOTO",
+                style: TextStyle(color: Colors.white)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmKnownMatch(Species species) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: RD.panel,
+        title: Text('Is this what you found?', style: RD.title.copyWith(color: Colors.white)),
+        content: Text(species.commonName, style: RD.body.copyWith(color: Colors.white)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true), child: const Text("Yes, that's it")),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _confirmedIdentification = species.commonName;
+      _confirmedScientificName = species.scientificName;
+      _userConfirmation = 'accepted';
+      _skipAiIdentify = true;
+      _step = _Step.photo;
+    });
+  }
+
   Widget _photoStep() {
     return Center(
       child: Padding(
@@ -221,7 +339,9 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
             const Icon(Icons.camera_alt_rounded, size: 56, color: RD.green),
             const SizedBox(height: RD.lg),
             Text(
-              'Take a picture of what you discovered.',
+              _skipAiIdentify
+                  ? 'Take a picture of your ${_confirmedIdentification ?? 'discovery'}.'
+                  : "Take a picture and we'll have it reviewed.",
               textAlign: TextAlign.center,
               style: RD.title.copyWith(color: Colors.white),
             ),
@@ -295,6 +415,7 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
             ElevatedButton(
               onPressed: () => setState(() {
                 _confirmedIdentification = ai!.identification;
+                _confirmedScientificName = ai.scientificName;
                 _userConfirmation = 'accepted';
                 _step = _Step.notes;
               }),
@@ -316,6 +437,7 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
           OutlinedButton(
             onPressed: () => setState(() {
               _confirmedIdentification = null;
+              _confirmedScientificName = null;
               _userConfirmation = 'unknown';
               _step = _Step.notes;
             }),
@@ -347,6 +469,7 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
                 ? null
                 : () => setState(() {
                       _confirmedIdentification = _editController.text.trim();
+                      _confirmedScientificName = null;
                       _userConfirmation = 'edited';
                       _step = _Step.notes;
                     }),
@@ -399,6 +522,44 @@ class _ForestDiscoverCaptureScreenState extends ConsumerState<ForestDiscoverCapt
           child: const Text('SAVE DISCOVERY'),
         ),
       ],
+    );
+  }
+}
+
+class _KnownMatchCard extends StatelessWidget {
+  const _KnownMatchCard({required this.species, required this.onTap});
+  final Species species;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final img = species.heroImageUrl;
+    return GlassPanel(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: RD.brMd,
+              child: img != null && img.isNotEmpty
+                  ? Image.network(img, fit: BoxFit.cover)
+                  : Container(
+                      color: RD.panelAlt,
+                      child: const Icon(Icons.image_not_supported_outlined,
+                          color: RD.textFaint),
+                    ),
+            ),
+          ),
+          const SizedBox(height: RD.xs),
+          Text(
+            species.commonName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: RD.caption.copyWith(color: Colors.white),
+          ),
+        ],
+      ),
     );
   }
 }
