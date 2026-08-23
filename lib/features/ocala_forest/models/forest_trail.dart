@@ -41,6 +41,17 @@ class ForestTrail implements Model {
     this.source,
     this.sourceDataset,
     this.sourceUrl,
+    this.mapImageUrl,
+    this.mapSourceName,
+    this.mapSourceUrl,
+    this.mapRetrievedAt,
+    this.mapDocumentId,
+    this.audioScript,
+    this.audioVoiceId,
+    this.audioUrl,
+    this.audioDurationSeconds,
+    this.audioGeneratedAt,
+    this.audioStatus = 'none',
   });
 
   @override
@@ -77,7 +88,70 @@ class ForestTrail implements Model {
   final String? sourceDataset;
   final String? sourceUrl;
 
+  /// An official printable/scannable trail map, if one has ever been
+  /// sourced and attached (spec: "actual physical trail map") — null for
+  /// every trail today (see migration 0052's own doc comment: USFS
+  /// publishes no per-trail map for Ocala, only whole-forest products).
+  /// When null, the UI falls back to the real imported [parts] geometry.
+  final String? mapImageUrl;
+  final String? mapSourceName;
+  final String? mapSourceUrl;
+  final DateTime? mapRetrievedAt;
+  final String? mapDocumentId;
+
+  /// The ElevenLabs trail-audio introduction (spec: "Trail Audio Tour").
+  final String? audioScript;
+  final String? audioVoiceId;
+  final String? audioUrl;
+  final double? audioDurationSeconds;
+  final DateTime? audioGeneratedAt;
+
+  /// none | pending | generating | ready | error.
+  final String audioStatus;
+
   bool get hasGeometricStart => geometricStartLat != null && geometricStartLng != null;
+  bool get hasOfficialMap => (mapImageUrl ?? '').trim().isNotEmpty;
+  bool get hasReadyAudio => audioStatus == 'ready' && (audioUrl ?? '').trim().isNotEmpty;
+
+  ForestTrail copyWithAudio({
+    String? audioScript,
+    String? audioVoiceId,
+    String? audioUrl,
+    double? audioDurationSeconds,
+    DateTime? audioGeneratedAt,
+    String? audioStatus,
+  }) =>
+      ForestTrail(
+        id: id,
+        forestId: forestId,
+        trailNo: trailNo,
+        trailName: trailName,
+        trailType: trailType,
+        trailClass: trailClass,
+        trailSurface: trailSurface,
+        accessibilityStatus: accessibilityStatus,
+        nationalTrailDesignation: nationalTrailDesignation,
+        managingOrg: managingOrg,
+        lengthMiles: lengthMiles,
+        segmentCount: segmentCount,
+        parts: parts,
+        geometricStartLat: geometricStartLat,
+        geometricStartLng: geometricStartLng,
+        source: source,
+        sourceDataset: sourceDataset,
+        sourceUrl: sourceUrl,
+        mapImageUrl: mapImageUrl,
+        mapSourceName: mapSourceName,
+        mapSourceUrl: mapSourceUrl,
+        mapRetrievedAt: mapRetrievedAt,
+        mapDocumentId: mapDocumentId,
+        audioScript: audioScript ?? this.audioScript,
+        audioVoiceId: audioVoiceId ?? this.audioVoiceId,
+        audioUrl: audioUrl ?? this.audioUrl,
+        audioDurationSeconds: audioDurationSeconds ?? this.audioDurationSeconds,
+        audioGeneratedAt: audioGeneratedAt ?? this.audioGeneratedAt,
+        audioStatus: audioStatus ?? this.audioStatus,
+      );
 
   static List<List<ForestTrailPoint>> _partsFromGeoJson(String? geoJson) {
     if (geoJson == null || geoJson.isEmpty) return const [];
@@ -118,5 +192,16 @@ class ForestTrail implements Model {
         source: json['source'] as String?,
         sourceDataset: json['source_dataset'] as String?,
         sourceUrl: json['source_url'] as String?,
+        mapImageUrl: json['map_image_url'] as String?,
+        mapSourceName: json['map_source_name'] as String?,
+        mapSourceUrl: json['map_source_url'] as String?,
+        mapRetrievedAt: DateTime.tryParse(json['map_retrieved_at']?.toString() ?? ''),
+        mapDocumentId: json['map_document_id'] as String?,
+        audioScript: json['audio_script'] as String?,
+        audioVoiceId: json['audio_voice_id'] as String?,
+        audioUrl: json['audio_url'] as String?,
+        audioDurationSeconds: (json['audio_duration_seconds'] as num?)?.toDouble(),
+        audioGeneratedAt: DateTime.tryParse(json['audio_generated_at']?.toString() ?? ''),
+        audioStatus: (json['audio_status'] as String?) ?? 'none',
       );
 }

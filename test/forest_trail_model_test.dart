@@ -75,5 +75,73 @@ void main() {
       expect(withStart.hasGeometricStart, isTrue);
       expect(withoutStart.hasGeometricStart, isFalse);
     });
+
+    test('hasOfficialMap/hasReadyAudio are false by default, never assumed true', () {
+      final trail = ForestTrail.fromJson({'id': 't6', 'forest_id': 'f1', 'trail_no': '0006'});
+      expect(trail.hasOfficialMap, isFalse);
+      expect(trail.hasReadyAudio, isFalse);
+      expect(trail.audioStatus, 'none');
+    });
+
+    test('parses map and audio fields when present', () {
+      final trail = ForestTrail.fromJson({
+        'id': 't7',
+        'forest_id': 'f1',
+        'trail_no': '0520',
+        'map_image_url': 'https://example.com/map.jpg',
+        'map_source_name': 'U.S. Forest Service',
+        'map_source_url': 'https://fs.usda.gov/example',
+        'map_retrieved_at': '2026-08-01T00:00:00Z',
+        'map_document_id': 'DOC-123',
+        'audio_script': 'Welcome to the trail.',
+        'audio_voice_id': 'voice123',
+        'audio_url': 'https://example.com/audio.mp3',
+        'audio_duration_seconds': 29,
+        'audio_generated_at': '2026-08-01T00:00:00Z',
+        'audio_status': 'ready',
+      });
+
+      expect(trail.hasOfficialMap, isTrue);
+      expect(trail.mapSourceName, 'U.S. Forest Service');
+      expect(trail.mapDocumentId, 'DOC-123');
+      expect(trail.hasReadyAudio, isTrue);
+      expect(trail.audioDurationSeconds, 29);
+      expect(trail.audioScript, 'Welcome to the trail.');
+    });
+
+    test('hasReadyAudio is false when status is ready but url is missing', () {
+      final trail = ForestTrail.fromJson({
+        'id': 't8',
+        'forest_id': 'f1',
+        'trail_no': '0007',
+        'audio_status': 'ready',
+      });
+      expect(trail.hasReadyAudio, isFalse);
+    });
+  });
+
+  group('ForestTrail.copyWithAudio', () {
+    test('updates only audio fields, preserving every other field', () {
+      final original = ForestTrail.fromJson({
+        'id': 't9',
+        'forest_id': 'f1',
+        'trail_no': '0520',
+        'trail_name': 'CENTENNIAL TRAIL',
+        'length_miles': 36.262,
+      });
+
+      final updated = original.copyWithAudio(
+        audioUrl: 'https://example.com/a.mp3',
+        audioScript: 'Hello',
+        audioDurationSeconds: 30,
+        audioStatus: 'ready',
+      );
+
+      expect(updated.trailName, 'CENTENNIAL TRAIL');
+      expect(updated.lengthMiles, 36.262);
+      expect(updated.hasReadyAudio, isTrue);
+      expect(updated.audioScript, 'Hello');
+      expect(updated.audioDurationSeconds, 30);
+    });
   });
 }
