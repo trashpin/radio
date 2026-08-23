@@ -10,6 +10,10 @@ import 'package:explorer_os_mobile/features/discovery/models/species.dart';
 import 'package:explorer_os_mobile/features/media/data/media_repository.dart';
 import 'package:explorer_os_mobile/features/narration/data/narration_repository.dart';
 import 'package:explorer_os_mobile/features/narration/services/narration_script_composer.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/models/discovery_category.dart'
+    as ocala_discover;
+import 'package:explorer_os_mobile/features/ocala_forest/discover/presentation/forest_discover_capture_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/providers/forest_discovery_providers.dart';
 
 /// Full species page: hero image, natural-history detail, and narration.
 ///
@@ -191,6 +195,10 @@ class _SpeciesDetailScreenState extends ConsumerState<SpeciesDetailScreen> {
                     _section('Conservation', s.conservationStatus!),
                   if (s.safetyInfo != null && s.safetyInfo!.isNotEmpty)
                     _section('Safety', s.safetyInfo!),
+                  const Gap.v(AppSpacing.lg),
+                  _RecentDiscoveriesSection(speciesId: s.id),
+                  const Gap.v(AppSpacing.sm),
+                  _ReportDiscoveryButton(species: s),
                 ],
               ),
             ),
@@ -224,6 +232,79 @@ class _SpeciesDetailScreenState extends ConsumerState<SpeciesDetailScreen> {
           ),
         ),
       );
+}
+
+/// "RECENT DISCOVERIES" (spec §12) — community DISCOVER reports linked to
+/// THIS species via the deterministic exact-name match computed server-
+/// side (migration 0051's forest_discovery_reports_match_species trigger,
+/// never an AI guess). Ocala-forest-scoped for now (DISCOVER's own table is
+/// isolated there); shows nothing, not an error, when there are none yet or
+/// this species isn't one DISCOVER has matched.
+class _RecentDiscoveriesSection extends ConsumerWidget {
+  const _RecentDiscoveriesSection({required this.speciesId});
+  final String speciesId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final discoveries = ref.watch(forestDiscoveriesForSpeciesProvider(speciesId)).value ?? const [];
+    if (discoveries.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: BoxDecoration(
+        color: const Color(0xFF161E19),
+        borderRadius: AppRadius.lgAll,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('RECENT DISCOVERIES',
+              style: TextStyle(
+                  color: Color(0xFFEE7B2E),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5)),
+          const Gap.v(AppSpacing.sm),
+          for (final d in discoveries.take(5))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                d.locationGeneralized
+                    ? 'Recently discovered in this general area'
+                    : 'Reported nearby',
+                style: const TextStyle(color: Color(0xFF8E9A93), fontSize: 14),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "REPORT A DISCOVERY" / "DISCOVER THIS BIRD" (spec §12) — links an
+/// existing wildlife page straight into DISCOVER's own photo/AI-suggestion
+/// flow (never a shortcut that skips it or auto-confirms this species as
+/// the answer).
+class _ReportDiscoveryButton extends StatelessWidget {
+  const _ReportDiscoveryButton({required this.species});
+  final Species species;
+
+  @override
+  Widget build(BuildContext context) {
+    final group = ocala_discover.DiscoveryGroup.fromSpeciesCategory(species.category);
+    return OutlinedButton.icon(
+      onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => ForestDiscoverCaptureScreen(group: group))),
+      icon: const Icon(Icons.travel_explore_rounded, color: Color(0xFFF3F6F2)),
+      label: Text(
+        group == ocala_discover.DiscoveryGroup.birds
+            ? 'DISCOVER THIS BIRD'
+            : 'REPORT A DISCOVERY',
+        style: const TextStyle(color: Color(0xFFF3F6F2)),
+      ),
+      style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 52)),
+    );
+  }
 }
 
 class _NarrationButton extends StatelessWidget {

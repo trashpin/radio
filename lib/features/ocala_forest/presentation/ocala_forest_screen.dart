@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/controllers/forest_experience_controller.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/presentation/forest_discover_home_screen.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/discover/presentation/forest_discovery_map_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_around_me_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_discoveries_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_stories_screen.dart';
@@ -77,8 +79,20 @@ class _OcalaForestScreenState extends ConsumerState<OcalaForestScreen> {
                         builder: (_) => const ForestTrailsScreen())),
                   ),
                   _ExperienceTile(
+                    icon: Icons.travel_explore_rounded,
+                    label: '🔎 Discover',
+                    color: const Color(0xFFE8A23D),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestDiscoverHomeScreen())),
+                  ),
+                  _ExperienceTile(
+                    // Renamed from "Discoveries" (label only, same screen/
+                    // functionality unchanged) so it doesn't read as the
+                    // same feature as the new "🔎 Discover" button above —
+                    // this tile is still the curated, admin-seeded browse
+                    // list of forest locations it always was.
                     icon: Icons.explore_rounded,
-                    label: 'Discoveries',
+                    label: 'Explore Spots',
                     color: const Color(0xFF4C9BE0),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const ForestDiscoveriesScreen())),
@@ -96,6 +110,13 @@ class _OcalaForestScreenState extends ConsumerState<OcalaForestScreen> {
                     color: const Color(0xFF5CA85C),
                     onTap: () => Navigator.of(context).push(MaterialPageRoute(
                         builder: (_) => const ForestAroundMeScreen())),
+                  ),
+                  _ExperienceTile(
+                    icon: Icons.map_rounded,
+                    label: 'Discovery Map',
+                    color: const Color(0xFFCF5C5C),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ForestDiscoveryMapScreen())),
                   ),
                   _ExperienceTile(
                     icon: Icons.map_outlined,
