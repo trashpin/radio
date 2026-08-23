@@ -45,6 +45,23 @@ class EventRepository {
     }
   }
 
+  /// A single event by id — used by the notification deep link
+  /// (`/discover-event/:id`), which may need to resolve an event before
+  /// [eventsProvider]'s full county-wide list has loaded.
+  Future<LocalEvent?> byId(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('events')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : LocalEvent.fromJson(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> create(Map<String, dynamic> row) => _resilient(
         row,
         (r) => SupabaseService.client.from('events').insert(r),

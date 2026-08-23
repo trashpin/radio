@@ -10,6 +10,7 @@ import 'package:explorer_os_mobile/features/auth/presentation/sign_in_screen.dar
 import 'package:explorer_os_mobile/features/auth/presentation/welcome_screen.dart';
 import 'package:explorer_os_mobile/features/companion/presentation/ai_ranger_screen.dart';
 import 'package:explorer_os_mobile/features/destinations/presentation/destination_details_screen.dart';
+import 'package:explorer_os_mobile/features/discover_home/presentation/discover_event_link_screen.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_home_screen.dart';
 import 'package:explorer_os_mobile/features/explore/presentation/explore_home_screen.dart';
 import 'package:explorer_os_mobile/features/explore/presentation/explorer_mode_screen.dart';
@@ -132,6 +133,15 @@ class AppRouter {
         path: AppRoute.destinationDetails.path,
         builder: (context, state) => DestinationDetailsScreen(
           destinationId: state.pathParameters['id'] ?? '',
+        ),
+      ),
+      // The push-notification deep link target — always opens the exact
+      // event, never the generic Discover home (spec: "Notification ->
+      // Deep Link -> Open Event").
+      GoRoute(
+        path: AppRoute.discoverEventDetail.path,
+        builder: (context, state) => DiscoverEventLinkScreen(
+          eventId: state.pathParameters['id'] ?? '',
         ),
       ),
     ],
