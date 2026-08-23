@@ -1,0 +1,122 @@
+import 'dart:convert';
+
+import 'package:explorer_os_mobile/core/data/model.dart';
+
+/// One point of a trail's line geometry — plain lat/lng, no dependency on
+/// any particular map package (mirrors [LatLngPoint] in point_in_polygon.dart,
+/// but a trail's geometry is display-only here, never fed through the
+/// ray-casting point-in-polygon check that geometry is used for).
+typedef ForestTrailPoint = ({double lat, double lng});
+
+/// A real, official trail record imported from the U.S. Forest Service's
+/// National Forest System Trails dataset (spec: "Import Official Ocala
+/// National Forest Trail Records") — grouped from one or more raw GIS
+/// segments sharing the same official `trailNo` (see
+/// `forest_trail_segments`/`forest_trails`/`rebuild_forest_trails` in
+/// migration 0050_ocala_forest_trails.sql).
+///
+/// Every field is either a literal USFS-provided value, a real aggregate of
+/// USFS-provided numbers ([lengthMiles]), or a geometric fact of the USFS
+/// geometry itself ([geometricStartLat]/[geometricStartLng] — explicitly
+/// NOT an official trailhead facility, since the source has no trailhead
+/// layer). A field the source didn't provide is left null here, never
+/// invented client-side either.
+class ForestTrail implements Model {
+  const ForestTrail({
+    required this.id,
+    required this.forestId,
+    required this.trailNo,
+    this.trailName,
+    this.trailType,
+    this.trailClass,
+    this.trailSurface,
+    this.accessibilityStatus,
+    this.nationalTrailDesignation,
+    this.managingOrg,
+    this.lengthMiles,
+    this.segmentCount = 0,
+    this.parts = const [],
+    this.geometricStartLat,
+    this.geometricStartLng,
+    this.source,
+    this.sourceDataset,
+    this.sourceUrl,
+  });
+
+  @override
+  final String id;
+  final String forestId;
+
+  /// The USFS official trail number (e.g. "0520") — never invented; this is
+  /// the field the source itself uses to identify a distinct trail.
+  final String trailNo;
+  final String? trailName;
+  final String? trailType;
+  final String? trailClass;
+  final String? trailSurface;
+  final String? accessibilityStatus;
+  final int? nationalTrailDesignation;
+  final String? managingOrg;
+
+  /// Sum of each segment's official `gis_miles`; null if none of this
+  /// trail's segments carried a mileage value.
+  final double? lengthMiles;
+  final int segmentCount;
+
+  /// The real trail line geometry, one list of points per line part of the
+  /// source's MultiLineString — never reduced to a single marker point.
+  final List<List<ForestTrailPoint>> parts;
+
+  /// The trail geometry's own first coordinate — a derived geometric fact,
+  /// NOT an official trailhead facility record (the source publishes no
+  /// trailhead layer). Always label this as such in the UI.
+  final double? geometricStartLat;
+  final double? geometricStartLng;
+
+  final String? source;
+  final String? sourceDataset;
+  final String? sourceUrl;
+
+  bool get hasGeometricStart => geometricStartLat != null && geometricStartLng != null;
+
+  static List<List<ForestTrailPoint>> _partsFromGeoJson(String? geoJson) {
+    if (geoJson == null || geoJson.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(geoJson) as Map<String, dynamic>;
+      final coords = decoded['coordinates'] as List<dynamic>? ?? const [];
+      return [
+        for (final part in coords)
+          [
+            for (final pt in part as List<dynamic>)
+              (lat: (pt[1] as num).toDouble(), lng: (pt[0] as num).toDouble()),
+          ],
+      ];
+    } catch (_) {
+      // A malformed geom_geojson value is a data problem to surface, not to
+      // crash the whole trail list over — the trail still displays with no
+      // line geometry rather than taking every other trail down with it.
+      return const [];
+    }
+  }
+
+  factory ForestTrail.fromJson(Json json) => ForestTrail(
+        id: json['id']?.toString() ?? '',
+        forestId: json['forest_id']?.toString() ?? '',
+        trailNo: (json['trail_no'] ?? '') as String,
+        trailName: json['trail_name'] as String?,
+        trailType: json['trail_type'] as String?,
+        trailClass: json['trail_class'] as String?,
+        trailSurface: json['trail_surface'] as String?,
+        accessibilityStatus: json['accessibility_status'] as String?,
+        nationalTrailDesignation: (json['national_trail_designation'] as num?)?.toInt(),
+        managingOrg: json['managing_org'] as String?,
+        lengthMiles: (json['length_miles'] as num?)?.toDouble(),
+        segmentCount: (json['segment_count'] as num?)?.toInt() ?? 0,
+        parts: _partsFromGeoJson(json['geom_geojson'] as String?),
+        geometricStartLat: (json['geometric_start_lat'] as num?)?.toDouble(),
+        geometricStartLng: (json['geometric_start_lng'] as num?)?.toDouble(),
+        source: json['source'] as String?,
+        sourceDataset: json['source_dataset'] as String?,
+        sourceUrl: json['source_url'] as String?,
+      );
+}

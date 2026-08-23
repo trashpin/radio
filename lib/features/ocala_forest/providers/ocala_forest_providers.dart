@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/data/forest_boundary_repository.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/data/forest_location_repository.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/data/forest_trail_repository.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_boundary.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/models/forest_trail.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/services/forest_detection_service.dart';
 
 /// Riverpod wiring for the isolated Ocala Forest Explorer feature.
@@ -34,6 +36,13 @@ final ocalaForestBoundaryProvider = FutureProvider<ForestBoundary?>((ref) async 
 
 final forestLocationsProvider = FutureProvider<List<ForestLocation>>((ref) {
   return ref.watch(forestLocationRepositoryProvider).getAll();
+});
+
+/// Real, official USFS trail records (spec: "Import Official Ocala National
+/// Forest Trail Records", migration 0050) — grouped, user-facing trails,
+/// never the raw per-segment GIS records.
+final forestTrailsProvider = FutureProvider<List<ForestTrail>>((ref) {
+  return ref.watch(forestTrailRepositoryProvider).getAll();
 });
 
 const _forestDetection = ForestDetectionService();

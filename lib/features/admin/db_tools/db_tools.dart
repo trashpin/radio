@@ -32,6 +32,9 @@ const List<DbTable> kDbTables = [
   // with the Marion County `locations` table above).
   DbTable('forest_boundaries', 'Ocala Forest Boundary', group: 'Ocala Forest'),
   DbTable('forest_locations', 'Ocala Forest Locations', group: 'Ocala Forest'),
+  DbTable('forest_trail_segments', 'Ocala Forest Trail Segments (raw USFS)',
+      group: 'Ocala Forest'),
+  DbTable('forest_trails', 'Ocala Forest Trails (grouped)', group: 'Ocala Forest'),
 ];
 
 /// Which tables to surface as headline counts on the dashboard.
