@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart'
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_boundary.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_trail.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_audio_bar.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_location_detail_sheet.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -33,6 +34,10 @@ class OcalaExplorerMapScreen extends ConsumerWidget {
           children: [
             const RadioSubPageBar(title: 'Explorer Map', subtitle: 'Ocala National Forest'),
             _StatusBanner(hasGpsFix: hasGpsFix, insideForest: insideForest),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: ForestAudioBar(),
+            ),
             Expanded(
               child: boundaryAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator()),

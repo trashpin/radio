@@ -3,15 +3,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/ocala_forest/controllers/forest_audio_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/models/discovery_category.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/presentation/forest_discovery_map_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/services/forest_discovery_ai_service.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/discover/services/forest_discovery_submit_service.dart';
-import 'package:explorer_os_mobile/features/radio/controllers/radio_engine_controller.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_audio_bar.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
-import 'package:explorer_os_mobile/features/radio/models/audio_segment.dart';
-import 'package:explorer_os_mobile/features/radio/models/playback_priority.dart';
-import 'package:explorer_os_mobile/features/radio/models/playback_state.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
 /// 🎉 DISCOVERY SAVED (spec §6/§7) — renders from what the capture flow
@@ -79,26 +77,14 @@ class _ForestDiscoverySavedScreenState extends ConsumerState<ForestDiscoverySave
       _narrationText = result.text;
     });
 
-    // Plays through the SAME requestInterruption/AudioSegment mechanism
-    // every other narration feature in this app uses (see
-    // ForestExperienceController._play, playForestLocation) rather than a
-    // second, standalone audio player.
-    final radio = ref.read(radioEngineControllerProvider.notifier);
-    radio.requestInterruption(AudioSegment(
-      id: 'forest_discovery:${widget.discoveryId}:${DateTime.now().microsecondsSinceEpoch}',
-      title: widget.displayName,
-      artist: 'DJ Sunny',
-      type: AudioSegmentType.gpsNarration,
-      priority: PlaybackPriority.scheduledAnnouncement,
-      audioUrl: result.hasAudio ? result.audioUrl : null,
-      spokenText: result.hasAudio ? null : result.text,
-      tags: const ['ocala_forest', 'discover'],
-      interruptible: true,
-      resumeAfter: true,
-    ));
-    if (ref.read(radioEngineControllerProvider).status != PlaybackStatus.playing) {
-      radio.play();
-    }
+    // Plays through the dedicated ForestAudioController — never the shared
+    // Radio Engine (which would auto-fill silence with music once this
+    // one-shot narration finished; see that controller's doc comment).
+    await ref.read(forestAudioControllerProvider.notifier).play(
+          title: widget.displayName,
+          audioUrl: result.hasAudio ? result.audioUrl : null,
+          spokenText: result.hasAudio ? null : result.text,
+        );
   }
 
   Future<void> _addNote() async {
@@ -185,6 +171,8 @@ class _ForestDiscoverySavedScreenState extends ConsumerState<ForestDiscoverySave
                 minimumSize: const Size(double.infinity, 52),
               ),
             ),
+            const SizedBox(height: RD.sm),
+            const ForestAudioBar(),
             const SizedBox(height: RD.sm),
             OutlinedButton(
               onPressed: () => Navigator.of(context).push(MaterialPageRoute(

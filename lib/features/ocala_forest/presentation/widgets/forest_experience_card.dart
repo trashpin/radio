@@ -10,10 +10,11 @@ import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 
 /// A "What's Around Me" card for one forest [Experience] — visually modeled
 /// on the existing `ExperienceCard` (`lib/features/around_me/presentation/widgets/experience_card.dart`)
-/// for consistency, but wired to `requestInterruption`/Navigate/Tell Me
-/// More via [ForestLocation] (`forest_playback.dart`) instead of the
-/// Marion-specific `playbackManagerProvider` `ExperienceCard` uses — this
-/// app's existing narration mechanism, not a second audio system.
+/// for consistency, but wired to `playForestLocation`/Navigate/Tell Me More
+/// via [ForestLocation] (`forest_playback.dart`), which plays through the
+/// dedicated [ForestAudioController] — not the Marion-specific
+/// `playbackManagerProvider` `ExperienceCard` uses, and not the shared
+/// Radio Engine either (see `ForestAudioController`'s doc comment for why).
 class ForestExperienceCard extends ConsumerWidget {
   const ForestExperienceCard({
     super.key,

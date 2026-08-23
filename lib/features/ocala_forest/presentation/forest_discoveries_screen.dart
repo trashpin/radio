@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_audio_bar.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_location_detail_sheet.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -35,6 +36,10 @@ class ForestDiscoveriesScreen extends ConsumerWidget {
           children: [
             const RadioSubPageBar(
                 title: 'Discoveries', subtitle: 'Ocala National Forest'),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(RD.lg, RD.sm, RD.lg, 0),
+              child: ForestAudioBar(),
+            ),
             Expanded(
               child: locationsAsync.isLoading
                   ? const Center(child: CircularProgressIndicator())

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import 'package:explorer_os_mobile/features/ocala_forest/controllers/forest_audio_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_trail.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_trail_map_image_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/forest_trail_map_screen.dart';
@@ -15,6 +16,12 @@ import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 /// the ElevenLabs Trail Audio Tour. The two primary actions (VIEW TRAIL
 /// MAP / START TRAIL AUDIO) are always visible near the top, never buried
 /// in a menu.
+///
+/// Trail Audio plays through the SAME shared [ForestAudioController] every
+/// other forest narration surface uses (not a third local player) — this
+/// is what makes sure starting a trail's audio tour correctly pauses the
+/// radio (if it was playing) and resumes it afterward, rather than the two
+/// playing over each other.
 ///
 /// GPS-triggered audio stops are explicitly OUT of scope for this phase
 /// (spec §9) — this screen only plays a single trail-wide introduction,
@@ -30,20 +37,17 @@ class ForestTrailDetailScreen extends ConsumerStatefulWidget {
 
 class _ForestTrailDetailScreenState extends ConsumerState<ForestTrailDetailScreen> {
   late ForestTrail _trail = widget.trail;
-  final _player = AudioPlayer();
   bool _preparingAudio = false;
   String? _audioError;
 
-  @override
-  void dispose() {
-    _player.dispose();
-    super.dispose();
-  }
+  String get _title =>
+      (_trail.trailName?.trim().isNotEmpty ?? false) ? _trail.trailName! : 'Trail ${_trail.trailNo}';
 
   Future<void> _startTrailAudio() async {
     setState(() => _audioError = null);
+    final forestAudio = ref.read(forestAudioControllerProvider.notifier);
     if (_trail.hasReadyAudio) {
-      await _playLoaded(_trail.audioUrl!);
+      await forestAudio.play(title: _title, audioUrl: _trail.audioUrl);
       return;
     }
     setState(() => _preparingAudio = true);
@@ -62,26 +66,11 @@ class _ForestTrailDetailScreenState extends ConsumerState<ForestTrailDetailScree
         audioStatus: 'ready',
       );
     });
-    await _playLoaded(result.audioUrl);
+    await forestAudio.play(title: _title, audioUrl: result.audioUrl);
   }
 
-  Future<void> _playLoaded(String url) async {
-    try {
-      if (_player.audioSource == null) {
-        await _player.setUrl(url);
-      }
-      await _player.play();
-    } catch (e) {
-      if (mounted) setState(() => _audioError = 'Could not play the audio tour: $e');
-    }
-  }
-
-  Future<void> _pause() => _player.pause();
-
-  Future<void> _restart() async {
-    await _player.seek(Duration.zero);
-    await _player.play();
-  }
+  void _pause() => ref.read(forestAudioControllerProvider.notifier).pause();
+  void _restart() => ref.read(forestAudioControllerProvider.notifier).replay();
 
   @override
   Widget build(BuildContext context) {
@@ -91,10 +80,7 @@ class _ForestTrailDetailScreenState extends ConsumerState<ForestTrailDetailScree
       body: SafeArea(
         child: Column(
           children: [
-            RadioSubPageBar(
-              title: (t.trailName?.trim().isNotEmpty ?? false) ? t.trailName! : 'Trail ${t.trailNo}',
-              subtitle: 'Ocala National Forest',
-            ),
+            RadioSubPageBar(title: _title, subtitle: 'Ocala National Forest'),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(RD.lg),
@@ -121,7 +107,6 @@ class _ForestTrailDetailScreenState extends ConsumerState<ForestTrailDetailScree
                   const SizedBox(height: RD.lg),
                   _TrailAudioSection(
                     trail: t,
-                    player: _player,
                     preparing: _preparingAudio,
                     error: _audioError,
                     onStart: _startTrailAudio,
@@ -196,10 +181,9 @@ class _TrailInfoCard extends StatelessWidget {
   }
 }
 
-class _TrailAudioSection extends StatelessWidget {
+class _TrailAudioSection extends ConsumerWidget {
   const _TrailAudioSection({
     required this.trail,
-    required this.player,
     required this.preparing,
     required this.error,
     required this.onStart,
@@ -208,7 +192,6 @@ class _TrailAudioSection extends StatelessWidget {
   });
 
   final ForestTrail trail;
-  final AudioPlayer player;
   final bool preparing;
   final String? error;
   final VoidCallback onStart;
@@ -222,7 +205,8 @@ class _TrailAudioSection extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = ref.read(forestAudioControllerProvider.notifier).player;
     return GlassPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_audio_bar.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_experience_card.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/forest_around_me_providers.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
@@ -38,6 +39,10 @@ class ForestAroundMeScreen extends ConsumerWidget {
           children: [
             const RadioSubPageBar(
                 title: "What's Around Me", subtitle: 'Ocala National Forest'),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(RD.lg, RD.sm, RD.lg, 0),
+              child: ForestAudioBar(),
+            ),
             Expanded(
               child: !hasGpsFix
                   ? Center(
