@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_boundary.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/models/forest_location.dart';
+import 'package:explorer_os_mobile/features/ocala_forest/models/forest_trail.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/widgets/forest_location_detail_sheet.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/providers/ocala_forest_providers.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -52,7 +53,8 @@ class OcalaExplorerMapScreen extends ConsumerWidget {
                     );
                   }
                   final locations = locationsAsync.value ?? const <ForestLocation>[];
-                  return _ForestMap(boundary: boundary, locations: locations);
+                  final trails = ref.watch(forestTrailsProvider).value ?? const <ForestTrail>[];
+                  return _ForestMap(boundary: boundary, locations: locations, trails: trails);
                 },
               ),
             ),
@@ -93,9 +95,28 @@ class _StatusBanner extends StatelessWidget {
 }
 
 class _ForestMap extends ConsumerWidget {
-  const _ForestMap({required this.boundary, required this.locations});
+  const _ForestMap({required this.boundary, required this.locations, this.trails = const []});
   final ForestBoundary boundary;
   final List<ForestLocation> locations;
+  final List<ForestTrail> trails;
+
+  Set<Polyline> _polylines() {
+    final out = <Polyline>{};
+    for (final trail in trails) {
+      for (var i = 0; i < trail.parts.length; i++) {
+        final part = trail.parts[i];
+        if (part.length < 2) continue;
+        out.add(Polyline(
+          polylineId: PolylineId('trail-${trail.id}-$i'),
+          points: [for (final p in part) LatLng(p.lat, p.lng)],
+          color: const Color(0xFFF2B33D),
+          width: 3,
+          consumeTapEvents: true,
+        ));
+      }
+    }
+    return out;
+  }
 
   Set<Polygon> _polygons() {
     final out = <Polygon>{};
@@ -148,6 +169,7 @@ class _ForestMap extends ConsumerWidget {
         zoom: OcalaExplorerMapScreen._initialZoom,
       ),
       polygons: _polygons(),
+      polylines: _polylines(),
       markers: _markers(context, ref),
       myLocationEnabled: true,
       myLocationButtonEnabled: true,

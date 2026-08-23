@@ -44,6 +44,12 @@ class SupabaseTables {
   /// separately from `locations`/`county_boundaries`/`park_boundaries`.
   static const String forestBoundaries = 'forest_boundaries';
   static const String forestLocations = 'forest_locations';
+  static const String forestTrailSegments = 'forest_trail_segments';
+  static const String forestTrails = 'forest_trails';
+
+  /// `forest_trails` plus a `geom_geojson` text column — reads real PostGIS
+  /// trail geometry as plain GeoJSON text over PostgREST.
+  static const String forestTrailsWithGeojson = 'forest_trails_with_geojson';
 
   // Music library.
   static const String albums = 'albums';
