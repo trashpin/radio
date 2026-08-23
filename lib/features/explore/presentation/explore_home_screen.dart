@@ -401,14 +401,10 @@ class _DestinationCard extends StatelessWidget {
     );
   }
 
-  /// No photo yet — the category's own icon fills the space instead of a
-  /// generic placeholder, so a Spring, a Trail, or a Museum is immediately
-  /// recognizable even before a photo exists. Visual-only: the destination's
-  /// type/category itself is unchanged.
-  Widget _fallback(String categoryLabel) => Container(
-        color: const Color(0xFF223028),
-        child: Center(
-          child: CategoryIcon(categoryLabel, size: 48),
-        ),
-      );
+  /// No photo yet — a vivid, category-colored placeholder fills the space
+  /// instead of a generic gray box, so a Spring, a Trail, or a Museum is
+  /// immediately recognizable and eye-catching even before a photo exists.
+  /// Visual-only: the destination's type/category itself is unchanged.
+  Widget _fallback(String categoryLabel) =>
+      CategoryImagePlaceholder(categoryLabel, iconSize: 40);
 }
