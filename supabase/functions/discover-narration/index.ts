@@ -1,5 +1,7 @@
 // Discover Marion County — "🎧 Hear About It" / "Tell Me More" narration
-// generation.
+// generation, the opening greeting's text-to-speech (subjectType
+// 'greeting'), and personalized event-alert narration (kind 'alert' — see
+// below).
 //
 // Reuses the SAME OpenAI-text + ElevenLabs-TTS + storage-bucket pattern
 // already established by copilot-line/forest-discovery/forest-trail-audio/
@@ -8,11 +10,18 @@
 //
 // Generate-once-reuse: results are cached in `discover_narrations` keyed by
 // (subject_type, subject_id, kind), so the same event/gem/location is never
-// re-synthesized on a second listener or a second tap.
+// re-synthesized on a second listener or a second tap. NOTE: an 'alert'
+// script is personalized to a specific visitor's matched interests, so its
+// subjectId is namespaced per-visitor by the caller (event id + user id),
+// not just the event id — otherwise two different visitors' alerts would
+// collide in the cache.
 //
 // This function does NOT decide what to say beyond phrasing the facts it is
 // given — it never invents dates, prices, hours, or details not present in
-// the request body.
+// the request body. For subjectType 'greeting' it does not write ANY text
+// at all — the caller's [text] is spoken exactly as given (OpenAI is
+// skipped entirely), because the greeting library's hand-written lines
+// should never be silently paraphrased by a model.
 //
 // Deploy: supabase functions deploy discover-narration
 // Secrets reused (already configured): OPENAI_API_KEY, ELEVENLABS_API_KEY,
@@ -69,8 +78,8 @@ async function globalDefaultVoiceId(): Promise<string | null> {
   }
 }
 
-type SubjectType = "event" | "gem" | "location";
-type Kind = "short" | "long";
+type SubjectType = "event" | "gem" | "location" | "greeting";
+type Kind = "short" | "long" | "greeting" | "alert";
 
 interface DiscoverRequest {
   subjectType: SubjectType;
@@ -82,14 +91,23 @@ interface DiscoverRequest {
   distanceLabel?: string;
   dateLabel?: string;
   timeLabel?: string;
+  costLabel?: string;
   matchedInterests?: string[]; // interests this item was recommended for, if any
+  // subjectType 'greeting' only -- the exact, already-final line to speak.
+  // OpenAI is never called for this subjectType; ElevenLabs speaks [text]
+  // verbatim.
+  text?: string;
+  // kind 'alert' only -- the visitor's first name, for personal address
+  // ("Hey Steve, I found something..."). Omitted entirely (never "there")
+  // when unknown; the alert prompt writes around a missing name gracefully.
+  visitorName?: string;
 }
 
 function isSubjectType(v: unknown): v is SubjectType {
-  return v === "event" || v === "gem" || v === "location";
+  return v === "event" || v === "gem" || v === "location" || v === "greeting";
 }
 function isKind(v: unknown): v is Kind {
-  return v === "short" || v === "long";
+  return v === "short" || v === "long" || v === "greeting" || v === "alert";
 }
 
 const SYSTEM_PROMPT = `You are a friendly, knowledgeable local guide for Marion County, Florida, helping a visitor discover things to do — events, parks, springs, trails, museums, historic sites, and local gems.
@@ -98,7 +116,8 @@ Rules, all critical:
 - Use ONLY the facts given to you below. Never invent dates, prices, hours, addresses, history, or any specific detail not provided.
 - Never claim an event is happening "today" or "this weekend" unless you are explicitly told that. If no date/time is given, speak about the place/activity generally rather than implying a specific timing.
 - Sound like a real person talking, warm and inviting — never like a listing, an ad, or a database record read aloud.
-- Never use exclamation-point-heavy hype or generic marketing language ("Don't miss out!", "Amazing!"). Be genuine and specific to the facts you were given.`;
+- Never use exclamation-point-heavy hype or generic marketing language ("Don't miss out!", "Amazing!"). Be genuine and specific to the facts you were given.
+- Only mention that something matches the visitor's interests when [matchedInterests] are actually provided — never claim a personal connection you weren't told about.`;
 
 function buildUserPrompt(req: DiscoverRequest): string {
   const facts: string[] = [`Name: ${req.name}`];
@@ -106,6 +125,7 @@ function buildUserPrompt(req: DiscoverRequest): string {
   if (req.description) facts.push(`Description: ${req.description}`);
   if (req.dateLabel) facts.push(`Date: ${req.dateLabel}`);
   if (req.timeLabel) facts.push(`Time: ${req.timeLabel}`);
+  if (req.costLabel) facts.push(`Cost: ${req.costLabel}`);
   if (req.distanceLabel) facts.push(`Distance from the visitor: ${req.distanceLabel}`);
   if (req.matchedInterests?.length) {
     facts.push(`The visitor has told us they're interested in: ${req.matchedInterests.join(", ")}`);
@@ -113,7 +133,22 @@ function buildUserPrompt(req: DiscoverRequest): string {
 
   const lines = ["Verified facts:\n- " + facts.join("\n- ")];
 
-  if (req.kind === "short") {
+  if (req.kind === "alert") {
+    const addr = req.visitorName ? `The visitor's first name is ${req.visitorName} — address them by ` +
+      `name once, naturally, near the start (e.g. "Hey ${req.visitorName}, I found something you might ` +
+      `like...").` : "The visitor's name is unknown — open warmly without a name " +
+      '(e.g. "I found something you might like...").';
+    lines.push(
+      "Write a SHORT personalized spoken alert (roughly 20-40 seconds when read aloud, about 60-100 " +
+        "words) for a push-notification-triggered audio intro, as if the app itself is personally " +
+        `telling the visitor about this. ${addr} Then: (1) briefly say what the event is, (2) explain, ` +
+        "using ONLY the matched interests actually provided, why it might interest THIS visitor " +
+        '(e.g. "since you enjoy live music and festivals..." — never invent a reason not in the ' +
+        "matched interests), and (3) mention only the concrete details you were actually given " +
+        "(date/time/cost/distance) — skip anything not provided rather than guessing. Warm and " +
+        "personal, never salesy.",
+    );
+  } else if (req.kind === "short") {
     lines.push(
       "Write a SHORT spoken teaser (2-3 sentences) inviting the visitor to check this out — a " +
         '"Hear About It" audio intro. Enticing, warm, specific to the facts given — never a full ' +
@@ -222,13 +257,21 @@ async function storeNarration(
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Only POST supported" }, 405);
-  if (!OPENAI_KEY) return json({ error: "OPENAI_API_KEY not set" }, 500);
   if (!ELEVEN_KEY) return json({ error: "ELEVENLABS_API_KEY not set" }, 500);
   if (!SERVICE_KEY) return json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, 500);
 
   const body = await req.json().catch(() => null) as DiscoverRequest | null;
-  if (!body || !isSubjectType(body.subjectType) || !isKind(body.kind) || !body.subjectId || !body.name) {
-    return json({ error: "subjectType, subjectId, kind, and name are required" }, 400);
+  if (!body || !isSubjectType(body.subjectType) || !isKind(body.kind) || !body.subjectId) {
+    return json({ error: "subjectType, subjectId, and kind are required" }, 400);
+  }
+  if (body.subjectType === "greeting") {
+    if (!body.text || !body.text.trim()) {
+      return json({ error: "text is required for subjectType 'greeting'" }, 400);
+    }
+  } else if (!OPENAI_KEY) {
+    return json({ error: "OPENAI_API_KEY not set" }, 500);
+  } else if (!body.name) {
+    return json({ error: "name is required" }, 400);
   }
 
   try {
@@ -237,7 +280,10 @@ Deno.serve(async (req: Request) => {
       return json({ text: cached.script, audioUrl: cached.audio_url, cached: true });
     }
 
-    const script = await openaiText(SYSTEM_PROMPT, buildUserPrompt(body));
+    // Greeting: speak the caller's exact text — never rewritten by OpenAI.
+    const script = body.subjectType === "greeting"
+      ? body.text!.trim()
+      : await openaiText(SYSTEM_PROMPT, buildUserPrompt(body));
     if (!script) return json({ error: "empty_response" }, 502);
 
     let audioUrl: string | null = null;

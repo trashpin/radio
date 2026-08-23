@@ -39,7 +39,11 @@ enum AppRoute {
   gps('/gps'),
   radioDirector('/radio-director'),
   programmingDirector('/programming-director'),
-  destinationDetails('/destination/:id');
+  destinationDetails('/destination/:id'),
+  // The push-notification deep link target (spec: "Notification -> Specific
+  // Event", never the generic Discover home). Same id-in-path pattern as
+  // destinationDetails above.
+  discoverEventDetail('/discover-event/:id');
 
   const AppRoute(this.path);
   final String path;
@@ -47,4 +51,7 @@ enum AppRoute {
   /// Builds the concrete details path for a given destination id, e.g.
   /// `AppRoute.destinationDetails.pathFor('42')` → `/destination/42`.
   String pathFor(String id) => '/destination/$id';
+
+  /// `AppRoute.discoverEventDetail.eventPathFor('42')` → `/discover-event/42`.
+  String eventPathFor(String id) => '/discover-event/$id';
 }

@@ -20,6 +20,7 @@ import 'package:explorer_os_mobile/features/admin/location_tester/location_teste
 import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/events_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_discovery_page.dart';
+import 'package:explorer_os_mobile/features/admin/events/event_notification_test_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/presentation/audio_production_page.dart';
@@ -76,6 +77,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const EventsManagerPage();
       case AdminModule.eventDiscovery:
         return const EventDiscoveryPage();
+      case AdminModule.eventNotificationTest:
+        return const EventNotificationTestPage();
       case AdminModule.locationTester:
         return const LocationTesterPage();
       case AdminModule.destinations:

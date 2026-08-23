@@ -206,6 +206,18 @@ class EventDiscoveryRepository {
       'status': 'published',
       'published_event_id': inserted['id'],
     }).eq('id', row.id);
+
+    // Personalized voiced event alerts: score this newly-approved event
+    // against every user with interests set (spec: "when a new event is
+    // added to the approved database, determine whether it's a match").
+    // Best-effort — a matching failure must never block the approval that
+    // already succeeded above.
+    try {
+      await SupabaseService.client.functions.invoke(
+        'event-match-and-notify',
+        body: {'eventId': inserted['id']},
+      ).timeout(const Duration(seconds: 30));
+    } catch (_) {}
   }
 
   Future<void> reject(DiscoveredEventRow row, {String reason = 'manual_admin_reject'}) async {

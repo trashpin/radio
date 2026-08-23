@@ -116,6 +116,15 @@ enum AdminModule {
           'existing events, and queues anything uncertain for review '
           'before it reaches the Events table.',
       table: 'discovered_events'),
+  eventNotificationTest('Event Notification Test Mode', Icons.notifications_active_rounded,
+      AdminGroup.content,
+      ready: true,
+      description: 'Personalized voiced event alerts: pick an event + a '
+          'test user and run Match -> Personalized Script -> ElevenLabs '
+          'Audio -> Notification Payload -> Deep Link without sending '
+          'anything to real users. Also where approved-event matches '
+          '(potential matches / high-match users) are monitored.',
+      table: 'event_matches'),
   locationTester('Location Tester', Icons.wrong_location_rounded,
       AdminGroup.content,
       ready: true,

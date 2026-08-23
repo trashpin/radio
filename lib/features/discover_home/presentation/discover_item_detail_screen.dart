@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:explorer_os_mobile/features/discover_home/controllers/discover_audio_controller.dart';
 import 'package:explorer_os_mobile/features/discover_home/data/discover_interactions_repository.dart';
+import 'package:explorer_os_mobile/features/discover_home/models/discover_interest.dart';
 import 'package:explorer_os_mobile/features/discover_home/models/discoverable_item.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_audio_actions.dart';
 import 'package:explorer_os_mobile/features/locations/data/location_favorites.dart';
@@ -27,8 +28,18 @@ String discoverFavoriteKey(DiscoverableItem item) => switch (item.kind) {
 /// structured facts (same pipeline the Radio "Tell Me More" flow already
 /// uses) rather than a second lookup system.
 class DiscoverItemDetailScreen extends ConsumerWidget {
-  const DiscoverItemDetailScreen({super.key, required this.item});
+  const DiscoverItemDetailScreen({
+    super.key,
+    required this.item,
+    this.matchedInterests = const {},
+  });
   final DiscoverableItem item;
+
+  /// Non-empty only when this event was opened via a personalized
+  /// notification (or the admin test-mode page) — drives the "🎧 WE FOUND
+  /// THIS FOR YOU / Because you like: ..." banner. Empty for the normal
+  /// browse-in-Discover case, which is not an error.
+  final Set<String> matchedInterests;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,9 +60,18 @@ class DiscoverItemDetailScreen extends ConsumerWidget {
             Expanded(
               child: resultAsync.when(
                 loading: () => const Center(child: CircularProgressIndicator(color: RD.green)),
-                error: (_, _) => _Body(item: item, result: null, isFav: isFav, favKey: favKey),
-                data: (result) =>
-                    _Body(item: item, result: result, isFav: isFav, favKey: favKey),
+                error: (_, _) => _Body(
+                    item: item,
+                    result: null,
+                    isFav: isFav,
+                    favKey: favKey,
+                    matchedInterests: matchedInterests),
+                data: (result) => _Body(
+                    item: item,
+                    result: result,
+                    isFav: isFav,
+                    favKey: favKey,
+                    matchedInterests: matchedInterests),
               ),
             ),
           ],
@@ -62,7 +82,14 @@ class DiscoverItemDetailScreen extends ConsumerWidget {
 }
 
 class _Body extends ConsumerWidget {
-  const _Body({required this.item, required this.result, required this.isFav, required this.favKey});
+  const _Body({
+    required this.item,
+    required this.result,
+    required this.isFav,
+    required this.favKey,
+    this.matchedInterests = const {},
+  });
+  final Set<String> matchedInterests;
   final DiscoverableItem item;
   final TellMeMoreResult? result;
   final bool isFav;
@@ -116,6 +143,10 @@ class _Body extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(RD.lg, 0, RD.lg, RD.xl),
       children: [
+        if (matchedInterests.isNotEmpty) ...[
+          const SizedBox(height: RD.md),
+          _FoundForYouBanner(matchedInterests: matchedInterests),
+        ],
         if ((item.imageUrl ?? '').isNotEmpty)
           ClipRRect(
             borderRadius: RD.brXl,
@@ -251,6 +282,49 @@ class _Body extends ConsumerWidget {
           ),
         ]),
       ],
+    );
+  }
+}
+
+/// "🎧 WE FOUND THIS FOR YOU / Because you like: ..." — shown only when this
+/// event was opened via a personalized notification (or the admin
+/// test-mode page), naming only interests the event genuinely carries
+/// (spec: never fabricate why it matched).
+class _FoundForYouBanner extends StatelessWidget {
+  const _FoundForYouBanner({required this.matchedInterests});
+  final Set<String> matchedInterests;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassPanel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.headphones_rounded, color: RD.green, size: 18),
+          const SizedBox(width: RD.xs),
+          Text('WE FOUND THIS FOR YOU', style: RD.sectionLabel.copyWith(color: RD.green)),
+        ]),
+        const SizedBox(height: RD.sm),
+        Text('Because you like:', style: RD.caption.copyWith(color: RD.textSecondary)),
+        const SizedBox(height: RD.xs),
+        Wrap(spacing: RD.sm, runSpacing: RD.sm, children: [
+          for (final token in matchedInterests)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: RD.sm, vertical: 4),
+              decoration: BoxDecoration(
+                color: categoryColorFor(discoverInterestLabel(token)).withValues(alpha: 0.16),
+                borderRadius: RD.brMd,
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(categoryIconFor(discoverInterestLabel(token)),
+                    size: 13, color: categoryColorFor(discoverInterestLabel(token))),
+                const SizedBox(width: 4),
+                Text(discoverInterestLabel(token),
+                    style: RD.caption.copyWith(
+                        color: categoryColorFor(discoverInterestLabel(token)))),
+              ]),
+            ),
+        ]),
+      ]),
     );
   }
 }
