@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
+import 'package:explorer_os_mobile/features/admin/events/event_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/events/data/event_repository.dart';
 import 'package:explorer_os_mobile/features/events/models/local_event.dart';
@@ -78,16 +79,19 @@ class _EventCard extends ConsumerWidget {
 
     return AdminSectionCard(
       child: Row(children: [
-        if ((event.imageUrl ?? '').isNotEmpty) ...[
-          ClipRRect(
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => showEventImagePicker(context, event),
+          child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(event.imageUrl!,
-                width: 56, height: 56, fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) =>
-                const SizedBox(width: 56, height: 56)),
+            child: (event.imageUrl ?? '').isNotEmpty
+                ? Image.network(event.imageUrl!,
+                    width: 56, height: 56, fit: BoxFit.cover,
+                    errorBuilder: (context, error, stack) => _NoPhotoTile(event: event))
+                : _NoPhotoTile(event: event),
           ),
-          const Gap.h(AppSpacing.md),
-        ],
+        ),
+        const Gap.h(AppSpacing.md),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
@@ -119,6 +123,8 @@ class _EventCard extends ConsumerWidget {
             switch (v) {
               case 'edit':
                 onEdit();
+              case 'find_photo':
+                await showEventImagePicker(context, event);
               case 'toggle':
                 await repo.update(event.id, {'active': !event.active});
                 ref.read(eventsRefreshProvider.notifier).bump();
@@ -129,6 +135,7 @@ class _EventCard extends ConsumerWidget {
           },
           itemBuilder: (_) => [
             const PopupMenuItem(value: 'edit', child: Text('Edit')),
+            const PopupMenuItem(value: 'find_photo', child: Text('Find photo')),
             PopupMenuItem(
                 value: 'toggle',
                 child: Text(event.active ? 'Set inactive' : 'Set active')),
@@ -136,6 +143,30 @@ class _EventCard extends ConsumerWidget {
           ],
         ),
       ]),
+    );
+  }
+}
+
+/// The card's photo slot when there is no `image_url` yet — a tappable
+/// prompt (not a dead gray box) toward the same Wikimedia/Openverse search
+/// the location Media Search Center already uses, per this feature's own
+/// "find real images, and if none exist, a clear bright placeholder"
+/// direction. The category icon system (shared/design/category_visuals.dart)
+/// supplies the bright color/icon once a real search result is saved and
+/// shown as a normal image elsewhere in the app.
+class _NoPhotoTile extends StatelessWidget {
+  const _NoPhotoTile({required this.event});
+  final LocalEvent event;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+      alignment: Alignment.center,
+      child: Icon(Icons.add_photo_alternate_outlined,
+          color: Theme.of(context).colorScheme.primary, size: 22),
     );
   }
 }

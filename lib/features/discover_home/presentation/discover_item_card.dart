@@ -108,14 +108,11 @@ class DiscoverItemCard extends ConsumerWidget {
     );
   }
 
-  /// No photo yet — never a blank/generic box. The category's own icon
-  /// (large, tinted) fills the space instead, so a Festival, a Spring, or a
-  /// Gem is immediately recognizable even before a photo exists.
-  Widget _placeholder() => Container(
-        color: RD.panelAlt,
-        alignment: Alignment.center,
-        child: CategoryIcon(_iconCategory, size: 56),
-      );
+  /// No photo yet — never a blank/generic box. A vivid, category-colored
+  /// placeholder fills the space instead, so a Festival, a Spring, or a Gem
+  /// is immediately recognizable and eye-catching even before a real photo
+  /// exists.
+  Widget _placeholder() => CategoryImagePlaceholder(_iconCategory, iconSize: 48);
 }
 
 class _HearAboutItButton extends ConsumerWidget {

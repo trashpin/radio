@@ -63,4 +63,20 @@ void main() {
     expect(categoryIconFor('FESTIVAL'), Icons.celebration_rounded);
     expect(categoryIconFor('spring'), Icons.water_drop_rounded);
   });
+
+  group('CategoryImagePlaceholder', () {
+    testWidgets('renders the resolved icon for a known category', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: CategoryImagePlaceholder('Festivals')),
+      );
+      expect(find.byIcon(Icons.celebration_rounded), findsOneWidget);
+    });
+
+    testWidgets('still renders a real icon for an unrecognized category', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: CategoryImagePlaceholder('Something New')),
+      );
+      expect(find.byIcon(Icons.place_rounded), findsOneWidget);
+    });
+  });
 }

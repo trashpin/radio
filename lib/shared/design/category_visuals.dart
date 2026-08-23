@@ -145,3 +145,39 @@ class CategoryIcon extends StatelessWidget {
     );
   }
 }
+
+/// A full-bleed, vividly colored placeholder for a card's photo area when no
+/// real photo exists yet — a genuinely bright, saturated card in the
+/// category's own color (not a muted tint over gray), so an event/gem/
+/// location without a photo still looks designed and alive rather than
+/// like a blank waiting to be filled in. Prefer a real photo whenever one
+/// is available (see the Media Search Center / event "Find photo" tools for
+/// how those get attached) — this is specifically the honest fallback for
+/// when one genuinely isn't.
+class CategoryImagePlaceholder extends StatelessWidget {
+  const CategoryImagePlaceholder(this.category, {super.key, this.iconSize = 56});
+
+  final String? category;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final visual = _resolve(category);
+    final c = visual.color;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color.lerp(c, Colors.white, 0.12)!,
+            Color.lerp(c, Colors.black, 0.35)!,
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(visual.icon, size: iconSize, color: Colors.white.withValues(alpha: 0.95)),
+      ),
+    );
+  }
+}
