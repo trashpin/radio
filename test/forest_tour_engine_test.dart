@@ -92,9 +92,9 @@ void main() {
       expect(later?.id, 'b');
     });
 
-    test('a trail change takes priority over a location arrival', () {
+    test('an exact location arrival outranks a simultaneous trail arrival (spec §4/§8)', () {
       final engine = ForestTourEngine();
-      final loc = _loc('a', radius: 5000);
+      final loc = _loc('a', radius: 200); // visitor is well within this location's own geofence
       final trail = ForestTrail(
         id: 't1',
         forestId: 'f1',
@@ -106,6 +106,27 @@ void main() {
       final subject = engine.onLocation(
         fix: _fix(29.0, -81.6),
         locations: [loc],
+        trails: [trail],
+        recentlyDiscussedIds: const {},
+        now: DateTime(2026, 1, 1, 12, 0, 0),
+      );
+      expect(subject?.kind.toString(), contains('location'));
+      expect(subject?.id, 'a');
+    });
+
+    test('a trail change alone (no nearby location) still fires', () {
+      final engine = ForestTourEngine();
+      final trail = ForestTrail(
+        id: 't1',
+        forestId: 'f1',
+        trailNo: '0001',
+        parts: [
+          [(lat: 29.0, lng: -81.6)],
+        ],
+      );
+      final subject = engine.onLocation(
+        fix: _fix(29.0, -81.6),
+        locations: const [],
         trails: [trail],
         recentlyDiscussedIds: const {},
         now: DateTime(2026, 1, 1, 12, 0, 0),

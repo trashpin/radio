@@ -18,17 +18,20 @@ class TourSubject {
     this.location,
     this.trail,
     this.storyType = TourStoryType.general,
+    this.isExactMatch = true,
   });
 
-  factory TourSubject.forLocation(ForestLocation location) => TourSubject._(
+  factory TourSubject.forLocation(ForestLocation location, {bool isExactMatch = true}) =>
+      TourSubject._(
         kind: TourSubjectKind.location,
         id: location.id,
         name: location.name,
         location: location,
         storyType: TourStoryType.fromStoryCategory(location.storyCategory),
+        isExactMatch: isExactMatch,
       );
 
-  factory TourSubject.forTrail(ForestTrail trail) => TourSubject._(
+  factory TourSubject.forTrail(ForestTrail trail, {bool isExactMatch = true}) => TourSubject._(
         kind: TourSubjectKind.trail,
         id: trail.id,
         name: (trail.trailName?.trim().isNotEmpty ?? false)
@@ -38,6 +41,7 @@ class TourSubject {
         // A trail's own official attributes are verified USFS data, never
         // folklore — always classified as nature/verified content.
         storyType: TourStoryType.nature,
+        isExactMatch: isExactMatch,
       );
 
   static const TourSubject general = TourSubject._(
@@ -45,6 +49,7 @@ class TourSubject {
     id: 'general',
     name: 'Ocala National Forest',
     storyType: TourStoryType.general,
+    isExactMatch: false,
   );
 
   final TourSubjectKind kind;
@@ -53,4 +58,11 @@ class TourSubject {
   final ForestLocation? location;
   final ForestTrail? trail;
   final TourStoryType storyType;
+
+  /// True when the visitor's real GPS position is confidently WITHIN this
+  /// subject's own geofence/trail line (spec §18: never imply the visitor
+  /// is standing on the exact site unless the geofence actually confirms
+  /// that). False for a merely-nearby match — the narration must then say
+  /// "in this part of the forest" / "near this area," never "right here."
+  final bool isExactMatch;
 }

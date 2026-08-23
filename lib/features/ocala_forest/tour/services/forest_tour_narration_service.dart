@@ -56,11 +56,16 @@ class ForestTourNarrationService {
     ForestBoundary? forest,
     List<String> nearbySummary = const [],
     List<String> recentlyMentioned = const [],
+    double? gpsAccuracyMeters,
   }) {
     final body = <String, dynamic>{
       if (forest != null) 'forestIdentity': {'name': forest.name, 'acres': forest.acres},
       if (nearbySummary.isNotEmpty) 'nearbySummary': nearbySummary,
       if (recentlyMentioned.isNotEmpty) 'recentlyMentionedNames': recentlyMentioned,
+      // spec §18/§19: the AI must never claim more geographic precision
+      // than the data actually supports.
+      'isExactMatch': subject.isExactMatch,
+      'gpsAccuracyMeters': ?gpsAccuracyMeters,
     };
 
     switch (subject.kind) {

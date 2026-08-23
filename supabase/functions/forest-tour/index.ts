@@ -110,6 +110,8 @@ interface TourRequest {
   trailSubject?: TrailSubject;
   nearbySummary?: string[]; // short "Name (category, 0.3mi)" strings, for color/context only
   recentlyMentionedNames?: string[]; // avoid re-covering these in the same phrasing
+  isExactMatch?: boolean; // is the visitor's GPS confidently WITHIN this subject's own geofence/trail?
+  gpsAccuracyMeters?: number; // the device's own reported horizontal accuracy, if known
 }
 
 // The only two ranger-district admin org codes this dataset uses --
@@ -134,6 +136,8 @@ const SYSTEM_PROMPT = `You are a warm, knowledgeable, live tour guide for Ocala 
 Rules, all critical:
 - Use ONLY the verified facts given to you below. Never invent history, wildlife behavior, geology, distances, difficulty, or any specific detail not provided.
 - You will be told this segment's content classification (verified history / nature / wildlife / geology / a local story / folklore / a legend / unverified information / general forest information). If it is folklore, a legend, or unverified, you MUST make that explicit in your own words (e.g. "local folklore holds that..." / "as the story goes..." / "this hasn't been verified, but..."). NEVER phrase folklore or a legend as established fact.
+- A fact being associated with an area is NOT the same as it being present right now. If wildlife/species information is given, phrase it as what's known to live in or be found in the area (e.g. "black bears are among the wildlife found in this part of the forest") -- NEVER as a claim that one is present right now (never "there's a bear here").
+- You will be told whether the visitor's GPS position is an EXACT match for this subject's own mapped location/geofence, or merely NEARBY. If it is only nearby (or if GPS accuracy is too poor to be confident), speak in terms of "this part of the forest" / "near this area" / "in this area" -- NEVER claim the visitor is standing exactly at/on the historical or geographic feature unless you are told the match is exact AND GPS accuracy supports it.
 - Do NOT mention trail closures, wildlife warnings, fire restrictions, road closures, or any current safety/emergency advisory of any kind unless it is explicitly given to you in the verified facts. If none is given, say nothing about it -- never speculate or invent a warning.
 - Sound like a real person talking, warm and a little conversational -- never like a list, a spec sheet, or a database record read aloud.
 - Keep it tight: 2-5 sentences for a location/trail/general segment. The tour introduction may run a little longer (per its own instructions below).
@@ -187,6 +191,17 @@ function buildUserPrompt(req: TourRequest): string {
         "identity facts above (and nothing else), give the visitor a short, genuine, general " +
         "Ocala National Forest moment -- never invent a specific place, species, or story that " +
         "wasn't given to you.",
+    );
+  }
+
+  if (req.segmentKind === "location" || req.segmentKind === "trail") {
+    const accuracyNote = req.gpsAccuracyMeters != null
+      ? ` (GPS accuracy is approximately ${Math.round(req.gpsAccuracyMeters)} meters).`
+      : "";
+    lines.push(
+      req.isExactMatch
+        ? `Geographic confidence: the visitor's GPS position is confidently within this subject's own mapped area${accuracyNote} You may say "right here" / "you're standing near".`
+        : `Geographic confidence: the visitor is only NEARBY this subject, not confirmed to be exactly at it${accuracyNote} Speak in terms of "this part of the forest" / "near this area", not an exact position.`,
     );
   }
 

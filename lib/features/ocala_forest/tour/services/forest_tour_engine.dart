@@ -12,16 +12,20 @@ import 'package:explorer_os_mobile/features/ocala_forest/tour/services/tour_subj
 
 /// Pure, Riverpod-free "should the tour say something new right now?"
 /// engine (mirrors the existing `ForestExperienceEngine`'s shape/testing
-/// approach exactly). NOT a new geofence/location system: it wraps the
-/// SAME `LocationTriggerEngine` `ForestExperienceEngine` already uses for
-/// arrival detection, and the SAME `nearestTrailId` helper DISCOVER
-/// already uses for "which trail am I near" — this class only adds the
-/// movement/time cooldown (spec §9) and subject selection on top.
+/// approach exactly). NOT a new geofence/location system: arrivals are
+/// detected by the SAME `LocationTriggerEngine` `ForestExperienceEngine`
+/// already uses, and trail proximity by the SAME `nearestTrailId` helper
+/// DISCOVER already uses. This class only adds: (1) recognizing a
+/// genuinely NEW event (a fresh arrival or a fresh trail change — never
+/// "the ranking recomputed to the same answer," spec §11: don't talk
+/// constantly), (2) a time/distance cooldown on top of that, and (3)
+/// deferring to [TourSubjectSelector] for WHICH subject wins once
+/// something new is confirmed to have happened (so a just-arrived exact
+/// geofence always outranks a merely-still-current trail, spec §4/§8).
 class ForestTourEngine {
   ForestTourEngine({
     this.minSecondsBetweenSegments = 90,
     this.minMetersBetweenSegments = 120,
-    this.trailProximityMeters = 100,
   });
 
   /// How long, at minimum, the guide stays quiet after speaking before
@@ -30,10 +34,9 @@ class ForestTourEngine {
 
   /// How far, at minimum, the visitor must have moved since the last
   /// segment before a new one is considered — together with the time
-  /// cooldown above, this is what stops the tour "talking every few feet"
-  /// (spec §9).
+  /// cooldown above, either one being satisfied is enough to allow a new
+  /// segment (spec §9/§11).
   final double minMetersBetweenSegments;
-  final double trailProximityMeters;
 
   final _locationTrigger = LocationTriggerEngine();
   final _selector = const TourSubjectSelector();
@@ -66,10 +69,6 @@ class ForestTourEngine {
       }
     }
 
-    final nearestTrail =
-        nearestTrailId(fix.latitude, fix.longitude, trails, maxMeters: trailProximityMeters);
-    final trailChanged = nearestTrail != null && nearestTrail != _lastTrailId;
-
     final candidates = [
       for (final l in locations)
         if (l.active)
@@ -82,23 +81,26 @@ class ForestTourEngine {
     ];
     final events =
         _locationTrigger.evaluate(fix.latitude, fix.longitude, candidates, now: effectiveNow);
-    final arrivedIds = {
-      for (final e in events)
-        if (e.kind == LocationTriggerKind.arrival) e.locationId,
-    };
+    final hasNewArrival = events.any((e) => e.kind == LocationTriggerKind.arrival);
 
-    final subject = _selector.selectForMovement(
+    final onTrailId = nearestTrailId(fix.latitude, fix.longitude, trails,
+        maxMeters: TourSubjectSelector.kOnTrailMeters);
+    final trailChanged = onTrailId != null && onTrailId != _lastTrailId;
+    if (onTrailId != null) _lastTrailId = onTrailId;
+
+    // Only a genuinely NEW event (a fresh arrival or a fresh trail change)
+    // may trigger a segment — ambient movement that changes nothing about
+    // "what's significant right here" must stay quiet (spec §9/§11).
+    if (!hasNewArrival && !trailChanged) return null;
+
+    final subject = _selector.rank(
       lat: fix.latitude,
       lng: fix.longitude,
       locations: locations,
       trails: trails,
-      preferredTrailId: trailChanged ? nearestTrail : null,
-      arrivedLocationIds: arrivedIds,
       recentlyDiscussedIds: recentlyDiscussedIds,
       tourType: tourType,
     );
-
-    if (nearestTrail != null) _lastTrailId = nearestTrail;
     if (subject == null) return null;
 
     _lastSegmentAt = effectiveNow;
@@ -106,10 +108,12 @@ class ForestTourEngine {
     return subject;
   }
 
-  /// Used by explicit user actions (tour start, "Tell Me Something") —
-  /// bypasses the cooldown/arrival gating (the visitor asked directly) but
-  /// still records the result so the passive engine's cooldown/anti-repeat
-  /// stays consistent with whatever was just said.
+  /// Used by explicit user actions (the tour's first segment right after
+  /// the intro, "Tell Me Something", "Next Story") — bypasses the
+  /// cooldown/new-event gating (the visitor asked directly) but never
+  /// returns null (spec §8 tier "general", §10). Still records the result
+  /// so the passive engine's cooldown/anti-repeat/trail-tracking stays
+  /// consistent with whatever was just said.
   TourSubject onDemand({
     required double lat,
     required double lng,
@@ -119,20 +123,19 @@ class ForestTourEngine {
     TourType tourType = TourType.general,
     DateTime? now,
   }) {
-    final nearestTrail =
-        nearestTrailId(lat, lng, trails, maxMeters: trailProximityMeters);
-    final subject = _selector.selectOnDemand(
+    final subject = _selector.rankOnDemand(
       lat: lat,
       lng: lng,
       locations: locations,
       trails: trails,
-      preferredTrailId: nearestTrail,
       recentlyDiscussedIds: recentlyDiscussedIds,
       tourType: tourType,
     );
     _lastSegmentAt = now ?? DateTime.now();
     _lastSegmentPosition = (lat: lat, lng: lng);
-    if (nearestTrail != null) _lastTrailId = nearestTrail;
+    final onTrailId =
+        nearestTrailId(lat, lng, trails, maxMeters: TourSubjectSelector.kOnTrailMeters);
+    if (onTrailId != null) _lastTrailId = onTrailId;
     return subject;
   }
 }
