@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
@@ -37,13 +38,54 @@ class MissionCompleteScreen extends ConsumerWidget {
                 textAlign: TextAlign.center),
             const SizedBox(height: RD.xl),
 
-            // The Final Reveal — how the clues connected (spec Phase: "the
-            // game should explain how the clues connected" before showing
-            // XP/completion, not just a bare score screen).
-            if ((mission?.finalRevealText ?? '').isNotEmpty) ...[
+            // The Final Reveal — how the clues connected (spec: "the final
+            // reveal should connect something the player saw earlier with
+            // something they eventually learn"). Re-showing the mission's
+            // own hero image here is the literal payoff of that rule: it's
+            // the SAME artwork the player glanced at before knowing it
+            // mattered — the "I saw that earlier" moment made structural,
+            // not just described in the reveal text.
+            if (mission?.hasHeroImage ?? false) ...[
+              ClipRRect(
+                borderRadius: RD.brLg,
+                child: AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: Image.network(mission!.heroImageUrl!, fit: BoxFit.cover),
+                ),
+              ),
+              const SizedBox(height: RD.lg),
+            ],
+            if (mission?.hasFinalRevealVideo ?? false) ...[
+              CharacterVideoHero(videoUrl: mission!.finalRevealVideoUrl!),
+              const SizedBox(height: RD.lg),
+            ] else if ((mission?.finalRevealText ?? '').isNotEmpty) ...[
               GlassPanel(
                 child: Text(mission!.finalRevealText!,
                     style: RD.body.copyWith(fontSize: 15, color: RD.textPrimary, height: 1.5)),
+              ),
+              const SizedBox(height: RD.lg),
+            ],
+
+            // "THE REAL HISTORY" — deliberately separate from the dramatic
+            // reveal above: what's verified, what source supports it, what
+            // was fictionalized, and why it matters (spec: never present
+            // invented dialogue as an authentic historical quote).
+            if ((mission?.realHistoryText ?? '').isNotEmpty) ...[
+              GlassPanel(
+                color: RD.panelAlt,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      const Icon(Icons.fact_check_outlined, color: RD.amber, size: 18),
+                      const SizedBox(width: RD.xs),
+                      Text('THE REAL HISTORY', style: RD.sectionLabel.copyWith(color: RD.amber)),
+                    ]),
+                    const SizedBox(height: RD.sm),
+                    Text(mission!.realHistoryText!,
+                        style: RD.body.copyWith(fontSize: 14, color: RD.textPrimary, height: 1.5)),
+                  ],
+                ),
               ),
               const SizedBox(height: RD.lg),
             ],

@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:video_player/video_player.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -132,7 +132,7 @@ class _IntroContent extends StatelessWidget {
         // Adventure Card used) is the fallback when no video exists yet —
         // never both at once, and never a destination photo either way.
         if (mission.hasOpeningVideo) ...[
-          _CharacterVideoHero(videoUrl: mission.openingVideoUrl!),
+          CharacterVideoHero(videoUrl: mission.openingVideoUrl!),
           const SizedBox(height: RD.xl),
         ] else if (mission.hasHeroImage) ...[
           ClipRRect(
@@ -237,77 +237,4 @@ class _IntroContent extends StatelessWidget {
         ),
         child: Text(label, style: RD.caption),
       );
-}
-
-/// The character avatar video (HeyGen) — "the first thing a player should
-/// hear and see" when they select an adventure. Autoplays with sound the
-/// moment it's ready; the player can tap to pause/resume. Portrait
-/// (matches the 720x1280 the `heygen-avatar` edge function renders at).
-class _CharacterVideoHero extends StatefulWidget {
-  const _CharacterVideoHero({required this.videoUrl});
-  final String videoUrl;
-
-  @override
-  State<_CharacterVideoHero> createState() => _CharacterVideoHeroState();
-}
-
-class _CharacterVideoHeroState extends State<_CharacterVideoHero> {
-  late final VideoPlayerController _controller =
-      VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
-  bool _ready = false;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => _ready = true);
-      _controller.play();
-    }).catchError((_) {
-      if (mounted) setState(() => _failed = true);
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _toggle() {
-    setState(() => _controller.value.isPlaying ? _controller.pause() : _controller.play());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_failed) return const SizedBox.shrink();
-    return ClipRRect(
-      borderRadius: RD.brLg,
-      child: AspectRatio(
-        aspectRatio: 9 / 16,
-        child: _ready
-            ? GestureDetector(
-                onTap: _toggle,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    VideoPlayer(_controller),
-                    if (!_controller.value.isPlaying)
-                      Container(
-                        color: Colors.black26,
-                        child: const Center(
-                          child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 56),
-                        ),
-                      ),
-                  ],
-                ),
-              )
-            : Container(
-                color: RD.panelAlt,
-                child: const Center(child: CircularProgressIndicator(color: RD.green)),
-              ),
-      ),
-    );
-  }
 }

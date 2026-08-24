@@ -8,6 +8,7 @@ import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_c
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -51,6 +52,12 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
     final character =
         world.characterId == null ? null : await ref.read(missionRepositoryProvider).characterById(world.characterId!);
     if (mounted) setState(() => _character = character);
+
+    // "A NEW CHARACTER APPEARS" — when this reveal has an avatar video, it
+    // already carries its own lip-synced narration audio, so the
+    // audio-only TTS path below would talk over it (same rule
+    // MissionIntroScreen follows for openingVideoUrl).
+    if (world.hasCharacterVideo) return;
 
     final text = (world.narrationText ?? '').trim();
     if (text.isEmpty && (world.narrationAudioUrl ?? '').isEmpty) return;
@@ -146,6 +153,51 @@ class _OldWorldContent extends StatelessWidget {
         const SizedBox(height: RD.sm),
         _FictionalBadge(isFictional: world.isFictional),
         const SizedBox(height: RD.lg),
+
+        // "A NEW CHARACTER APPEARS" — the video (when this reveal has one)
+        // is the headline moment, ahead of any supporting imagery. Falls
+        // back to a prominent name/role/image block, then to the old
+        // plain "Narrated by X" line when there's no character record at
+        // all (free-text narratorName only).
+        if (world.hasCharacterVideo) ...[
+          CharacterVideoHero(videoUrl: world.characterVideoUrl!),
+          const SizedBox(height: RD.lg),
+        ] else if (narratingCharacter != null) ...[
+          Row(children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: Colors.white12,
+              backgroundImage: (narratingCharacter!.imageUrl ?? '').isNotEmpty
+                  ? NetworkImage(narratingCharacter!.imageUrl!)
+                  : null,
+              child: (narratingCharacter!.imageUrl ?? '').isEmpty
+                  ? const Icon(Icons.person_rounded, color: Colors.white54)
+                  : null,
+            ),
+            const SizedBox(width: RD.md),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(narratingCharacter!.name,
+                      style: RD.cardTitle.copyWith(color: Colors.white)),
+                  if ((narratingCharacter!.role ?? '').isNotEmpty)
+                    Text(narratingCharacter!.role!, style: RD.caption.copyWith(color: RD.amber)),
+                ],
+              ),
+            ),
+          ]),
+          const SizedBox(height: RD.lg),
+        ] else if ((world.narratorName ?? '').isNotEmpty) ...[
+          Row(children: [
+            const Icon(Icons.record_voice_over_rounded, color: RD.amber, size: 18),
+            const SizedBox(width: RD.xs),
+            Text('Narrated by ${world.narratorName}',
+                style: RD.caption.copyWith(color: Colors.white70)),
+          ]),
+          const SizedBox(height: RD.lg),
+        ],
+
         if ((world.heroImageUrl ?? '').isNotEmpty)
           ClipRRect(
             borderRadius: RD.brLg,
@@ -157,15 +209,6 @@ class _OldWorldContent extends StatelessWidget {
             borderRadius: RD.brLg,
             child: Image.network(world.historicalMapImageUrl!, fit: BoxFit.cover),
           ),
-        ],
-        if ((narratingCharacter?.name ?? world.narratorName ?? '').isNotEmpty) ...[
-          const SizedBox(height: RD.lg),
-          Row(children: [
-            const Icon(Icons.record_voice_over_rounded, color: RD.amber, size: 18),
-            const SizedBox(width: RD.xs),
-            Text('Narrated by ${narratingCharacter?.name ?? world.narratorName}',
-                style: RD.caption.copyWith(color: Colors.white70)),
-          ]),
         ],
         if ((world.narrationText ?? '').isNotEmpty) ...[
           const SizedBox(height: RD.md),

@@ -37,6 +37,7 @@ class MissionStoryStep {
     this.active = true,
     this.publishedRowId,
     this.heygenVideoId,
+    this.revealsFactKeys = const [],
   });
 
   final String id;
@@ -78,6 +79,12 @@ class MissionStoryStep {
   /// status" instead of "generate avatar" again.
   final String? heygenVideoId;
 
+  /// Named `mission_facts.key` values this step reveals when it plays —
+  /// the "plant a detail early, pay it off later" mechanic. Published into
+  /// `mission_travel_stories.reveals_fact_keys` or
+  /// `old_worlds.reveals_fact_keys` depending on [stepType].
+  final List<String> revealsFactKeys;
+
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
   bool get hasAvatarVideo => (avatarVideoUrl ?? '').trim().isNotEmpty;
   bool get needsAvatar => presentationType == kPresentationAvatarVideo;
@@ -109,6 +116,9 @@ class MissionStoryStep {
         active: (j['active'] ?? true) as bool,
         publishedRowId: j['published_row_id']?.toString(),
         heygenVideoId: j['heygen_video_id'] as String?,
+        revealsFactKeys: j['reveals_fact_keys'] is List
+            ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
+            : const [],
       );
 
   Map<String, dynamic> toWrite() => {
@@ -135,6 +145,7 @@ class MissionStoryStep {
         'active': active,
         'published_row_id': publishedRowId,
         'heygen_video_id': heygenVideoId,
+        'reveals_fact_keys': revealsFactKeys,
       };
 }
 

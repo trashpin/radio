@@ -77,6 +77,7 @@ class StoryStepPublisher {
       'text': step.script,
       'audio_url': step.audioUrl,
       'character_id': step.characterId,
+      'reveals_fact_keys': step.revealsFactKeys,
     };
     String targetId;
     if ((step.publishedRowId ?? '').isNotEmpty) {
@@ -113,22 +114,39 @@ class StoryStepPublisher {
           'This stop has no Old World yet — create one from the Mission Stop page first '
           '("Create QR Portal + Old World"), then publish this step.');
     }
-    final fields = <String, dynamic>{'character_id': step.characterId};
+    final fields = <String, dynamic>{
+      'character_id': step.characterId,
+      'reveals_fact_keys': step.revealsFactKeys,
+    };
     if (step.stepType == kStepTypeClue) {
       fields['clue_text'] = step.script;
     } else {
       fields['narration_text'] = step.script;
       fields['narration_audio_url'] = step.audioUrl;
+      // "A NEW CHARACTER APPEARS" -- the avatar video is what makes a QR
+      // discovery feel like meeting someone, not opening another info
+      // page. Null when no avatar has been generated for this step yet.
+      fields['character_video_url'] = step.avatarVideoUrl;
     }
     await _repo.updateOldWorld(stop.oldWorldId!, fields);
     await _markPublished(step);
-    return const PublishResult.success('Published to this stop\'s Old World.');
+    return PublishResult.success(step.hasAvatarVideo && step.stepType != kStepTypeClue
+        ? 'Published — the character now appears on video at this discovery.'
+        : 'Published to this stop\'s Old World.');
   }
 
   Future<PublishResult> _publishFinalReveal(MissionStoryStep step) async {
-    await _repo.updateMission(step.missionId, {'final_reveal_text': step.script});
+    await _repo.updateMission(step.missionId, {
+      'final_reveal_text': step.script,
+      // Mirrors opening_video_url's role -- the same (or a different)
+      // character can deliver the ending on video too, connecting what the
+      // player saw at the start with what they learn at the end.
+      'final_reveal_video_url': step.avatarVideoUrl,
+    });
     await _markPublished(step);
-    return const PublishResult.success('Published as the mission\'s Final Reveal.');
+    return PublishResult.success(step.hasAvatarVideo
+        ? 'Published — the avatar video now delivers the Final Reveal.'
+        : 'Published the Final Reveal text (no avatar video generated yet).');
   }
 
   Future<void> _markPublished(MissionStoryStep step, {String? publishedRowId}) =>

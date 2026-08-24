@@ -457,6 +457,7 @@ Future<void> showStoryStepEditorDialog(
   final questionText = TextEditingController(text: step?.questionText ?? '');
   final answerText = TextEditingController(text: step?.answerText ?? '');
   final xpReward = TextEditingController(text: '${step?.xpReward ?? 0}');
+  final revealsFactKeys = TextEditingController(text: step?.revealsFactKeys.join(', ') ?? '');
   var stepType = step?.stepType ?? kStepTypeTravelStory;
   var characterId = step?.characterId;
   var stopId = step?.stopId;
@@ -560,6 +561,15 @@ Future<void> showStoryStepEditorDialog(
                   style: TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               TextField(
+                controller: revealsFactKeys,
+                decoration: const InputDecoration(
+                    labelText: 'Reveals fact keys (comma-separated, optional)',
+                    helperText: 'Plant a detail here; the player may not know why yet — a later '
+                        'step or puzzle can pay it off.',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
                   controller: clueText,
                   decoration:
                       const InputDecoration(labelText: 'Clue', border: OutlineInputBorder())),
@@ -610,6 +620,11 @@ Future<void> showStoryStepEditorDialog(
     'question_text': questionText.text.trim().isEmpty ? null : questionText.text.trim(),
     'answer_text': answerText.text.trim().isEmpty ? null : answerText.text.trim(),
     'xp_reward': int.tryParse(xpReward.text.trim()) ?? 0,
+    'reveals_fact_keys': revealsFactKeys.text
+        .split(',')
+        .map((k) => k.trim())
+        .where((k) => k.isNotEmpty)
+        .toList(),
   };
   final repo = ref.read(missionRepositoryProvider);
   if (step == null) {

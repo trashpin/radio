@@ -143,6 +143,7 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
   final rewardXp = TextEditingController(text: '${mission?.completionRewardXp ?? 0}');
   final badge = TextEditingController(text: mission?.completionBadge ?? '');
   final finalReveal = TextEditingController(text: mission?.finalRevealText ?? '');
+  final realHistory = TextEditingController(text: mission?.realHistoryText ?? '');
   final heroImageUrl = TextEditingController(text: mission?.heroImageUrl ?? '');
   final storyHook = TextEditingController(text: mission?.storyHook ?? '');
   final imageClueText = TextEditingController(text: mission?.imageClueText ?? '');
@@ -309,6 +310,18 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
+              TextField(
+                controller: realHistory,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                    labelText: '"THE REAL HISTORY" (optional)',
+                    helperText: 'What\'s historically verified, what source supports it, what '
+                        'was fictionalized, and why it matters. Shown separately from the '
+                        'dramatic final reveal above — never present invented dialogue as an '
+                        'authentic historical quote.',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
               Row(children: [
                 Expanded(
                   child: TextField(
@@ -353,6 +366,7 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
     'intro_character_id': introCharacterId,
     'mission_brief_text': missionBrief.text.trim().isEmpty ? null : missionBrief.text.trim(),
     'final_reveal_text': finalReveal.text.trim().isEmpty ? null : finalReveal.text.trim(),
+    'real_history_text': realHistory.text.trim().isEmpty ? null : realHistory.text.trim(),
     'completion_reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
     'completion_badge': badge.text.trim().isEmpty ? null : badge.text.trim(),
     'hero_image_url': heroImageUrl.text.trim().isEmpty ? null : heroImageUrl.text.trim(),
