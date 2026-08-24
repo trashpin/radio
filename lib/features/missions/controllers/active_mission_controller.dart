@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/missions/models/mission_progress.dar
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
+import 'package:explorer_os_mobile/features/missions/services/arrival_confirmer.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_story_engine.dart';
 
@@ -128,8 +129,33 @@ class ActiveMissionState {
 /// persistence from the result. This is the ONLY place that decides "what
 /// should happen next" — the engine stays pure/testable, the audio
 /// controller stays a dumb player, and this controller is the glue.
+///
+/// ARCHITECTURE — four related but distinct concepts, kept deliberately
+/// separate so a location can be "real" without being "active":
+///   1. LOCATION RECORD — a permanent row in `locations`/[MasterLocation].
+///      Exists independently of any mission; never created, modified, or
+///      deleted by anything in this file.
+///   2. MISSION STOP — a [MissionStop] row: a location borrowed by one
+///      specific mission's sequence (optionally linked back to a location
+///      record via [MissionStop.locationId] for shared photos/description).
+///   3. ACTIVE MISSION GEOFENCE — exactly the ONE [MissionStop] held in
+///      `state.currentStop`. [_onFix] only ever evaluates that single stop
+///      (see [MissionStoryEngine.evaluate]'s own doc) — never a list of
+///      every stop in the mission, and never every location in the county.
+///      This is what makes "only the current stop can trigger mission
+///      events" true by construction, not a runtime check that could be
+///      forgotten. [_completeStop] is the only place `currentStop` changes
+///      — it REPLACES the field rather than adding to a collection, which
+///      is the "deactivate current geofence, activate next" transition the
+///      spec asks for: there is never a moment where two stops are active.
+///   4. OPTIONAL DISCOVERY — everything else nearby. See
+///      `journeyNearbyLocationsProvider`, which reads location records
+///      directly for map display and is never wired into this controller
+///      or [MissionStoryEngine] — structurally incapable of firing a
+///      mission event, no matter how close the player gets to one.
 class ActiveMissionController extends Notifier<ActiveMissionState> {
   static const _engine = MissionStoryEngine();
+  final _arrivalConfirmer = ArrivalConfirmer();
   MissionProgress? _progress;
 
   @override
@@ -166,23 +192,48 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       orElse: () => stops.first,
     );
     final stories = await repo.travelStoriesForStop(currentStop.id);
+    final firedIds = progress.firedContentIds.toSet();
+
+    // `awaiting_qr` has no column of its own — it's derived from data
+    // already persisted. Arrival fired for this stop, but the stop isn't
+    // in `completedStopIds` yet, means exactly one thing: the player
+    // arrived and the app was closed/restarted before a QR scan completed
+    // it (mission_progress.fired_content_ids is written the instant
+    // arrival narration starts, well before a scan can happen). Without
+    // this, resuming would silently drop back to `awaitingQr: false` with
+    // arrival already marked fired, so the engine would never re-evaluate
+    // this stop again and the player would be stuck with no "Scan QR"
+    // button and no way forward.
+    final alreadyArrived = firedIds.contains(missionArrivalFiredKey(currentStop.id)) &&
+        !progress.completedStopIds.contains(currentStop.id);
 
     state = ActiveMissionState(
       mission: mission,
       stops: stops,
       currentStop: currentStop,
       currentStopStories: stories,
-      firedIds: progress.firedContentIds.toSet(),
+      firedIds: firedIds,
       completedStopIds: progress.completedStopIds,
       revealedFactKeys: progress.revealedFactKeys.toSet(),
       solvedPuzzleIds: progress.solvedPuzzleIds.toSet(),
       xp: progress.xp,
+      awaitingQr: alreadyArrived && currentStop.requiresQr,
       loading: false,
     );
     // The opening narration is spoken on the Adventure Introduction screen,
     // BEFORE the player ever reaches this GPS-tracking player (spec: "they
     // should first be pulled into a story," not shown a map immediately) —
     // never replayed here, so it's heard exactly once per fresh start.
+
+    if (alreadyArrived && !currentStop.requiresQr) {
+      // Same crash-window case as above, but for a stop that never needed
+      // a QR scan in the first place: arrival should have completed it
+      // immediately (see [_fireArrival]) and almost always does, but a
+      // restart landing in the narrow gap between marking arrival fired
+      // and marking the stop complete would otherwise strand the player
+      // exactly like the QR case. Self-heals on resume.
+      await _completeStop(currentStop);
+    }
   }
 
   void _onFix(TravelContext ctx) {
@@ -208,13 +259,23 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
 
     state = state.copyWith(lastDistanceMeters: result.distanceMeters);
 
+    // Tracked on every fix (not just when the engine says "arrive") so a
+    // fix that drifts back outside the radius resets the streak — the
+    // player must be continuously inside, not just inside on one noisy
+    // sample. See [ArrivalConfirmer]'s own doc for why this exists.
+    final insideArrivalRadius = result.distanceMeters <= stop.arrivalRadiusMeters;
+    final confirmedArrival = _arrivalConfirmer.confirm(stop.id, insideArrivalRadius);
+
     switch (result.action) {
       case MissionEngineAction.none:
         return;
       case MissionEngineAction.playTravelStory:
         _fireTravelStory(result.story!);
       case MissionEngineAction.arrive:
-        _fireArrival(result.stop!);
+        if (confirmedArrival) _fireArrival(result.stop!);
+      // else: inside the radius on this fix, but not yet on enough
+      // consecutive fixes to rule out GPS drift — wait for the next fix
+      // rather than firing arrival narration/completion early.
     }
   }
 
@@ -333,6 +394,12 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
   /// -- when none remains -- checks for a mission-level puzzle before
   /// finishing. Returns true if the mission just completed outright (no
   /// puzzle, or already solved on a previous run).
+  ///
+  /// This is the whole "deactivate current geofence, activate next
+  /// geofence" transition: `state.currentStop` is REPLACED with [next] in
+  /// one atomic state update, never appended to a list of active stops.
+  /// Between one call to [_onFix] and the next, there is no window where
+  /// both the completed stop and the next stop are simultaneously active.
   Future<bool> _completeStop(MissionStop stop, {String? oldWorldId}) async {
     final completed = {...state.completedStopIds, stop.id}.toList();
 
