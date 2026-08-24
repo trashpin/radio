@@ -61,7 +61,10 @@ class _MissionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassPanel(
-      onTap: () => context.push(AppRoute.missionPlayer.missionPathFor(mission.id)),
+      // The player is pulled into the story FIRST — never straight to the
+      // map/GPS player (spec: "they should NOT immediately be shown a map
+      // and a list of locations").
+      onTap: () => context.push(AppRoute.missionIntro.missionIntroPathFor(mission.id)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

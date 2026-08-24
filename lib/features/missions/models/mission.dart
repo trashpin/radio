@@ -13,6 +13,9 @@ class Mission {
     this.openingNarrationAudioUrl,
     this.completionRewardXp = 0,
     this.completionBadge,
+    this.missionBriefText,
+    this.introCharacterName,
+    this.finalRevealText,
   });
 
   final String id;
@@ -24,7 +27,9 @@ class Mission {
   /// (never a fixed enum) so new mission themes never need a migration.
   final String? category;
 
-  /// 'easy' | 'moderate' | 'hard'.
+  /// Free text — 'easy' / 'adventure' / 'challenge' / 'master' are the
+  /// suggested vocabulary, not an enforced enum (the scale is still
+  /// evolving; see migration 0063).
   final String? difficulty;
   final int? estimatedDurationMinutes;
   final bool published;
@@ -33,6 +38,19 @@ class Mission {
   final String? openingNarrationAudioUrl;
   final int completionRewardXp;
   final String? completionBadge;
+
+  /// The "YOUR MISSION: find the journal, follow the trail..." paragraph
+  /// shown on the Adventure Introduction screen, before any map/GPS/travel
+  /// begins.
+  final String? missionBriefText;
+
+  /// Who speaks the adventure introduction (e.g. "Thomas", or a mystery
+  /// narrator) — shown alongside [openingNarrationText].
+  final String? introCharacterName;
+
+  /// "YOU SOLVED IT... you remembered the silver pocket watch..." — the
+  /// explanation of how the clues connected, shown at mission completion.
+  final String? finalRevealText;
 
   bool get hasOpeningNarration =>
       (openingNarrationText ?? '').trim().isNotEmpty ||
@@ -51,6 +69,9 @@ class Mission {
         openingNarrationAudioUrl: j['opening_narration_audio_url'] as String?,
         completionRewardXp: (j['completion_reward_xp'] as num?)?.toInt() ?? 0,
         completionBadge: j['completion_badge'] as String?,
+        missionBriefText: j['mission_brief_text'] as String?,
+        introCharacterName: j['intro_character_name'] as String?,
+        finalRevealText: j['final_reveal_text'] as String?,
       );
 
   Map<String, dynamic> toWrite() => {
@@ -65,5 +86,8 @@ class Mission {
         'opening_narration_audio_url': openingNarrationAudioUrl,
         'completion_reward_xp': completionRewardXp,
         'completion_badge': completionBadge,
+        'mission_brief_text': missionBriefText,
+        'intro_character_name': introCharacterName,
+        'final_reveal_text': finalRevealText,
       };
 }

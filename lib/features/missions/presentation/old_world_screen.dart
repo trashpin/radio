@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
@@ -38,13 +39,21 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
   Future<void> _speak(OldWorld world) async {
     if (_spoken) return;
     _spoken = true;
+    // Facts are revealed the moment this Old World is shown — the player
+    // may not know why yet (spec: "I was supposed to remember that").
+    if (world.revealsFactKeys.isNotEmpty) {
+      ref.read(activeMissionControllerProvider.notifier).markFactsRevealed(world.revealsFactKeys);
+    }
     final text = (world.narrationText ?? '').trim();
     if (text.isEmpty && (world.narrationAudioUrl ?? '').isEmpty) return;
     String? audioUrl = world.narrationAudioUrl;
     if ((audioUrl ?? '').isEmpty && text.isNotEmpty) {
-      final result = await ref
-          .read(missionNarrationServiceProvider)
-          .requestFor(subjectId: world.id, kind: 'old_world', text: text);
+      final result = await ref.read(missionNarrationServiceProvider).requestFor(
+            subjectId: world.id,
+            kind: 'old_world',
+            text: text,
+            voiceId: world.voiceId,
+          );
       audioUrl = result?.audioUrl;
     }
     await ref.read(missionAudioControllerProvider.notifier).play(
@@ -86,7 +95,14 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
   }
 
   void _onContinue(OldWorld world) {
-    if (widget.missionComplete) {
+    // A pending final puzzle always takes priority over the plain
+    // missionComplete flag passed in via the route — the mission isn't
+    // actually complete until the puzzle is solved (see
+    // ActiveMissionController._checkFinalPuzzleOrComplete).
+    final hasPendingPuzzle = ref.read(activeMissionControllerProvider).hasPendingPuzzle;
+    if (hasPendingPuzzle) {
+      context.pushReplacement(AppRoute.missionPuzzle.path);
+    } else if (widget.missionComplete) {
       context.pushReplacement(AppRoute.missionComplete.path);
     } else {
       context.pop();

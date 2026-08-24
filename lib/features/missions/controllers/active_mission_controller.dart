@@ -8,15 +8,17 @@ import 'package:explorer_os_mobile/features/missions/data/mission_progress_repos
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_progress.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_story_engine.dart';
 
 /// XP awarded for each successful QR scan — separate from
-/// [Mission.completionRewardXp], which is awarded once, on finishing the
-/// final stop. Configurable-in-code for now (Phase 1's "basic XP"); moving
-/// this to a per-stop admin field is a natural, non-breaking follow-up.
+/// [Mission.completionRewardXp] (awarded once, on finishing the final
+/// stop/puzzle) and a puzzle's own [MissionPuzzle.rewardXp]. Configurable-
+/// in-code for now (Phase 1's "basic XP"); moving this to a per-stop admin
+/// field is a natural, non-breaking follow-up.
 const int _kQrScanXp = 25;
 
 /// The result of attempting to scan a QR code — the QR scan screen reads
@@ -41,6 +43,9 @@ class ActiveMissionState {
     this.currentStopStories = const [],
     this.firedIds = const {},
     this.completedStopIds = const [],
+    this.revealedFactKeys = const {},
+    this.solvedPuzzleIds = const {},
+    this.pendingPuzzle,
     this.xp = 0,
     this.awaitingQr = false,
     this.missionComplete = false,
@@ -55,6 +60,17 @@ class ActiveMissionState {
   final List<MissionTravelStory> currentStopStories;
   final Set<String> firedIds;
   final List<String> completedStopIds;
+
+  /// Named [MissionFact.key]s the player has actually heard so far — the
+  /// player may not yet know why (spec: "the player should realize: I was
+  /// supposed to remember that").
+  final Set<String> revealedFactKeys;
+  final Set<String> solvedPuzzleIds;
+
+  /// Set once the final stop is complete and a mission-level puzzle exists
+  /// but hasn't been solved yet — the UI shows the puzzle screen while this
+  /// is non-null, instead of completing the mission immediately.
+  final MissionPuzzle? pendingPuzzle;
   final int xp;
 
   /// The player has arrived and this stop requires a QR scan before the
@@ -66,6 +82,7 @@ class ActiveMissionState {
   final bool loading;
 
   bool get hasActiveMission => mission != null;
+  bool get hasPendingPuzzle => pendingPuzzle != null;
 
   ActiveMissionState copyWith({
     Mission? mission,
@@ -74,6 +91,10 @@ class ActiveMissionState {
     List<MissionTravelStory>? currentStopStories,
     Set<String>? firedIds,
     List<String>? completedStopIds,
+    Set<String>? revealedFactKeys,
+    Set<String>? solvedPuzzleIds,
+    MissionPuzzle? pendingPuzzle,
+    bool clearPendingPuzzle = false,
     int? xp,
     bool? awaitingQr,
     bool? missionComplete,
@@ -88,6 +109,9 @@ class ActiveMissionState {
         currentStopStories: currentStopStories ?? this.currentStopStories,
         firedIds: firedIds ?? this.firedIds,
         completedStopIds: completedStopIds ?? this.completedStopIds,
+        revealedFactKeys: revealedFactKeys ?? this.revealedFactKeys,
+        solvedPuzzleIds: solvedPuzzleIds ?? this.solvedPuzzleIds,
+        pendingPuzzle: clearPendingPuzzle ? null : (pendingPuzzle ?? this.pendingPuzzle),
         xp: xp ?? this.xp,
         awaitingQr: awaitingQr ?? this.awaitingQr,
         missionComplete: missionComplete ?? this.missionComplete,
@@ -143,8 +167,6 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     );
     final stories = await repo.travelStoriesForStop(currentStop.id);
 
-    final isFreshStart = progress.completedStopIds.isEmpty && progress.firedContentIds.isEmpty;
-
     state = ActiveMissionState(
       mission: mission,
       stops: stops,
@@ -152,25 +174,27 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       currentStopStories: stories,
       firedIds: progress.firedContentIds.toSet(),
       completedStopIds: progress.completedStopIds,
+      revealedFactKeys: progress.revealedFactKeys.toSet(),
+      solvedPuzzleIds: progress.solvedPuzzleIds.toSet(),
       xp: progress.xp,
       loading: false,
     );
-
-    if (isFreshStart && mission.hasOpeningNarration) {
-      await _speak(
-        subjectId: 'opening:${mission.id}',
-        kind: 'opening',
-        text: mission.openingNarrationText ?? '',
-        preRecordedUrl: mission.openingNarrationAudioUrl,
-        title: mission.title,
-      );
-    }
+    // The opening narration is spoken on the Adventure Introduction screen,
+    // BEFORE the player ever reaches this GPS-tracking player (spec: "they
+    // should first be pulled into a story," not shown a map immediately) —
+    // never replayed here, so it's heard exactly once per fresh start.
   }
 
   void _onFix(TravelContext ctx) {
     final loc = ctx.location;
     final stop = state.currentStop;
-    if (loc == null || stop == null || state.awaitingQr || state.missionComplete) return;
+    if (loc == null ||
+        stop == null ||
+        state.awaitingQr ||
+        state.missionComplete ||
+        state.hasPendingPuzzle) {
+      return;
+    }
 
     final isNarrationPlaying = ref.read(missionAudioControllerProvider).isActive;
     final result = _engine.evaluate(
@@ -196,6 +220,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
 
   Future<void> _fireTravelStory(MissionTravelStory story) async {
     _markFired(story.id);
+    if (story.revealsFactKeys.isNotEmpty) _markFactsRevealed(story.revealsFactKeys);
     state = state.copyWith(lastNarrationText: story.text);
     await _speak(
       subjectId: story.id,
@@ -203,6 +228,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       text: story.text,
       preRecordedUrl: story.audioUrl,
       title: state.mission?.title ?? 'Adventure',
+      voiceId: story.voiceId,
     );
   }
 
@@ -227,19 +253,34 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     }
   }
 
+  /// Called by the Old World screen once its narration is known (facts are
+  /// revealed the moment the content is shown, not gated on audio actually
+  /// finishing — matches how travel stories reveal facts the instant they
+  /// fire).
+  void markFactsRevealed(List<String> keys) {
+    if (keys.isEmpty) return;
+    _markFactsRevealed(keys);
+  }
+
+  void _markFactsRevealed(List<String> keys) {
+    state = state.copyWith(revealedFactKeys: {...state.revealedFactKeys, ...keys});
+    _persist();
+  }
+
   Future<void> _speak({
     required String subjectId,
     required String kind,
     required String text,
     String? preRecordedUrl,
     required String title,
+    String? voiceId,
   }) async {
     if (text.trim().isEmpty && (preRecordedUrl ?? '').trim().isEmpty) return;
     String? audioUrl = preRecordedUrl;
     if ((audioUrl ?? '').trim().isEmpty) {
       final result = await ref
           .read(missionNarrationServiceProvider)
-          .requestFor(subjectId: subjectId, kind: kind, text: text);
+          .requestFor(subjectId: subjectId, kind: kind, text: text, voiceId: voiceId);
       audioUrl = result?.audioUrl;
     }
     await ref.read(missionAudioControllerProvider.notifier).play(
@@ -289,8 +330,9 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
 
   /// Marks [stop] complete, advances to its next stop (preferring an
   /// explicit `next_stop_id`, falling back to the next sequence number), or
-  /// finishes the mission if none remains. Returns true if the mission just
-  /// completed.
+  /// -- when none remains -- checks for a mission-level puzzle before
+  /// finishing. Returns true if the mission just completed outright (no
+  /// puzzle, or already solved on a previous run).
   Future<bool> _completeStop(MissionStop stop, {String? oldWorldId}) async {
     final completed = {...state.completedStopIds, stop.id}.toList();
 
@@ -301,16 +343,8 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     next ??= state.stops.where((s) => s.sequence == stop.sequence + 1).firstOrNull;
 
     if (next == null) {
-      final mission = state.mission;
-      final finalXp = state.xp + (mission?.completionRewardXp ?? 0);
-      state = state.copyWith(
-        completedStopIds: completed,
-        awaitingQr: false,
-        missionComplete: true,
-        xp: finalXp,
-      );
-      await _persist(status: 'completed');
-      return true;
+      state = state.copyWith(completedStopIds: completed, awaitingQr: false);
+      return _checkFinalPuzzleOrComplete();
     }
 
     final stories = await ref.read(missionRepositoryProvider).travelStoriesForStop(next.id);
@@ -324,6 +358,46 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     return false;
   }
 
+  Future<bool> _checkFinalPuzzleOrComplete() async {
+    final mission = state.mission;
+    if (mission == null) return false;
+    final puzzle = await ref.read(missionRepositoryProvider).finalPuzzleForMission(mission.id);
+    if (puzzle != null && !state.solvedPuzzleIds.contains(puzzle.id)) {
+      state = state.copyWith(pendingPuzzle: puzzle);
+      await _persist();
+      return false;
+    }
+    return _finalizeMissionComplete();
+  }
+
+  /// Checks [answer] against the pending final puzzle (spec: a simple,
+  /// honest string match, not an AI grader). On success, awards the
+  /// puzzle's own XP and completes the mission; on failure, the pending
+  /// puzzle stays in place so the player can try again.
+  bool solvePuzzle(String answer) {
+    final puzzle = state.pendingPuzzle;
+    if (puzzle == null) return false;
+    if (!puzzle.checkAnswer(answer)) return false;
+
+    state = state.copyWith(
+      solvedPuzzleIds: {...state.solvedPuzzleIds, puzzle.id},
+      xp: state.xp + puzzle.rewardXp,
+      clearPendingPuzzle: true,
+    );
+    _finalizeMissionComplete();
+    return true;
+  }
+
+  bool _finalizeMissionComplete() {
+    final mission = state.mission;
+    state = state.copyWith(
+      missionComplete: true,
+      xp: state.xp + (mission?.completionRewardXp ?? 0),
+    );
+    _persist(status: 'completed');
+    return true;
+  }
+
   Future<void> _persist({String? status}) async {
     final base = _progress;
     if (base == null || base.id.isEmpty) return;
@@ -331,6 +405,8 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       currentStopId: state.currentStop?.id,
       completedStopIds: state.completedStopIds,
       firedContentIds: state.firedIds.toList(),
+      revealedFactKeys: state.revealedFactKeys.toList(),
+      solvedPuzzleIds: state.solvedPuzzleIds.toList(),
       xp: state.xp,
       status: status ?? base.status,
       completedAt: status == 'completed' ? DateTime.now().toUtc() : base.completedAt,

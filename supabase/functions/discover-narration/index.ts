@@ -112,6 +112,13 @@ interface DiscoverRequest {
   // ("Hey Steve, I found something..."). Omitted entirely (never "there")
   // when unknown; the alert prompt writes around a missing name gracefully.
   visitorName?: string;
+  // subjectType 'mission' only -- an optional ElevenLabs voice id override
+  // for this speaker/character (see mission_travel_stories.voice_id /
+  // old_worlds.voice_id). Omitted falls back to the shared global default
+  // voice, exactly as every other narration in this app already does --
+  // this is the minimal seam for "each character should eventually have an
+  // associated voice," not a character/voice management system.
+  voiceId?: string;
 }
 
 function isSubjectType(v: unknown): v is SubjectType {
@@ -210,8 +217,9 @@ async function openaiText(system: string, user: string): Promise<string> {
 
 async function voiceLine(
   text: string,
+  voiceIdOverride?: string,
 ): Promise<{ url: string; durationSeconds: number }> {
-  const voiceId = (await globalDefaultVoiceId()) || VOICE_FALLBACK;
+  const voiceId = voiceIdOverride || (await globalDefaultVoiceId()) || VOICE_FALLBACK;
   const tts = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
     {
@@ -312,7 +320,7 @@ Deno.serve(async (req: Request) => {
 
     let audioUrl: string | null = null;
     try {
-      const voiced = await voiceLine(script);
+      const voiced = await voiceLine(script, body.voiceId);
       audioUrl = voiced.url;
     } catch (_e) {
       // Text still returned even if TTS fails — the client can fall back to

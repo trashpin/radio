@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_fact.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
@@ -127,6 +129,53 @@ class MissionRepository {
     }
   }
 
+  Future<List<MissionFact>> factsForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_facts')
+          .select()
+          .eq('mission_id', missionId) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionFact.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// The mission-level (stop_id null) puzzle — today, always the final
+  /// puzzle shown before Mission Complete. Returns the first by [sequence]
+  /// if more than one exists.
+  Future<MissionPuzzle?> finalPuzzleForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_puzzles')
+          .select()
+          .eq('mission_id', missionId)
+          .isFilter('stop_id', null)
+          .order('sequence', ascending: true)
+          .limit(1) as List;
+      if (rows.isEmpty) return null;
+      return MissionPuzzle.fromJson(rows.first as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<MissionPuzzle>> puzzlesForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_puzzles')
+          .select()
+          .eq('mission_id', missionId)
+          .order('sequence', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionPuzzle.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   // ── Admin writes ──────────────────────────────────────────────────────
 
   Future<String> createMission(Map<String, dynamic> row) async {
@@ -182,6 +231,27 @@ class MissionRepository {
         await SupabaseService.client.from('qr_portals').insert(row).select('id').single();
     return inserted['id'].toString();
   }
+
+  Future<String> createFact(Map<String, dynamic> row) async {
+    final inserted =
+        await SupabaseService.client.from('mission_facts').insert(row).select('id').single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> deleteFact(String id) =>
+      SupabaseService.client.from('mission_facts').delete().eq('id', id);
+
+  Future<String> createPuzzle(Map<String, dynamic> row) async {
+    final inserted =
+        await SupabaseService.client.from('mission_puzzles').insert(row).select('id').single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updatePuzzle(String id, Map<String, dynamic> fields) => _resilient(
+      fields, (r) => SupabaseService.client.from('mission_puzzles').update(r).eq('id', id));
+
+  Future<void> deletePuzzle(String id) =>
+      SupabaseService.client.from('mission_puzzles').delete().eq('id', id);
 
   /// Runs a write, and if it fails only because a column isn't in the schema
   /// cache yet, drops that column and retries (same pattern as every other
@@ -247,4 +317,21 @@ final travelStoriesForStopProvider =
 final oldWorldByIdProvider = FutureProvider.family<OldWorld?, String>((ref, id) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).oldWorldById(id);
+});
+
+final factsForMissionProvider = FutureProvider.family<List<MissionFact>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).factsForMission(missionId);
+});
+
+final finalPuzzleForMissionProvider =
+    FutureProvider.family<MissionPuzzle?, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).finalPuzzleForMission(missionId);
+});
+
+final puzzlesForMissionProvider =
+    FutureProvider.family<List<MissionPuzzle>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).puzzlesForMission(missionId);
 });

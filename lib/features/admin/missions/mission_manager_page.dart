@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_stops_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 
-const List<String> _kDifficulties = ['easy', 'moderate', 'hard'];
+const List<String> _kDifficulties = ['easy', 'adventure', 'challenge', 'master'];
 
 /// Admin -> Mission Manager (spec Phase 9) — the minimum capability needed
 /// to create and edit a Marion County Adventures mission: CREATE MISSION
@@ -82,6 +83,13 @@ class _MissionRow extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => MissionStopsPage(mission: mission)),
             ),
           ),
+          IconButton(
+            tooltip: 'Facts & final puzzle',
+            icon: const Icon(Icons.psychology_alt_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => MissionFactsPuzzlesPage(mission: mission)),
+            ),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) async {
               final repo = ref.read(missionRepositoryProvider);
@@ -120,9 +128,12 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
   final description = TextEditingController(text: mission?.description ?? '');
   final category = TextEditingController(text: mission?.category ?? '');
   final duration = TextEditingController(text: mission?.estimatedDurationMinutes?.toString() ?? '');
+  final introCharacter = TextEditingController(text: mission?.introCharacterName ?? '');
   final openingText = TextEditingController(text: mission?.openingNarrationText ?? '');
+  final missionBrief = TextEditingController(text: mission?.missionBriefText ?? '');
   final rewardXp = TextEditingController(text: '${mission?.completionRewardXp ?? 0}');
   final badge = TextEditingController(text: mission?.completionBadge ?? '');
+  final finalReveal = TextEditingController(text: mission?.finalRevealText ?? '');
   var difficulty = mission?.difficulty;
 
   final saved = await showDialog<bool>(
@@ -175,12 +186,42 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
                 decoration: const InputDecoration(
                     labelText: 'Estimated duration (minutes)', border: OutlineInputBorder()),
               ),
+              const SizedBox(height: 20),
+              const Text('Adventure Introduction',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text(
+                'Shown BEFORE the map/GPS player — the story that pulls the player in.',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 8),
+              TextField(
+                  controller: introCharacter,
+                  decoration: const InputDecoration(
+                      labelText: 'Who speaks the introduction (optional)',
+                      border: OutlineInputBorder())),
               const SizedBox(height: 12),
               TextField(
                 controller: openingText,
                 maxLines: 3,
                 decoration: const InputDecoration(
-                    labelText: 'Opening narration (spoken when the player starts)',
+                    labelText: 'Opening narration (the story itself)',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: missionBrief,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'YOUR MISSION (what to find / why / what to figure out)',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 20),
+              const Text('Completion', style: TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              TextField(
+                controller: finalReveal,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'Final reveal (how the clues connected, optional)',
                     border: OutlineInputBorder()),
               ),
               const SizedBox(height: 12),
@@ -224,6 +265,9 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
     'difficulty': difficulty,
     'estimated_duration_minutes': int.tryParse(duration.text.trim()),
     'opening_narration_text': openingText.text.trim().isEmpty ? null : openingText.text.trim(),
+    'intro_character_name': introCharacter.text.trim().isEmpty ? null : introCharacter.text.trim(),
+    'mission_brief_text': missionBrief.text.trim().isEmpty ? null : missionBrief.text.trim(),
+    'final_reveal_text': finalReveal.text.trim().isEmpty ? null : finalReveal.text.trim(),
     'completion_reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
     'completion_badge': badge.text.trim().isEmpty ? null : badge.text.trim(),
   };

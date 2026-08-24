@@ -179,6 +179,8 @@ class MissionStopDetailPage extends ConsumerWidget {
     final text = TextEditingController(text: story?.text ?? '');
     final distanceMiles = TextEditingController(
         text: story == null ? '' : (story.triggerDistanceMeters / 1609.344).toStringAsFixed(2));
+    final speakerName = TextEditingController(text: story?.speakerName ?? '');
+    final revealsFactKeys = TextEditingController(text: story?.revealsFactKeys.join(', ') ?? '');
     var triggerType = story?.triggerType ?? 'travel';
 
     final saved = await showDialog<bool>(
@@ -188,31 +190,47 @@ class MissionStopDetailPage extends ConsumerWidget {
           title: Text(story == null ? 'Add travel/approach story' : 'Edit story'),
           content: SizedBox(
             width: 380,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'travel', label: Text('Travel')),
-                  ButtonSegment(value: 'approach', label: Text('Approach')),
-                ],
-                selected: {triggerType},
-                onSelectionChanged: (s) => setState(() => triggerType = s.first),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: distanceMiles,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                    labelText: 'Trigger distance (miles from this stop)',
-                    border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: text,
-                maxLines: 3,
-                decoration:
-                    const InputDecoration(labelText: 'Narration text', border: OutlineInputBorder()),
-              ),
-            ]),
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'travel', label: Text('Travel')),
+                    ButtonSegment(value: 'approach', label: Text('Approach')),
+                  ],
+                  selected: {triggerType},
+                  onSelectionChanged: (s) => setState(() => triggerType = s.first),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: distanceMiles,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                      labelText: 'Trigger distance (miles from this stop)',
+                      border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                    controller: speakerName,
+                    decoration: const InputDecoration(
+                        labelText: 'Speaker (optional, e.g. "Thomas")',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: text,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                      labelText: 'Narration text', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: revealsFactKeys,
+                  decoration: const InputDecoration(
+                      labelText: 'Reveals fact keys (comma-separated, optional)',
+                      helperText: 'The player may not know why yet — a later puzzle can ask about it.',
+                      border: OutlineInputBorder()),
+                ),
+              ]),
+            ),
           ),
           actions: [
             TextButton(
@@ -233,6 +251,12 @@ class MissionStopDetailPage extends ConsumerWidget {
       'trigger_type': triggerType,
       'trigger_distance_meters': miles * 1609.344,
       'text': text.text.trim(),
+      'speaker_name': speakerName.text.trim().isEmpty ? null : speakerName.text.trim(),
+      'reveals_fact_keys': revealsFactKeys.text
+          .split(',')
+          .map((k) => k.trim())
+          .where((k) => k.isNotEmpty)
+          .toList(),
     };
     if (story == null) {
       await repo.createTravelStory({...row, 'mission_id': mission.id, 'stop_id': stop.id});
@@ -377,6 +401,7 @@ Future<void> showOldWorldEditorDialog(
   final mapImage = TextEditingController(text: world.historicalMapImageUrl ?? '');
   final narrator = TextEditingController(text: world.narratorName ?? '');
   final clue = TextEditingController(text: world.clueText ?? '');
+  final revealsFactKeys = TextEditingController(text: world.revealsFactKeys.join(', '));
   var isFictional = world.isFictional;
   final characters = [...world.characters];
 
@@ -427,6 +452,12 @@ Future<void> showOldWorldEditorDialog(
                   controller: clue,
                   decoration: const InputDecoration(
                       labelText: 'Clue (optional)', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: revealsFactKeys,
+                  decoration: const InputDecoration(
+                      labelText: 'Reveals fact keys (comma-separated, optional)',
+                      border: OutlineInputBorder())),
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -468,6 +499,11 @@ Future<void> showOldWorldEditorDialog(
                     mapImage.text.trim().isEmpty ? null : mapImage.text.trim(),
                 'narrator_name': narrator.text.trim().isEmpty ? null : narrator.text.trim(),
                 'clue_text': clue.text.trim().isEmpty ? null : clue.text.trim(),
+                'reveals_fact_keys': revealsFactKeys.text
+                    .split(',')
+                    .map((k) => k.trim())
+                    .where((k) => k.isNotEmpty)
+                    .toList(),
                 'is_fictional': isFictional,
                 'characters': characters.map((c) => c.toJson()).toList(),
               });

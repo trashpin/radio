@@ -58,9 +58,17 @@ enum AppRoute {
 
   // Marion County Adventures (GPS + storytelling + QR exploration game).
   missionsHome('/missions'),
+  // The Adventure Introduction (spec: pulled into a story BEFORE any map/
+  // GPS/travel begins) — selecting a mission goes here first, never
+  // straight to the GPS-tracking player.
+  missionIntro('/missions/:id/intro'),
   missionPlayer('/missions/:id'),
   qrScan('/qr-scan'),
   oldWorld('/old-world/:id'),
+  // No id — reads the pending puzzle off the already-active
+  // ActiveMissionController, the same way MissionCompleteScreen already
+  // reads its summary from that controller's state.
+  missionPuzzle('/mission-puzzle'),
   missionComplete('/mission-complete');
 
   const AppRoute(this.path);
@@ -75,6 +83,9 @@ enum AppRoute {
 
   /// `AppRoute.missionPlayer.missionPathFor('42')` → `/missions/42`.
   String missionPathFor(String id) => '/missions/$id';
+
+  /// `AppRoute.missionIntro.missionIntroPathFor('42')` → `/missions/42/intro`.
+  String missionIntroPathFor(String id) => '/missions/$id/intro';
 
   /// `AppRoute.oldWorld.oldWorldPathFor('42')` → `/old-world/42`.
   String oldWorldPathFor(String id) => '/old-world/$id';

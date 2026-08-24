@@ -67,7 +67,14 @@ class _MissionPlayerScreenState extends ConsumerState<MissionPlayerScreen> {
         }
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (state.missionComplete && mounted) {
+          if (!mounted) return;
+          // A stop with requiresQr=false can reach mission-complete or a
+          // pending final puzzle directly from a GPS arrival, with no QR
+          // scan screen in between to make this transition from — this
+          // player screen is the one place both paths always pass through.
+          if (state.hasPendingPuzzle) {
+            context.pushReplacement(AppRoute.missionPuzzle.path);
+          } else if (state.missionComplete) {
             context.pushReplacement(AppRoute.missionComplete.path);
           }
         });

@@ -28,6 +28,7 @@ class MissionNarrationService {
     required String subjectId,
     required String kind,
     required String text,
+    String? voiceId,
   }) async {
     if (!SupabaseService.isConfigured || text.trim().isEmpty) return null;
     try {
@@ -38,6 +39,7 @@ class MissionNarrationService {
           'subjectId': subjectId,
           'kind': kind,
           'text': text,
+          if ((voiceId ?? '').trim().isNotEmpty) 'voiceId': voiceId,
         },
       ).timeout(const Duration(seconds: 45));
       final data = res.data;

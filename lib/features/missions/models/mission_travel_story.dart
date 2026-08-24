@@ -15,6 +15,9 @@ class MissionTravelStory {
     this.priority = 0,
     this.playOnce = true,
     this.sortOrder = 0,
+    this.speakerName,
+    this.voiceId,
+    this.revealsFactKeys = const [],
   });
 
   final String id;
@@ -32,9 +35,25 @@ class MissionTravelStory {
   final bool playOnce;
   final int sortOrder;
 
+  /// Who's speaking this beat (e.g. "Thomas", "Historian", "Narrator") —
+  /// optional; null reads as an unattributed narrator line.
+  final String? speakerName;
+
+  /// An optional ElevenLabs voice override for this speaker. Null falls
+  /// back to the shared global default voice, exactly as every other
+  /// narration in this app already does.
+  final String? voiceId;
+
+  /// Named [MissionFact.key]s this beat reveals when played — the player
+  /// may not know why yet; a later [MissionPuzzle] may ask about one of
+  /// them. Never inferred automatically; an admin tags these explicitly.
+  final List<String> revealsFactKeys;
+
   bool get isApproach => triggerType == 'approach';
 
   static double _d(dynamic v) => (v as num?)?.toDouble() ?? 0;
+  static List<String> _strs(dynamic v) =>
+      v is List ? v.map((e) => e.toString()).toList() : const [];
 
   factory MissionTravelStory.fromJson(Map<String, dynamic> j) => MissionTravelStory(
         id: (j['id'] ?? '').toString(),
@@ -47,6 +66,9 @@ class MissionTravelStory {
         priority: (j['priority'] as num?)?.toInt() ?? 0,
         playOnce: (j['play_once'] ?? true) as bool,
         sortOrder: (j['sort_order'] as num?)?.toInt() ?? 0,
+        speakerName: j['speaker_name'] as String?,
+        voiceId: j['voice_id'] as String?,
+        revealsFactKeys: _strs(j['reveals_fact_keys']),
       );
 
   Map<String, dynamic> toWrite() => {
@@ -59,5 +81,8 @@ class MissionTravelStory {
         'priority': priority,
         'play_once': playOnce,
         'sort_order': sortOrder,
+        'speaker_name': speakerName,
+        'voice_id': voiceId,
+        'reveals_fact_keys': revealsFactKeys,
       };
 }
