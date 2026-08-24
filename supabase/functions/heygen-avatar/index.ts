@@ -57,6 +57,12 @@ interface GenerateRequest {
   action: "generate";
   stepId: string;
   avatarId: string;
+  // "avatar" (HeyGen stock/studio avatar_id) or "talking_photo" (a custom
+  // photo avatar an admin trained in HeyGen directly, e.g. mission_characters
+  // seeded with a real person's photo) -- these are DIFFERENT shapes in
+  // HeyGen's own API, not just a label. Sending the wrong one either errors
+  // or silently renders the wrong/default character.
+  avatarType: "avatar" | "talking_photo";
   // The character's ALREADY-GENERATED ElevenLabs narration for this step
   // (mission_story_steps.audio_url) -- HeyGen lip-syncs to this audio track
   // directly (voice type "audio") rather than re-speaking the script with
@@ -100,11 +106,15 @@ async function generate(body: GenerateRequest): Promise<Response> {
   }
   if (!body.avatarId?.trim()) return json({ error: "avatarId is required" }, 400);
 
+  const character = body.avatarType !== "avatar"
+    ? { type: "talking_photo", talking_photo_id: body.avatarId.trim() }
+    : { type: "avatar", avatar_id: body.avatarId.trim(), avatar_style: "normal" };
+
   const payload: Record<string, unknown> = {
     title: `mission-story-step-${body.stepId}`,
     dimension: { width: 720, height: 1280 }, // portrait, matches the mobile player
     video_inputs: [{
-      character: { type: "avatar", avatar_id: body.avatarId, avatar_style: "normal" },
+      character,
       voice: { type: "audio", audio_url: body.audioUrl.trim() },
     }],
   };

@@ -16,6 +16,7 @@ class Mission {
     this.missionBriefText,
     this.introCharacterName,
     this.introCharacterId,
+    this.openingVideoUrl,
     this.finalRevealText,
   });
 
@@ -56,6 +57,15 @@ class Mission {
   /// the opening narration's own voice.
   final String? introCharacterId;
 
+  /// The character avatar video (HeyGen) shown at the top of the Adventure
+  /// Introduction, before any map/GPS begins — "the first thing a player
+  /// should hear and see." Published from a `mission_introduction`-type
+  /// [MissionStoryStep]. Null falls back to the static character image +
+  /// audio-only narration [MissionIntroScreen] already shows.
+  final String? openingVideoUrl;
+
+  bool get hasOpeningVideo => (openingVideoUrl ?? '').trim().isNotEmpty;
+
   /// "YOU SOLVED IT... you remembered the silver pocket watch..." — the
   /// explanation of how the clues connected, shown at mission completion.
   final String? finalRevealText;
@@ -80,6 +90,7 @@ class Mission {
         missionBriefText: j['mission_brief_text'] as String?,
         introCharacterName: j['intro_character_name'] as String?,
         introCharacterId: j['intro_character_id']?.toString(),
+        openingVideoUrl: j['opening_video_url'] as String?,
         finalRevealText: j['final_reveal_text'] as String?,
       );
 
@@ -98,6 +109,7 @@ class Mission {
         'mission_brief_text': missionBriefText,
         'intro_character_name': introCharacterName,
         'intro_character_id': introCharacterId,
+        'opening_video_url': openingVideoUrl,
         'final_reveal_text': finalRevealText,
       };
 }

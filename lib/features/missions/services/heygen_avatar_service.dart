@@ -34,6 +34,7 @@ class HeyGenAvatarService {
   Future<bool> generate({
     required String stepId,
     required String avatarId,
+    required String avatarType,
     required String audioUrl,
     void Function(String message)? onError,
   }) async {
@@ -45,6 +46,7 @@ class HeyGenAvatarService {
           'action': 'generate',
           'stepId': stepId,
           'avatarId': avatarId,
+          'avatarType': avatarType,
           'audioUrl': audioUrl,
         },
       ).timeout(const Duration(seconds: 30));
