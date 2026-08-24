@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_c
 import 'package:explorer_os_mobile/features/missions/data/mission_progress_repository.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_progress.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
@@ -53,6 +54,7 @@ class ActiveMissionState {
     this.lastDistanceMeters,
     this.lastNarrationText,
     this.loading = false,
+    this.charactersById = const {},
   });
 
   final Mission? mission;
@@ -61,6 +63,11 @@ class ActiveMissionState {
   final List<MissionTravelStory> currentStopStories;
   final Set<String> firedIds;
   final List<String> completedStopIds;
+
+  /// Every [MissionCharacter], loaded once in [ActiveMissionController.
+  /// startMission] — CHARACTER -> VOICE ID resolution reads this map rather
+  /// than querying per story beat.
+  final Map<String, MissionCharacter> charactersById;
 
   /// Named [MissionFact.key]s the player has actually heard so far — the
   /// player may not yet know why (spec: "the player should realize: I was
@@ -102,6 +109,7 @@ class ActiveMissionState {
     double? lastDistanceMeters,
     String? lastNarrationText,
     bool? loading,
+    Map<String, MissionCharacter>? charactersById,
   }) =>
       ActiveMissionState(
         mission: mission ?? this.mission,
@@ -119,6 +127,7 @@ class ActiveMissionState {
         lastDistanceMeters: lastDistanceMeters ?? this.lastDistanceMeters,
         lastNarrationText: lastNarrationText ?? this.lastNarrationText,
         loading: loading ?? this.loading,
+        charactersById: charactersById ?? this.charactersById,
       );
 }
 
@@ -193,6 +202,11 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     );
     final stories = await repo.travelStoriesForStop(currentStop.id);
     final firedIds = progress.firedContentIds.toSet();
+    // Loaded once per mission start, not per story beat -- CHARACTER ->
+    // VOICE ID resolution in [_fireTravelStory]/[_fireArrival] is then a
+    // plain in-memory map lookup, adding no latency to the GPS hot path.
+    final characters = await repo.allCharacters();
+    final charactersById = {for (final c in characters) c.id: c};
 
     // `awaiting_qr` has no column of its own — it's derived from data
     // already persisted. Arrival fired for this stop, but the stop isn't
@@ -219,6 +233,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       xp: progress.xp,
       awaitingQr: alreadyArrived && currentStop.requiresQr,
       loading: false,
+      charactersById: charactersById,
     );
     // The opening narration is spoken on the Adventure Introduction screen,
     // BEFORE the player ever reaches this GPS-tracking player (spec: "they
@@ -279,6 +294,20 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     }
   }
 
+  /// CHARACTER -> VOICE ID: the character's own voice always wins over any
+  /// free-text voice override on the scene itself — a voice is never
+  /// re-picked per scene once a character is assigned. Falls back to
+  /// [fallbackVoiceId] (or the shared global default, null) when no
+  /// character is linked, so content with no character record yet keeps
+  /// working exactly as before.
+  String? _voiceIdFor(String? characterId, String? fallbackVoiceId) {
+    if (characterId != null) {
+      final voice = state.charactersById[characterId]?.voiceId;
+      if ((voice ?? '').trim().isNotEmpty) return voice;
+    }
+    return fallbackVoiceId;
+  }
+
   Future<void> _fireTravelStory(MissionTravelStory story) async {
     _markFired(story.id);
     if (story.revealsFactKeys.isNotEmpty) _markFactsRevealed(story.revealsFactKeys);
@@ -289,7 +318,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       text: story.text,
       preRecordedUrl: story.audioUrl,
       title: state.mission?.title ?? 'Adventure',
-      voiceId: story.voiceId,
+      voiceId: _voiceIdFor(story.characterId, story.voiceId),
     );
   }
 
@@ -305,6 +334,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       text: text,
       preRecordedUrl: stop.arrivalNarrationAudioUrl,
       title: state.mission?.title ?? 'Adventure',
+      voiceId: _voiceIdFor(stop.arrivalCharacterId, null),
     );
 
     if (stop.requiresQr) {

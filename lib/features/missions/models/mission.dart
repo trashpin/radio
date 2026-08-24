@@ -15,6 +15,7 @@ class Mission {
     this.completionBadge,
     this.missionBriefText,
     this.introCharacterName,
+    this.introCharacterId,
     this.finalRevealText,
   });
 
@@ -45,8 +46,15 @@ class Mission {
   final String? missionBriefText;
 
   /// Who speaks the adventure introduction (e.g. "Thomas", or a mystery
-  /// narrator) — shown alongside [openingNarrationText].
+  /// narrator) — shown alongside [openingNarrationText]. Free-text fallback
+  /// for content with no character record; [introCharacterId] takes priority
+  /// when set (see [ActiveMissionController]'s character resolution).
   final String? introCharacterName;
+
+  /// The [MissionCharacter] who speaks the Adventure Introduction. When set,
+  /// its name/image/role/voice are used instead of [introCharacterName] and
+  /// the opening narration's own voice.
+  final String? introCharacterId;
 
   /// "YOU SOLVED IT... you remembered the silver pocket watch..." — the
   /// explanation of how the clues connected, shown at mission completion.
@@ -71,6 +79,7 @@ class Mission {
         completionBadge: j['completion_badge'] as String?,
         missionBriefText: j['mission_brief_text'] as String?,
         introCharacterName: j['intro_character_name'] as String?,
+        introCharacterId: j['intro_character_id']?.toString(),
         finalRevealText: j['final_reveal_text'] as String?,
       );
 
@@ -88,6 +97,7 @@ class Mission {
         'completion_badge': completionBadge,
         'mission_brief_text': missionBriefText,
         'intro_character_name': introCharacterName,
+        'intro_character_id': introCharacterId,
         'final_reveal_text': finalRevealText,
       };
 }

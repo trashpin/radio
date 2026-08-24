@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -27,10 +28,19 @@ class MissionIntroScreen extends ConsumerStatefulWidget {
 
 class _MissionIntroScreenState extends ConsumerState<MissionIntroScreen> {
   bool _spoken = false;
+  MissionCharacter? _character;
 
   Future<void> _speak(Mission mission) async {
     if (_spoken) return;
     _spoken = true;
+    // CHARACTER -> VOICE ID: whoever speaks the introduction keeps that same
+    // voice through every later scene that names them too (travel, arrival,
+    // Old World) — see [ActiveMissionController._voiceIdFor].
+    final character = mission.introCharacterId == null
+        ? null
+        : await ref.read(missionRepositoryProvider).characterById(mission.introCharacterId!);
+    if (mounted) setState(() => _character = character);
+
     final text = (mission.openingNarrationText ?? '').trim();
     if (text.isEmpty && (mission.openingNarrationAudioUrl ?? '').isEmpty) return;
     String? audioUrl = mission.openingNarrationAudioUrl;
@@ -39,6 +49,7 @@ class _MissionIntroScreenState extends ConsumerState<MissionIntroScreen> {
             subjectId: 'opening:${mission.id}',
             kind: 'opening',
             text: text,
+            voiceId: (character?.voiceId ?? '').trim().isNotEmpty ? character!.voiceId : null,
           );
       audioUrl = result?.audioUrl;
     }
@@ -62,7 +73,7 @@ class _MissionIntroScreenState extends ConsumerState<MissionIntroScreen> {
             return Center(child: Text('Adventure not found.', style: RD.body));
           }
           WidgetsBinding.instance.addPostFrameCallback((_) => _speak(mission));
-          return SafeArea(child: _IntroContent(mission: mission));
+          return SafeArea(child: _IntroContent(mission: mission, character: _character));
         },
       ),
     );
@@ -70,8 +81,9 @@ class _MissionIntroScreenState extends ConsumerState<MissionIntroScreen> {
 }
 
 class _IntroContent extends StatelessWidget {
-  const _IntroContent({required this.mission});
+  const _IntroContent({required this.mission, this.character});
   final Mission mission;
+  final MissionCharacter? character;
 
   static const _testsYourWits = [
     'Listen carefully',
@@ -110,7 +122,32 @@ class _IntroContent extends StatelessWidget {
         GlassPanel(
           padding: const EdgeInsets.all(RD.xl),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if ((mission.introCharacterName ?? '').isNotEmpty) ...[
+            if (character != null) ...[
+              Row(children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: RD.panelAlt,
+                  backgroundImage: (character!.imageUrl ?? '').isNotEmpty
+                      ? NetworkImage(character!.imageUrl!)
+                      : null,
+                  child: (character!.imageUrl ?? '').isEmpty
+                      ? const Icon(Icons.person_rounded, color: RD.textSecondary)
+                      : null,
+                ),
+                const SizedBox(width: RD.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(character!.name, style: RD.cardTitle),
+                      if ((character!.role ?? '').isNotEmpty)
+                        Text(character!.role!, style: RD.caption.copyWith(color: RD.green)),
+                    ],
+                  ),
+                ),
+              ]),
+              const SizedBox(height: RD.md),
+            ] else if ((mission.introCharacterName ?? '').isNotEmpty) ...[
               Row(children: [
                 const Icon(Icons.record_voice_over_rounded, color: RD.green, size: 18),
                 const SizedBox(width: RD.xs),

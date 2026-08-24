@@ -16,6 +16,7 @@ class MissionStop {
     this.arrivalRadiusMeters = 150,
     this.arrivalNarrationText,
     this.arrivalNarrationAudioUrl,
+    this.arrivalCharacterId,
     this.requiresQr = true,
     this.qrPortalId,
     this.oldWorldId,
@@ -32,6 +33,11 @@ class MissionStop {
   final double arrivalRadiusMeters;
   final String? arrivalNarrationText;
   final String? arrivalNarrationAudioUrl;
+
+  /// The [MissionCharacter] who speaks the arrival narration — when set, its
+  /// voice is used instead of the shared global default (see
+  /// [ActiveMissionController]'s character resolution).
+  final String? arrivalCharacterId;
   final bool requiresQr;
   final String? qrPortalId;
   final String? oldWorldId;
@@ -50,6 +56,7 @@ class MissionStop {
         arrivalRadiusMeters: (j['arrival_radius_meters'] as num?)?.toDouble() ?? 150,
         arrivalNarrationText: j['arrival_narration_text'] as String?,
         arrivalNarrationAudioUrl: j['arrival_narration_audio_url'] as String?,
+        arrivalCharacterId: j['arrival_character_id']?.toString(),
         requiresQr: (j['requires_qr'] ?? true) as bool,
         qrPortalId: j['qr_portal_id']?.toString(),
         oldWorldId: j['old_world_id']?.toString(),
@@ -66,6 +73,7 @@ class MissionStop {
         'arrival_radius_meters': arrivalRadiusMeters,
         'arrival_narration_text': arrivalNarrationText,
         'arrival_narration_audio_url': arrivalNarrationAudioUrl,
+        'arrival_character_id': arrivalCharacterId,
         'requires_qr': requiresQr,
         'qr_portal_id': qrPortalId,
         'old_world_id': oldWorldId,

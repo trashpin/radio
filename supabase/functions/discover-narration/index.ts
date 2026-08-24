@@ -90,7 +90,12 @@ type Kind =
   | "travel"
   | "approach"
   | "arrival"
-  | "old_world";
+  | "old_world"
+  // Generic Story Production System step kinds not already covered above
+  // (discovery/qr/clue/final_reveal beats) — mission_introduction/
+  // travel_story/approach_story/arrival still map to the specific kinds
+  // above so their cache entries line up with pre-existing mission content.
+  | "story_step";
 
 interface DiscoverRequest {
   subjectType: SubjectType;
@@ -119,6 +124,12 @@ interface DiscoverRequest {
   // this is the minimal seam for "each character should eventually have an
   // associated voice," not a character/voice management system.
   voiceId?: string;
+  // Bypasses the cache read (never the write) -- REGENERATE VOICE in the
+  // Story Builder needs a fresh ElevenLabs render even though a cached
+  // result already exists for this subjectId+kind. The new render still
+  // overwrites the same cache row (storeNarration's own upsert), so later
+  // callers keep getting the regenerated version without their own force.
+  force?: boolean;
 }
 
 function isSubjectType(v: unknown): v is SubjectType {
@@ -128,7 +139,7 @@ function isSubjectType(v: unknown): v is SubjectType {
 function isKind(v: unknown): v is Kind {
   return v === "short" || v === "long" || v === "greeting" || v === "alert" ||
     v === "opening" || v === "travel" || v === "approach" || v === "arrival" ||
-    v === "old_world";
+    v === "old_world" || v === "story_step";
 }
 
 /** Mission narration (Marion County Adventures) is always admin-authored
@@ -307,7 +318,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const cached = await cachedNarration(body.subjectType, body.subjectId, body.kind);
+    const cached = body.force ? null : await cachedNarration(body.subjectType, body.subjectId, body.kind);
     if (cached) {
       return json({ text: cached.script, audioUrl: cached.audio_url, cached: true });
     }

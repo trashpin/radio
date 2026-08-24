@@ -3,9 +3,11 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_fact.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_story_step.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
 import 'package:explorer_os_mobile/features/missions/models/qr_portal.dart';
@@ -176,6 +178,69 @@ class MissionRepository {
     }
   }
 
+  /// Every character (migration 0065) — a small, global, reusable table, not
+  /// scoped to one mission. [ActiveMissionController] loads this once per
+  /// mission start and resolves `character_id` -> voice/name from it, rather
+  /// than a query per story beat.
+  Future<List<MissionCharacter>> allCharacters() async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_characters')
+          .select()
+          .order('name', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionCharacter.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// A mission's Story Builder sequence, in order. This is the
+  /// authoring/production list — it does not affect what the live GPS
+  /// player reads (see [MissionStoryStep]'s own doc comment).
+  Future<List<MissionStoryStep>> storyStepsForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_story_steps')
+          .select()
+          .eq('mission_id', missionId)
+          .order('step_order', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionStoryStep.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<String> createStoryStep(Map<String, dynamic> row) async {
+    final inserted = await SupabaseService.client
+        .from('mission_story_steps')
+        .insert(row)
+        .select('id')
+        .single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updateStoryStep(String id, Map<String, dynamic> fields) => _resilient(fields,
+      (r) => SupabaseService.client.from('mission_story_steps').update(r).eq('id', id));
+
+  Future<void> deleteStoryStep(String id) =>
+      SupabaseService.client.from('mission_story_steps').delete().eq('id', id);
+
+  Future<MissionCharacter?> characterById(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('mission_characters')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : MissionCharacter.fromJson(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ── Admin writes ──────────────────────────────────────────────────────
 
   Future<String> createMission(Map<String, dynamic> row) async {
@@ -252,6 +317,21 @@ class MissionRepository {
 
   Future<void> deletePuzzle(String id) =>
       SupabaseService.client.from('mission_puzzles').delete().eq('id', id);
+
+  Future<String> createCharacter(Map<String, dynamic> row) async {
+    final inserted = await SupabaseService.client
+        .from('mission_characters')
+        .insert(row)
+        .select('id')
+        .single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updateCharacter(String id, Map<String, dynamic> fields) => _resilient(
+      fields, (r) => SupabaseService.client.from('mission_characters').update(r).eq('id', id));
+
+  Future<void> deleteCharacter(String id) =>
+      SupabaseService.client.from('mission_characters').delete().eq('id', id);
 
   /// Runs a write, and if it fails only because a column isn't in the schema
   /// cache yet, drops that column and retries (same pattern as every other
@@ -334,4 +414,23 @@ final puzzlesForMissionProvider =
     FutureProvider.family<List<MissionPuzzle>, String>((ref, missionId) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).puzzlesForMission(missionId);
+});
+
+/// Every character — the admin Character Manager's list, and the source
+/// [ActiveMissionController] reads to resolve `character_id` -> voice/name.
+final missionCharactersProvider = FutureProvider<List<MissionCharacter>>((ref) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).allCharacters();
+});
+
+final missionCharacterByIdProvider = FutureProvider.family<MissionCharacter?, String>((ref, id) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).characterById(id);
+});
+
+/// A mission's Story Builder sequence, in order.
+final storyStepsForMissionProvider =
+    FutureProvider.family<List<MissionStoryStep>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).storyStepsForMission(missionId);
 });

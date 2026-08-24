@@ -123,6 +123,12 @@ enum AdminModule {
           'The minimum admin capability needed for the GPS + storytelling + QR '
           'exploration game (Phase 9).',
       table: 'missions'),
+  missionCharacters('Character Manager', Icons.theater_comedy_outlined, AdminGroup.content,
+      ready: true,
+      description: 'Marion County Adventures — reusable characters (Thomas, Narrator, '
+          'Historian...), each with an ElevenLabs voice every story scene that names '
+          'them inherits automatically.',
+      table: 'mission_characters'),
   eventDiscovery('Event Discovery', Icons.travel_explore_rounded,
       AdminGroup.content,
       ready: true,
