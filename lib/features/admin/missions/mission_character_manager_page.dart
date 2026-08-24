@@ -143,6 +143,7 @@ Future<void> showCharacterEditorDialog(
   final heygenAvatarId = TextEditingController(text: character?.heygenAvatarId ?? '');
   var characterType = character?.characterType;
   var voiceId = character?.voiceId;
+  var heygenAvatarType = character?.heygenAvatarType ?? kHeygenAvatarTypeTalkingPhoto;
   var active = character?.active ?? true;
 
   final saved = await showDialog<bool>(
@@ -225,15 +226,33 @@ Future<void> showCharacterEditorDialog(
               const SizedBox(height: 20),
               const Text('Avatar', style: TextStyle(fontWeight: FontWeight.w700)),
               const Text(
-                'HeyGen isn\'t connected yet — this is stored for when avatar video '
-                'presentation is wired up, so nothing needs re-entering later.',
+                'Used for AVATAR VIDEO presentation steps in the Story Builder — every '
+                'scene that uses this character generates video from this avatar.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: heygenAvatarType,
+                decoration: const InputDecoration(
+                    labelText: 'Avatar type',
+                    helperText: 'Talking Photo = a custom photo avatar trained in HeyGen. '
+                        'Avatar = one of HeyGen\'s stock/studio avatars.',
+                    border: OutlineInputBorder()),
+                items: const [
+                  DropdownMenuItem(
+                      value: kHeygenAvatarTypeTalkingPhoto, child: Text('Talking Photo (custom)')),
+                  DropdownMenuItem(value: kHeygenAvatarTypeAvatar, child: Text('Avatar (stock)')),
+                ],
+                onChanged: (v) => setState(() => heygenAvatarType = v!),
+              ),
+              const SizedBox(height: 12),
               TextField(
                 controller: heygenAvatarId,
-                decoration: const InputDecoration(
-                    labelText: 'HeyGen Avatar ID (optional)', border: OutlineInputBorder()),
+                decoration: InputDecoration(
+                    labelText: heygenAvatarType == kHeygenAvatarTypeTalkingPhoto
+                        ? 'HeyGen Talking Photo ID (optional)'
+                        : 'HeyGen Avatar ID (optional)',
+                    border: const OutlineInputBorder()),
               ),
               const SizedBox(height: 8),
               SwitchListTile(
@@ -268,6 +287,7 @@ Future<void> showCharacterEditorDialog(
         ? voiceId
         : (manualVoiceId.text.trim().isEmpty ? null : manualVoiceId.text.trim()),
     'heygen_avatar_id': heygenAvatarId.text.trim().isEmpty ? null : heygenAvatarId.text.trim(),
+    'heygen_avatar_type': heygenAvatarType,
     'active': active,
   };
   final repo = ref.read(missionRepositoryProvider);

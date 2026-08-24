@@ -197,6 +197,7 @@ class _StepRowState extends ConsumerState<_StepRow> {
     final started = await ref.read(heyGenAvatarServiceProvider).generate(
           stepId: step.id,
           avatarId: character!.heygenAvatarId!,
+          avatarType: character.heygenAvatarType,
           audioUrl: step.audioUrl!,
           onError: (m) => failure = m,
         );

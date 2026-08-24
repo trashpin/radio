@@ -53,9 +53,16 @@ class StoryStepPublisher {
       'opening_narration_text': step.script,
       'opening_narration_audio_url': step.audioUrl,
       'intro_character_id': step.characterId,
+      // The whole reason a mission_introduction step supports avatar video:
+      // "the first thing a player should hear and see" when they select an
+      // adventure. Null when this step has no avatar video yet -- an admin
+      // can publish the text/audio narration first and add video later.
+      'opening_video_url': step.avatarVideoUrl,
     });
     await _markPublished(step);
-    return const PublishResult.success('Published to the mission\'s Adventure Introduction.');
+    return PublishResult.success(step.hasAvatarVideo
+        ? 'Published — the avatar video now plays when a player selects this adventure.'
+        : 'Published the introduction narration (no avatar video generated yet).');
   }
 
   Future<PublishResult> _publishTravelOrApproach(MissionStoryStep step) async {

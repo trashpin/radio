@@ -14,6 +14,7 @@ class MissionCharacter {
     this.role,
     this.voiceId,
     this.heygenAvatarId,
+    this.heygenAvatarType = kHeygenAvatarTypeTalkingPhoto,
     this.active = true,
   });
 
@@ -39,6 +40,14 @@ class MissionCharacter {
   /// `HeyGenAvatarService`'s own doc comment) — this field exists so it can
   /// be wired in later without another migration.
   final String? heygenAvatarId;
+
+  /// Which HeyGen character shape [heygenAvatarId] is: [kHeygenAvatarTypeAvatar]
+  /// for a stock/studio avatar_id, [kHeygenAvatarTypeTalkingPhoto] for a
+  /// custom photo avatar (talking_photo_id) an admin trained in HeyGen
+  /// directly. These use different request shapes in the HeyGen API — not
+  /// interchangeable, so getting this wrong means the video generates from
+  /// the wrong (or a default) character.
+  final String heygenAvatarType;
   final bool active;
 
   bool get hasVoice => (voiceId ?? '').trim().isNotEmpty;
@@ -54,6 +63,8 @@ class MissionCharacter {
         role: j['role'] as String?,
         voiceId: j['voice_id'] as String?,
         heygenAvatarId: j['heygen_avatar_id'] as String?,
+        heygenAvatarType:
+            (j['heygen_avatar_type'] ?? kHeygenAvatarTypeTalkingPhoto) as String,
         active: (j['active'] ?? true) as bool,
       );
 
@@ -66,9 +77,14 @@ class MissionCharacter {
         'role': role,
         'voice_id': voiceId,
         'heygen_avatar_id': heygenAvatarId,
+        'heygen_avatar_type': heygenAvatarType,
         'active': active,
       };
 }
+
+const kHeygenAvatarTypeAvatar = 'avatar';
+const kHeygenAvatarTypeTalkingPhoto = 'talking_photo';
+const List<String> kHeygenAvatarTypes = [kHeygenAvatarTypeTalkingPhoto, kHeygenAvatarTypeAvatar];
 
 /// Suggested character types (free text — not enforced) shown in the admin
 /// editor's dropdown.
