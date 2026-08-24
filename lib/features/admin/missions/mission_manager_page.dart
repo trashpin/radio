@@ -6,13 +6,16 @@ import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 
+const List<String> _kDifficulties = ['easy', 'moderate', 'hard'];
+
 /// Admin -> Mission Manager (spec Phase 9) — the minimum capability needed
-/// to create and edit a Marion County Adventures mission: CREATE MISSION,
-/// then drill into its stops (`MissionStopsPage`) to ADD STOP / ADD TRAVEL
-/// STORY / ADD APPROACH STORY / ADD ARRIVAL STORY / ASSIGN QR / CREATE OLD
-/// WORLD / ADD CLUE / ASSIGN NEXT STOP, and PUBLISH. Deliberately not a full
-/// CMS — reuses the same AdminSectionCard/StatusBadge/AdminPageHeader
-/// widgets every other admin module already uses.
+/// to create and edit a Marion County Adventures mission: CREATE MISSION
+/// (with every Phase-1 field, not just a title), then drill into its stops
+/// (`MissionStopsPage`) to ADD STOP / ADD TRAVEL STORY / ADD APPROACH STORY
+/// / ADD ARRIVAL STORY / ASSIGN QR / CREATE OLD WORLD / ADD CLUE / ASSIGN
+/// NEXT STOP, and PUBLISH. Deliberately not a full CMS — reuses the same
+/// AdminSectionCard/StatusBadge/AdminPageHeader widgets every other admin
+/// module already uses.
 class MissionManagerPage extends ConsumerWidget {
   const MissionManagerPage({super.key});
 
@@ -28,7 +31,7 @@ class MissionManagerPage extends ConsumerWidget {
               'stories, QR portals, and Old World content, then publish it.',
           actions: [
             FilledButton.icon(
-              onPressed: () => _createMission(context, ref),
+              onPressed: () => showMissionEditorDialog(context, ref),
               icon: const Icon(Icons.add_rounded, size: 18),
               label: const Text('New Mission'),
             ),
@@ -52,35 +55,6 @@ class MissionManagerPage extends ConsumerWidget {
       ],
     );
   }
-
-  Future<void> _createMission(BuildContext context, WidgetRef ref) async {
-    final titleController = TextEditingController();
-    final title = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('New mission'),
-        content: TextField(
-          controller: titleController,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, titleController.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-    if (title == null || title.isEmpty) return;
-    await ref.read(missionRepositoryProvider).createMission({
-      'title': title,
-      'published': false,
-      'completion_reward_xp': 0,
-    });
-    ref.read(missionsRefreshProvider.notifier).bump();
-  }
 }
 
 class _MissionRow extends ConsumerWidget {
@@ -95,33 +69,170 @@ class _MissionRow extends ConsumerWidget {
         subtitle: Text([
           if ((mission.category ?? '').isNotEmpty) mission.category,
           if ((mission.difficulty ?? '').isNotEmpty) mission.difficulty,
+          if (mission.estimatedDurationMinutes != null) '${mission.estimatedDurationMinutes} min',
         ].whereType<String>().join(' · ')),
         leading: mission.published
             ? const StatusBadge(BadgeStatus.published, label: 'Published')
             : const StatusBadge(BadgeStatus.draft, label: 'Draft'),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) async {
-            final repo = ref.read(missionRepositoryProvider);
-            switch (v) {
-              case 'publish':
-                await repo.updateMission(mission.id, {'published': !mission.published});
-                ref.read(missionsRefreshProvider.notifier).bump();
-              case 'delete':
-                await repo.deleteMission(mission.id);
-                ref.read(missionsRefreshProvider.notifier).bump();
-            }
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-                value: 'publish',
-                child: Text(mission.published ? 'Unpublish' : 'Publish')),
-            const PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-        ),
+        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+          IconButton(
+            tooltip: 'Manage stops',
+            icon: const Icon(Icons.pin_drop_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => MissionStopsPage(mission: mission)),
+            ),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) async {
+              final repo = ref.read(missionRepositoryProvider);
+              switch (v) {
+                case 'edit':
+                  await showMissionEditorDialog(context, ref, mission: mission);
+                case 'publish':
+                  await repo.updateMission(mission.id, {'published': !mission.published});
+                  ref.read(missionsRefreshProvider.notifier).bump();
+                case 'delete':
+                  await repo.deleteMission(mission.id);
+                  ref.read(missionsRefreshProvider.notifier).bump();
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit', child: Text('Edit details')),
+              PopupMenuItem(
+                  value: 'publish',
+                  child: Text(mission.published ? 'Unpublish' : 'Publish')),
+              const PopupMenuItem(value: 'delete', child: Text('Delete')),
+            ],
+          ),
+        ]),
         onTap: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => MissionStopsPage(mission: mission)),
         ),
       ),
     );
   }
+}
+
+/// The full mission create/edit dialog — every Phase-1 field. Used for both
+/// "New Mission" (no [mission]) and "Edit details".
+Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Mission? mission}) async {
+  final title = TextEditingController(text: mission?.title ?? '');
+  final description = TextEditingController(text: mission?.description ?? '');
+  final category = TextEditingController(text: mission?.category ?? '');
+  final duration = TextEditingController(text: mission?.estimatedDurationMinutes?.toString() ?? '');
+  final openingText = TextEditingController(text: mission?.openingNarrationText ?? '');
+  final rewardXp = TextEditingController(text: '${mission?.completionRewardXp ?? 0}');
+  final badge = TextEditingController(text: mission?.completionBadge ?? '');
+  var difficulty = mission?.difficulty;
+
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) => AlertDialog(
+        title: Text(mission == null ? 'New mission' : 'Edit mission'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: title,
+                  decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                controller: description,
+                maxLines: 2,
+                decoration:
+                    const InputDecoration(labelText: 'Description', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: category,
+                    decoration: const InputDecoration(
+                        labelText: 'Category (history, mystery, nature...)',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: difficulty,
+                    decoration:
+                        const InputDecoration(labelText: 'Difficulty', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('—')),
+                      for (final d in _kDifficulties) DropdownMenuItem(value: d, child: Text(d)),
+                    ],
+                    onChanged: (v) => setState(() => difficulty = v),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              TextField(
+                controller: duration,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Estimated duration (minutes)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: openingText,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'Opening narration (spoken when the player starts)',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: rewardXp,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                        labelText: 'Completion reward XP', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: badge,
+                    decoration: const InputDecoration(
+                        labelText: 'Completion badge (optional)', border: OutlineInputBorder()),
+                  ),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(mission == null ? 'Create' : 'Save')),
+        ],
+      ),
+    ),
+  );
+
+  if (saved != true || title.text.trim().isEmpty) return;
+  final row = {
+    'title': title.text.trim(),
+    'description': description.text.trim().isEmpty ? null : description.text.trim(),
+    'category': category.text.trim().isEmpty ? null : category.text.trim(),
+    'difficulty': difficulty,
+    'estimated_duration_minutes': int.tryParse(duration.text.trim()),
+    'opening_narration_text': openingText.text.trim().isEmpty ? null : openingText.text.trim(),
+    'completion_reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
+    'completion_badge': badge.text.trim().isEmpty ? null : badge.text.trim(),
+  };
+  final repo = ref.read(missionRepositoryProvider);
+  if (mission == null) {
+    row['published'] = false;
+    await repo.createMission(row);
+  } else {
+    await repo.updateMission(mission.id, row);
+  }
+  ref.read(missionsRefreshProvider.notifier).bump();
 }

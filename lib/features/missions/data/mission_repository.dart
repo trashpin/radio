@@ -98,6 +98,20 @@ class MissionRepository {
     }
   }
 
+  Future<QrPortal?> portalById(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('qr_portals')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : QrPortal.fromJson(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<QrPortal?> portalByCode(String code) async {
     if (!SupabaseService.isConfigured) return null;
     try {
@@ -136,6 +150,9 @@ class MissionRepository {
   Future<void> updateStop(String id, Map<String, dynamic> fields) => _resilient(
       fields, (r) => SupabaseService.client.from('mission_stops').update(r).eq('id', id));
 
+  Future<void> deleteStop(String id) =>
+      SupabaseService.client.from('mission_stops').delete().eq('id', id);
+
   Future<String> createTravelStory(Map<String, dynamic> row) async {
     final inserted = await SupabaseService.client
         .from('mission_travel_stories')
@@ -144,6 +161,12 @@ class MissionRepository {
         .single();
     return inserted['id'].toString();
   }
+
+  Future<void> updateTravelStory(String id, Map<String, dynamic> fields) => _resilient(fields,
+      (r) => SupabaseService.client.from('mission_travel_stories').update(r).eq('id', id));
+
+  Future<void> deleteTravelStory(String id) =>
+      SupabaseService.client.from('mission_travel_stories').delete().eq('id', id);
 
   Future<String> createOldWorld(Map<String, dynamic> row) async {
     final inserted =
@@ -222,5 +245,6 @@ final travelStoriesForStopProvider =
 });
 
 final oldWorldByIdProvider = FutureProvider.family<OldWorld?, String>((ref, id) {
+  ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).oldWorldById(id);
 });
