@@ -67,19 +67,29 @@ class RouteStep {
 /// A driving route from an origin to a destination — the parsed shape of a
 /// single Google Directions API response. [polyline] is every step's start
 /// point followed by the final step's end point, in order; used only for
-/// off-route distance checks, never rendered (this feature ships no map UI).
+/// off-route distance checks (deliberately coarse — fine for that, this
+/// feature itself ships no map UI). [overviewPolyline] is the route's own
+/// encoded overview polyline, decoded — a real road-following shape, added
+/// for the Marion County Adventures journey map (which DOES render a route)
+/// so nothing has to approximate curved roads with straight segments.
 class RoutePlan {
   const RoutePlan({
     required this.steps,
     required this.polyline,
     required this.totalDistanceMeters,
     this.destinationName,
+    this.overviewPolyline = const [],
+    this.totalDurationSeconds,
   });
 
   final List<RouteStep> steps;
   final List<({double lat, double lng})> polyline;
   final double totalDistanceMeters;
   final String? destinationName;
+  final List<({double lat, double lng})> overviewPolyline;
+
+  /// Estimated driving time for the whole route, when Google returned one.
+  final int? totalDurationSeconds;
 
   bool get isEmpty => steps.isEmpty;
 }
