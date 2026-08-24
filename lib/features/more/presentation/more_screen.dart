@@ -17,6 +17,7 @@ class MoreScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <_MoreItem>[
+      const _MoreItem(Icons.explore_outlined, 'Marion County Adventures', AppRoute.missionsHome),
       const _MoreItem(Icons.map_rounded, 'Map', AppRoute.map),
       const _MoreItem(Icons.pets_rounded, 'Wildlife Guide', AppRoute.wildlife),
       const _MoreItem(Icons.category_rounded, 'Places & Categories', AppRoute.placesGuide),

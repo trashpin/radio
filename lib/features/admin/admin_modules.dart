@@ -116,6 +116,13 @@ enum AdminModule {
       description: 'Local events — the EVENT tier of the location-aware '
           'player, highest priority ahead of Park/Spring/Town/County.',
       table: 'events'),
+  missionManager('Mission Manager', Icons.explore_outlined, AdminGroup.content,
+      ready: true,
+      description: 'Marion County Adventures — create missions, add stops, travel/'
+          'approach/arrival stories, QR portals, and Old World content, then publish. '
+          'The minimum admin capability needed for the GPS + storytelling + QR '
+          'exploration game (Phase 9).',
+      table: 'missions'),
   eventDiscovery('Event Discovery', Icons.travel_explore_rounded,
       AdminGroup.content,
       ready: true,

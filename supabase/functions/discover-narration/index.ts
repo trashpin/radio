@@ -1,7 +1,9 @@
 // Discover Marion County — "🎧 Hear About It" / "Tell Me More" narration
 // generation, the opening greeting's text-to-speech (subjectType
-// 'greeting'), and personalized event-alert narration (kind 'alert' — see
-// below).
+// 'greeting'), personalized event-alert narration (kind 'alert'), and
+// Marion County Adventures mission narration (subjectType 'mission' —
+// opening/travel/approach/arrival/old_world kinds; always admin-authored
+// verbatim script, spoken exactly like a greeting — see below).
 //
 // Reuses the SAME OpenAI-text + ElevenLabs-TTS + storage-bucket pattern
 // already established by copilot-line/forest-discovery/forest-trail-audio/
@@ -78,8 +80,17 @@ async function globalDefaultVoiceId(): Promise<string | null> {
   }
 }
 
-type SubjectType = "event" | "gem" | "location" | "greeting";
-type Kind = "short" | "long" | "greeting" | "alert";
+type SubjectType = "event" | "gem" | "location" | "greeting" | "mission";
+type Kind =
+  | "short"
+  | "long"
+  | "greeting"
+  | "alert"
+  | "opening"
+  | "travel"
+  | "approach"
+  | "arrival"
+  | "old_world";
 
 interface DiscoverRequest {
   subjectType: SubjectType;
@@ -104,10 +115,23 @@ interface DiscoverRequest {
 }
 
 function isSubjectType(v: unknown): v is SubjectType {
-  return v === "event" || v === "gem" || v === "location" || v === "greeting";
+  return v === "event" || v === "gem" || v === "location" || v === "greeting" ||
+    v === "mission";
 }
 function isKind(v: unknown): v is Kind {
-  return v === "short" || v === "long" || v === "greeting" || v === "alert";
+  return v === "short" || v === "long" || v === "greeting" || v === "alert" ||
+    v === "opening" || v === "travel" || v === "approach" || v === "arrival" ||
+    v === "old_world";
+}
+
+/** Mission narration (Marion County Adventures) is always admin-authored
+ * verbatim script -- travel/approach/arrival beats and Old World narration
+ * are written once by an admin, never generated per-request. Speaking it
+ * exactly (skipping OpenAI) reuses the same shortcut already built for
+ * subjectType 'greeting', for the same reason: a hand-written line should
+ * never be silently paraphrased by a model. */
+function speaksVerbatim(subjectType: SubjectType): boolean {
+  return subjectType === "greeting" || subjectType === "mission";
 }
 
 const SYSTEM_PROMPT = `You are a friendly, knowledgeable local guide for Marion County, Florida, helping a visitor discover things to do — events, parks, springs, trails, museums, historic sites, and local gems.
@@ -264,9 +288,9 @@ Deno.serve(async (req: Request) => {
   if (!body || !isSubjectType(body.subjectType) || !isKind(body.kind) || !body.subjectId) {
     return json({ error: "subjectType, subjectId, and kind are required" }, 400);
   }
-  if (body.subjectType === "greeting") {
+  if (speaksVerbatim(body.subjectType)) {
     if (!body.text || !body.text.trim()) {
-      return json({ error: "text is required for subjectType 'greeting'" }, 400);
+      return json({ error: `text is required for subjectType '${body.subjectType}'` }, 400);
     }
   } else if (!OPENAI_KEY) {
     return json({ error: "OPENAI_API_KEY not set" }, 500);
@@ -280,8 +304,8 @@ Deno.serve(async (req: Request) => {
       return json({ text: cached.script, audioUrl: cached.audio_url, cached: true });
     }
 
-    // Greeting: speak the caller's exact text — never rewritten by OpenAI.
-    const script = body.subjectType === "greeting"
+    // Greeting/mission: speak the caller's exact text — never rewritten by OpenAI.
+    const script = speaksVerbatim(body.subjectType)
       ? body.text!.trim()
       : await openaiText(SYSTEM_PROMPT, buildUserPrompt(body));
     if (!script) return json({ error: "empty_response" }, 502);

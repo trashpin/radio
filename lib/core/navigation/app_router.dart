@@ -22,6 +22,11 @@ import 'package:explorer_os_mobile/features/discovery/presentation/discovery_cat
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/mission_complete_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/mission_player_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/missions_home_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/old_world_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/qr_scan_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_forest_screen.dart';
 import 'package:explorer_os_mobile/features/profile/presentation/profile_screen.dart';
@@ -150,6 +155,26 @@ class AppRouter {
           eventId: state.pathParameters['id'] ?? '',
         ),
       ),
+
+      // Marion County Adventures. Deliberately pushed routes, not shell
+      // branches — Phase 7's full EXPLORE/MISSIONS/DISCOVER/MY JOURNEY
+      // bottom-nav redesign is explicitly out of scope for this pass.
+      _route(AppRoute.missionsHome.path, const MissionsHomeScreen()),
+      GoRoute(
+        path: AppRoute.missionPlayer.path,
+        builder: (context, state) => MissionPlayerScreen(
+          missionId: state.pathParameters['id'] ?? '',
+        ),
+      ),
+      _route(AppRoute.qrScan.path, const QrScanScreen()),
+      GoRoute(
+        path: AppRoute.oldWorld.path,
+        builder: (context, state) => OldWorldScreen(
+          oldWorldId: state.pathParameters['id'] ?? '',
+          missionComplete: state.extra == true,
+        ),
+      ),
+      _route(AppRoute.missionComplete.path, const MissionCompleteScreen()),
     ],
   );
 
