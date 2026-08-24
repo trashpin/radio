@@ -6,25 +6,16 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/journey_map.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-const double _mile = 1609.344;
-const double _foot = 0.3048;
-
-/// "500 feet" / "2.3 mi" — friendly, rounded, never claims false precision.
-String _friendlyDistance(double meters) {
-  final miles = meters / _mile;
-  if (miles >= 0.25) return '${miles.toStringAsFixed(1)} mi';
-  final feet = (meters / _foot).round();
-  return '$feet ft';
-}
-
-/// The primary in-mission player (spec Phase 7): audio-first, deliberately
-/// sparse — the player should always know where they are, what they're
-/// doing, what they're looking for, and what happens next, without staring
-/// at the screen while driving. Reuses the exact same audio-first, minimal-
-/// chrome philosophy already established by RadioScreen/DiscoverHomeScreen.
+/// The primary in-mission player (spec Phase 7, refined with a real
+/// Journey Map): audio-first, deliberately sparse — the player should
+/// always know where they are, where they're going, and what's happening,
+/// without staring at the screen while driving. The map is visual support
+/// for the audio-first experience, not the other way around — see
+/// [JourneyMap]'s own doc comment for what it reuses.
 class MissionPlayerScreen extends ConsumerStatefulWidget {
   const MissionPlayerScreen({super.key, required this.missionId});
   final String missionId;
@@ -95,14 +86,15 @@ class _MissionPlayerScreenState extends ConsumerState<MissionPlayerScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _WhereAmI(stopTitle: state.currentStop!.title, xp: state.xp),
-                        const SizedBox(height: RD.lg),
+                        const SizedBox(height: RD.md),
+                        const SizedBox(height: 280, child: JourneyMap()),
+                        const SizedBox(height: RD.md),
                         Expanded(child: _NowPlayingCard(
                           narrationText: state.lastNarrationText,
                           isSpeaking: audio.isActive,
-                          distanceMeters: state.lastDistanceMeters,
                           awaitingQr: state.awaitingQr,
                         )),
-                        const SizedBox(height: RD.lg),
+                        const SizedBox(height: RD.md),
                         if (state.awaitingQr)
                           _FindQrButton(missionId: mission.id)
                         else
@@ -148,19 +140,18 @@ class _WhereAmI extends StatelessWidget {
   }
 }
 
-/// "What am I looking for? What's happening now?" — the main focal point.
-/// Audio is the primary experience; this card just reflects what's already
-/// playing rather than asking the player to read anything long.
+/// "What am I looking for? What's happening now?" — the main focal point
+/// for audio/story state. Distance/proximity now lives on the Journey Map
+/// above (one place for that number, not two) — this card stays focused on
+/// the story itself.
 class _NowPlayingCard extends StatelessWidget {
   const _NowPlayingCard({
     required this.narrationText,
     required this.isSpeaking,
-    required this.distanceMeters,
     required this.awaitingQr,
   });
   final String? narrationText;
   final bool isSpeaking;
-  final double? distanceMeters;
   final bool awaitingQr;
 
   @override
@@ -175,10 +166,10 @@ class _NowPlayingCard extends StatelessWidget {
               awaitingQr
                   ? Icons.qr_code_scanner_rounded
                   : (isSpeaking ? Icons.graphic_eq_rounded : Icons.explore_rounded),
-              size: 64,
+              size: 48,
               color: RD.green,
             ),
-            const SizedBox(height: RD.lg),
+            const SizedBox(height: RD.md),
             Text(
               awaitingQr
                   ? "You've arrived. Look around for the QR marker."
@@ -186,11 +177,6 @@ class _NowPlayingCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: RD.body.copyWith(fontSize: 15, color: RD.textPrimary),
             ),
-            if (!awaitingQr && distanceMeters != null) ...[
-              const SizedBox(height: RD.lg),
-              Text(_friendlyDistance(distanceMeters!), style: RD.wordmark.copyWith(fontSize: 22)),
-              Text('to go', style: RD.caption),
-            ],
           ],
         ),
       ),

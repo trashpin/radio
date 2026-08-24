@@ -97,11 +97,19 @@ RoutePlan? parseDirectionsResponse(
   if (steps.isEmpty) return null;
 
   final totalDistance = (leg['distance'] as Map?)?['value'];
+  final totalDuration = (leg['duration'] as Map?)?['value'];
+  final encodedOverview =
+      ((routes.first as Map)['overview_polyline'] as Map?)?['points']?.toString();
+
   return RoutePlan(
     steps: steps,
     polyline: polyline,
     totalDistanceMeters: (totalDistance is num) ? totalDistance.toDouble() : 0,
+    totalDurationSeconds: (totalDuration is num) ? totalDuration.toInt() : null,
     destinationName: destinationName,
+    overviewPolyline: (encodedOverview == null || encodedOverview.isEmpty)
+        ? const []
+        : decodePolyline(encodedOverview),
   );
 }
 
@@ -109,6 +117,44 @@ final _tagPattern = RegExp(r'<[^>]*>');
 
 String _stripHtml(String html) =>
     html.replaceAll(_tagPattern, '').replaceAll('&nbsp;', ' ').trim();
+
+/// Decodes Google's polyline encoding (the standard algorithm — see
+/// https://developers.google.com/maps/documentation/utilities/polylinealgorithm)
+/// into real lat/lng points along the actual road shape. A pure function,
+/// independently testable, deliberately hand-written rather than pulling in
+/// a dependency for ~20 lines of well-known, stable math.
+List<({double lat, double lng})> decodePolyline(String encoded) {
+  final points = <({double lat, double lng})>[];
+  var index = 0;
+  var lat = 0;
+  var lng = 0;
+
+  while (index < encoded.length) {
+    var shift = 0;
+    var result = 0;
+    int b;
+    do {
+      b = encoded.codeUnitAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    final dLat = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+    lat += dLat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.codeUnitAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    final dLng = (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
+    lng += dLng;
+
+    points.add((lat: lat / 1e5, lng: lng / 1e5));
+  }
+  return points;
+}
 
 final directionsClientProvider =
     Provider<DirectionsClient>((ref) => DirectionsClient());
