@@ -21,6 +21,8 @@ class Mission {
     this.heroImageUrl,
     this.storyHook,
     this.imageClueText,
+    this.finalRevealVideoUrl,
+    this.realHistoryText,
   });
 
   final String id;
@@ -93,6 +95,19 @@ class Mission {
   /// Never rendered to the player anywhere in the app.
   final String? imageClueText;
 
+  /// Avatar video (HeyGen) delivering the Final Reveal — mirrors
+  /// [openingVideoUrl]'s role at the start of the adventure, so the same
+  /// character can open AND close the story. Null falls back to
+  /// [finalRevealText] shown as plain text.
+  final String? finalRevealVideoUrl;
+  bool get hasFinalRevealVideo => (finalRevealVideoUrl ?? '').trim().isNotEmpty;
+
+  /// "THE REAL HISTORY" — a whole-adventure disclosure of what's verified,
+  /// what source supports it, what was fictionalized, and why it matters.
+  /// Separate from [finalRevealText] (the dramatic story reveal) and shown
+  /// after it, clearly labeled, at Mission Complete.
+  final String? realHistoryText;
+
   factory Mission.fromJson(Map<String, dynamic> j) => Mission(
         id: (j['id'] ?? '').toString(),
         title: (j['title'] ?? '') as String,
@@ -114,6 +129,8 @@ class Mission {
         heroImageUrl: j['hero_image_url'] as String?,
         storyHook: j['story_hook'] as String?,
         imageClueText: j['image_clue_text'] as String?,
+        finalRevealVideoUrl: j['final_reveal_video_url'] as String?,
+        realHistoryText: j['real_history_text'] as String?,
       );
 
   Map<String, dynamic> toWrite() => {
@@ -136,5 +153,7 @@ class Mission {
         'hero_image_url': heroImageUrl,
         'story_hook': storyHook,
         'image_clue_text': imageClueText,
+        'final_reveal_video_url': finalRevealVideoUrl,
+        'real_history_text': realHistoryText,
       };
 }

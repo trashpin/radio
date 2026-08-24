@@ -35,6 +35,7 @@ class OldWorld {
     this.nextStopId,
     this.voiceId,
     this.characterId,
+    this.characterVideoUrl,
     this.revealsFactKeys = const [],
   });
 
@@ -54,6 +55,12 @@ class OldWorld {
   /// Named [MissionFact.key]s this Old World reveals when its narration
   /// plays — same mechanism as [MissionTravelStory.revealsFactKeys].
   final List<String> revealsFactKeys;
+
+  /// Avatar video (HeyGen) for the character appearing at this reveal —
+  /// "a NEW CHARACTER APPEARS," not just another narrated info page. Null
+  /// falls back to the character's static image + audio-only narration.
+  final String? characterVideoUrl;
+  bool get hasCharacterVideo => (characterVideoUrl ?? '').trim().isNotEmpty;
 
   /// Defaults to true deliberately — content must be explicitly marked
   /// verified-historical by an admin, never accidentally presented as real
@@ -90,6 +97,7 @@ class OldWorld {
         nextStopId: j['next_stop_id']?.toString(),
         voiceId: j['voice_id'] as String?,
         characterId: j['character_id']?.toString(),
+        characterVideoUrl: j['character_video_url'] as String?,
         revealsFactKeys: j['reveals_fact_keys'] is List
             ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
             : const [],
@@ -109,6 +117,7 @@ class OldWorld {
         'next_stop_id': nextStopId,
         'voice_id': voiceId,
         'character_id': characterId,
+        'character_video_url': characterVideoUrl,
         'reveals_fact_keys': revealsFactKeys,
       };
 }
