@@ -22,6 +22,7 @@ import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manage
 import 'package:explorer_os_mobile/features/admin/events/events_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_discovery_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_notification_test_page.dart';
+import 'package:explorer_os_mobile/features/admin/missions/mission_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
 import 'package:explorer_os_mobile/features/admin/presentation/dj_studio_page.dart';
 import 'package:explorer_os_mobile/features/admin/audio_studio/presentation/audio_production_page.dart';
@@ -78,6 +79,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const NearbyGemsManagerPage();
       case AdminModule.events:
         return const EventsManagerPage();
+      case AdminModule.missionManager:
+        return const MissionManagerPage();
       case AdminModule.eventDiscovery:
         return const EventDiscoveryPage();
       case AdminModule.eventNotificationTest:

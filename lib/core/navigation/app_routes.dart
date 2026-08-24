@@ -54,7 +54,14 @@ enum AppRoute {
   // The push-notification deep link target (spec: "Notification -> Specific
   // Event", never the generic Discover home). Same id-in-path pattern as
   // destinationDetails above.
-  discoverEventDetail('/discover-event/:id');
+  discoverEventDetail('/discover-event/:id'),
+
+  // Marion County Adventures (GPS + storytelling + QR exploration game).
+  missionsHome('/missions'),
+  missionPlayer('/missions/:id'),
+  qrScan('/qr-scan'),
+  oldWorld('/old-world/:id'),
+  missionComplete('/mission-complete');
 
   const AppRoute(this.path);
   final String path;
@@ -65,4 +72,10 @@ enum AppRoute {
 
   /// `AppRoute.discoverEventDetail.eventPathFor('42')` → `/discover-event/42`.
   String eventPathFor(String id) => '/discover-event/$id';
+
+  /// `AppRoute.missionPlayer.missionPathFor('42')` → `/missions/42`.
+  String missionPathFor(String id) => '/missions/$id';
+
+  /// `AppRoute.oldWorld.oldWorldPathFor('42')` → `/old-world/42`.
+  String oldWorldPathFor(String id) => '/old-world/$id';
 }
