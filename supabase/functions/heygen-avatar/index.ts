@@ -56,20 +56,21 @@ function json(body: unknown, status = 200): Response {
 interface GenerateRequest {
   action: "generate";
   stepId: string;
+  // HeyGen's v3 API takes a single avatar_id for both stock/studio avatars
+  // AND custom photo avatars (talking photo look ids) -- no type
+  // discriminator needed, unlike the legacy v2 API this used to call.
+  // avatarType may still arrive on the request (older clients / the
+  // mission_characters.heygen_avatar_type column) but is intentionally
+  // unused here.
   avatarId: string;
-  // "avatar" (HeyGen stock/studio avatar_id) or "talking_photo" (a custom
-  // photo avatar an admin trained in HeyGen directly, e.g. mission_characters
-  // seeded with a real person's photo) -- these are DIFFERENT shapes in
-  // HeyGen's own API, not just a label. Sending the wrong one either errors
-  // or silently renders the wrong/default character.
-  avatarType: "avatar" | "talking_photo";
+  avatarType?: string;
   // The character's ALREADY-GENERATED ElevenLabs narration for this step
   // (mission_story_steps.audio_url) -- HeyGen lip-syncs to this audio track
-  // directly (voice type "audio") rather than re-speaking the script with
-  // one of HeyGen's own, unrelated voice IDs. This is what makes a
-  // character's avatar video sound EXACTLY like their audio-only scenes,
-  // not just "a similar HeyGen voice" -- true consistency, not an
-  // approximation. Generate Voice must run before Generate Avatar.
+  // directly (audio_url) rather than re-speaking the script with one of
+  // HeyGen's own, unrelated voice IDs. This is what makes a character's
+  // avatar video sound EXACTLY like their audio-only scenes, not just "a
+  // similar HeyGen voice" -- true consistency, not an approximation.
+  // Generate Voice must run before Generate Avatar.
   audioUrl: string;
 }
 
@@ -106,20 +107,23 @@ async function generate(body: GenerateRequest): Promise<Response> {
   }
   if (!body.avatarId?.trim()) return json({ error: "avatarId is required" }, 400);
 
-  const character = body.avatarType !== "avatar"
-    ? { type: "talking_photo", talking_photo_id: body.avatarId.trim() }
-    : { type: "avatar", avatar_id: body.avatarId.trim(), avatar_style: "normal" };
-
-  const payload: Record<string, unknown> = {
+  // v3, not the legacy v2/video/generate this used to call -- HeyGen flags
+  // v2 for removal 2026-10-31. fit:"cover" is the actual fix for photo
+  // avatars whose source photo isn't already 9:16: it CROPS the photo to
+  // fill the portrait frame instead of "contain"-style padding it with a
+  // background color, which is what produced visible white bars top and
+  // bottom in every video generated before this.
+  const payload = {
+    type: "avatar",
     title: `mission-story-step-${body.stepId}`,
-    dimension: { width: 720, height: 1280 }, // portrait, matches the mobile player
-    video_inputs: [{
-      character,
-      voice: { type: "audio", audio_url: body.audioUrl.trim() },
-    }],
+    avatar_id: body.avatarId.trim(),
+    aspect_ratio: "9:16", // portrait, matches the mobile player
+    fit: "cover",
+    resolution: "720p",
+    audio_url: body.audioUrl.trim(),
   };
 
-  const r = await fetch(`${HEYGEN_BASE}/v2/video/generate`, {
+  const r = await fetch(`${HEYGEN_BASE}/v3/videos`, {
     method: "POST",
     headers: { "X-Api-Key": HEYGEN_KEY, "Content-Type": "application/json" },
     body: JSON.stringify(payload),
