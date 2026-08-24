@@ -8,9 +8,10 @@ import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
 /// "MISSION COMPLETE" (spec Phase 6/9) — the summary shown once the final
-/// stop's discovery is unlocked. Reads whatever [ActiveMissionController]
-/// already has in memory (mission, xp, completed stops) rather than
-/// re-fetching — this screen is only ever reached right after completion.
+/// stop's discovery (and any final puzzle) is unlocked. Reads whatever
+/// [ActiveMissionController] already has in memory (mission, xp, completed
+/// stops) rather than re-fetching — this screen is only ever reached right
+/// after completion.
 class MissionCompleteScreen extends ConsumerWidget {
   const MissionCompleteScreen({super.key});
 
@@ -22,56 +23,64 @@ class MissionCompleteScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: RD.bg,
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(RD.xl),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.emoji_events_rounded, color: RD.green, size: 84),
-                const SizedBox(height: RD.lg),
-                Text('MISSION COMPLETE', style: RD.tagline.copyWith(fontSize: 14, letterSpacing: 4)),
-                const SizedBox(height: RD.sm),
-                Text(mission?.title ?? 'Adventure Complete',
-                    style: RD.wordmark.copyWith(fontSize: 24),
-                    textAlign: TextAlign.center),
-                const SizedBox(height: RD.xl),
-                GlassPanel(
-                  child: Column(children: [
-                    Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                      _stat('${state.xp}', 'XP earned'),
-                      _stat('${state.completedStopIds.length}', 'Stops discovered'),
+        child: ListView(
+          padding: const EdgeInsets.all(RD.xl),
+          children: [
+            const SizedBox(height: RD.lg),
+            const Icon(Icons.emoji_events_rounded, color: RD.green, size: 84),
+            const SizedBox(height: RD.lg),
+            Text('YOU SOLVED IT', style: RD.tagline.copyWith(fontSize: 14, letterSpacing: 4),
+                textAlign: TextAlign.center),
+            const SizedBox(height: RD.sm),
+            Text(mission?.title ?? 'Adventure Complete',
+                style: RD.wordmark.copyWith(fontSize: 24),
+                textAlign: TextAlign.center),
+            const SizedBox(height: RD.xl),
+
+            // The Final Reveal — how the clues connected (spec Phase: "the
+            // game should explain how the clues connected" before showing
+            // XP/completion, not just a bare score screen).
+            if ((mission?.finalRevealText ?? '').isNotEmpty) ...[
+              GlassPanel(
+                child: Text(mission!.finalRevealText!,
+                    style: RD.body.copyWith(fontSize: 15, color: RD.textPrimary, height: 1.5)),
+              ),
+              const SizedBox(height: RD.lg),
+            ],
+
+            GlassPanel(
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                  _stat('${state.xp}', 'XP earned'),
+                  _stat('${state.completedStopIds.length}', 'Stops discovered'),
+                ]),
+                if ((mission?.completionBadge ?? '').isNotEmpty) ...[
+                  const SizedBox(height: RD.md),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
+                    decoration: BoxDecoration(
+                      color: RD.green.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(RD.rPill),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.military_tech_rounded, color: RD.green, size: 18),
+                      const SizedBox(width: RD.xs),
+                      Text(mission!.completionBadge!, style: RD.caption.copyWith(color: RD.green)),
                     ]),
-                    if ((mission?.completionBadge ?? '').isNotEmpty) ...[
-                      const SizedBox(height: RD.md),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: RD.md, vertical: RD.sm),
-                        decoration: BoxDecoration(
-                          color: RD.green.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(RD.rPill),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.military_tech_rounded, color: RD.green, size: 18),
-                          const SizedBox(width: RD.xs),
-                          Text(mission!.completionBadge!, style: RD.caption.copyWith(color: RD.green)),
-                        ]),
-                      ),
-                    ],
-                  ]),
-                ),
-                const SizedBox(height: RD.xxl),
-                SizedBox(
-                  height: 52,
-                  width: double.infinity,
-                  child: FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: RD.green, foregroundColor: RD.onGreen),
-                    onPressed: () => context.go(AppRoute.missionsHome.path),
-                    child: const Text('Back to Adventures', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
-                ),
-              ],
+                ],
+              ]),
             ),
-          ),
+            const SizedBox(height: RD.xxl),
+            SizedBox(
+              height: 52,
+              child: FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: RD.green, foregroundColor: RD.onGreen),
+                onPressed: () => context.go(AppRoute.missionsHome.path),
+                child: const Text('Back to Adventures', style: TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -23,7 +23,9 @@ import 'package:explorer_os_mobile/features/downloads/presentation/downloads_scr
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_complete_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/mission_intro_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_player_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/mission_puzzle_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/missions_home_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/old_world_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/qr_scan_screen.dart';
@@ -161,6 +163,12 @@ class AppRouter {
       // bottom-nav redesign is explicitly out of scope for this pass.
       _route(AppRoute.missionsHome.path, const MissionsHomeScreen()),
       GoRoute(
+        path: AppRoute.missionIntro.path,
+        builder: (context, state) => MissionIntroScreen(
+          missionId: state.pathParameters['id'] ?? '',
+        ),
+      ),
+      GoRoute(
         path: AppRoute.missionPlayer.path,
         builder: (context, state) => MissionPlayerScreen(
           missionId: state.pathParameters['id'] ?? '',
@@ -174,6 +182,7 @@ class AppRouter {
           missionComplete: state.extra == true,
         ),
       ),
+      _route(AppRoute.missionPuzzle.path, const MissionPuzzleScreen()),
       _route(AppRoute.missionComplete.path, const MissionCompleteScreen()),
     ],
   );

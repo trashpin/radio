@@ -10,6 +10,8 @@ class MissionProgress {
     this.discoveredLocationIds = const [],
     this.unlockedOldWorldIds = const [],
     this.firedContentIds = const [],
+    this.revealedFactKeys = const [],
+    this.solvedPuzzleIds = const [],
     this.xp = 0,
     this.status = 'not_started',
     this.startedAt,
@@ -29,6 +31,14 @@ class MissionProgress {
   /// repeatedly" (the in-memory engine is the other half, for same-session
   /// speed).
   final List<String> firedContentIds;
+
+  /// Which [MissionFact.key]s the player has actually heard so far —
+  /// populated from [MissionTravelStory.revealsFactKeys]/
+  /// [OldWorld.revealsFactKeys] as content plays.
+  final List<String> revealedFactKeys;
+
+  /// Which `mission_puzzles` the player has already solved.
+  final List<String> solvedPuzzleIds;
   final int xp;
 
   /// 'not_started' | 'in_progress' | 'completed' | 'abandoned'.
@@ -51,6 +61,8 @@ class MissionProgress {
         discoveredLocationIds: _strs(j['discovered_location_ids']),
         unlockedOldWorldIds: _strs(j['unlocked_old_world_ids']),
         firedContentIds: _strs(j['fired_content_ids']),
+        revealedFactKeys: _strs(j['revealed_fact_keys']),
+        solvedPuzzleIds: _strs(j['solved_puzzle_ids']),
         xp: (j['xp'] as num?)?.toInt() ?? 0,
         status: (j['status'] ?? 'not_started') as String,
         startedAt: DateTime.tryParse('${j['started_at']}'),
@@ -65,6 +77,8 @@ class MissionProgress {
         'discovered_location_ids': discoveredLocationIds,
         'unlocked_old_world_ids': unlockedOldWorldIds,
         'fired_content_ids': firedContentIds,
+        'revealed_fact_keys': revealedFactKeys,
+        'solved_puzzle_ids': solvedPuzzleIds,
         'xp': xp,
         'status': status,
         'started_at': startedAt?.toIso8601String(),
@@ -77,6 +91,8 @@ class MissionProgress {
     List<String>? discoveredLocationIds,
     List<String>? unlockedOldWorldIds,
     List<String>? firedContentIds,
+    List<String>? revealedFactKeys,
+    List<String>? solvedPuzzleIds,
     int? xp,
     String? status,
     DateTime? startedAt,
@@ -91,6 +107,8 @@ class MissionProgress {
         discoveredLocationIds: discoveredLocationIds ?? this.discoveredLocationIds,
         unlockedOldWorldIds: unlockedOldWorldIds ?? this.unlockedOldWorldIds,
         firedContentIds: firedContentIds ?? this.firedContentIds,
+        revealedFactKeys: revealedFactKeys ?? this.revealedFactKeys,
+        solvedPuzzleIds: solvedPuzzleIds ?? this.solvedPuzzleIds,
         xp: xp ?? this.xp,
         status: status ?? this.status,
         startedAt: startedAt ?? this.startedAt,

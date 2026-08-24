@@ -33,11 +33,18 @@ class OldWorld {
     this.characters = const [],
     this.clueText,
     this.nextStopId,
+    this.voiceId,
+    this.revealsFactKeys = const [],
   });
 
   final String id;
   final String title;
   final String? historicalPeriod;
+  final String? voiceId;
+
+  /// Named [MissionFact.key]s this Old World reveals when its narration
+  /// plays — same mechanism as [MissionTravelStory.revealsFactKeys].
+  final List<String> revealsFactKeys;
 
   /// Defaults to true deliberately — content must be explicitly marked
   /// verified-historical by an admin, never accidentally presented as real
@@ -72,6 +79,10 @@ class OldWorld {
             : const [],
         clueText: j['clue_text'] as String?,
         nextStopId: j['next_stop_id']?.toString(),
+        voiceId: j['voice_id'] as String?,
+        revealsFactKeys: j['reveals_fact_keys'] is List
+            ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
+            : const [],
       );
 
   Map<String, dynamic> toWrite() => {
@@ -86,5 +97,7 @@ class OldWorld {
         'characters': characters.map((c) => c.toJson()).toList(),
         'clue_text': clueText,
         'next_stop_id': nextStopId,
+        'voice_id': voiceId,
+        'reveals_fact_keys': revealsFactKeys,
       };
 }
