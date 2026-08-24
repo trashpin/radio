@@ -37,7 +37,15 @@ String missionArrivalFiredKey(String stopId) => 'arrival:$stopId';
 class MissionStoryEngine {
   const MissionStoryEngine();
 
-  /// Evaluates one GPS fix against the CURRENT target stop.
+  /// Evaluates one GPS fix against the CURRENT target stop — and only that
+  /// stop. There is no overload that accepts a list of stops or locations:
+  /// the caller ([ActiveMissionController]) always passes exactly one
+  /// [MissionStop] (its `state.currentStop`) and that stop's own stories,
+  /// which is what makes it structurally impossible for any other Marion
+  /// County location — including other stops in the SAME mission — to
+  /// trigger a story or arrival event while the player travels toward this
+  /// one (see the "ACTIVE MISSION GEOFENCE" note on
+  /// [ActiveMissionController]'s own doc comment).
   ///
   /// - Never interrupts a narration already playing ([isNarrationPlaying]).
   /// - Arrival always takes priority over any travel/approach story once

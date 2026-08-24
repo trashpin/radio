@@ -36,10 +36,16 @@ const double _kJourneyNearbyRadiusMeters = 8047; // ~5 miles
 
 const int _kMaxJourneyNearby = 6;
 
-/// Existing Marion County locations worth calling out during this leg of
-/// the journey — near the player, near the destination, of a type the spec
-/// itself names as interesting, and never the destination location itself
-/// (avoids a duplicate marker sitting right on top of "NEXT DISCOVERY").
+/// The "OPTIONAL DISCOVERY" concept: existing Marion County locations worth
+/// calling out during this leg of the journey — near the player, near the
+/// destination, of a type the spec itself names as interesting, and never
+/// the destination location itself (avoids a duplicate marker sitting right
+/// on top of "NEXT DISCOVERY"). Purely for map display — the result of this
+/// provider is never passed into [ActiveMissionController] or
+/// [MissionStoryEngine], so a location shown here cannot trigger a mission
+/// story, arrival, or progression event no matter how close the player
+/// gets. Only the mission's own current stop (the "ACTIVE MISSION
+/// GEOFENCE") can ever do that.
 final journeyNearbyLocationsProvider = Provider.family<List<MasterLocation>,
     ({double playerLat, double playerLng, double destLat, double destLng, String? excludeLocationId})>(
   (ref, p) {
