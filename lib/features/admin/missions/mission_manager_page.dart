@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart';
+import 'package:explorer_os_mobile/features/admin/missions/mission_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_stops_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/story_builder_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
@@ -142,6 +143,9 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
   final rewardXp = TextEditingController(text: '${mission?.completionRewardXp ?? 0}');
   final badge = TextEditingController(text: mission?.completionBadge ?? '');
   final finalReveal = TextEditingController(text: mission?.finalRevealText ?? '');
+  final heroImageUrl = TextEditingController(text: mission?.heroImageUrl ?? '');
+  final storyHook = TextEditingController(text: mission?.storyHook ?? '');
+  final imageClueText = TextEditingController(text: mission?.imageClueText ?? '');
   var difficulty = mission?.difficulty;
   var introCharacterId = mission?.introCharacterId;
   final characters = await ref.read(missionRepositoryProvider).allCharacters();
@@ -196,6 +200,61 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                     labelText: 'Estimated duration (minutes)', border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 20),
+              const Text('Adventure Card', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text(
+                'The storefront: mystery artwork and a curiosity-only teaser. Never reveal '
+                'destinations, stops, the route, or the answer — the image should represent the '
+                'mystery, not the place. Reused on the Mission Introduction screen too.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: TextField(
+                    controller: heroImageUrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Introduction image URL', border: OutlineInputBorder()),
+                  ),
+                ),
+                if (mission != null) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final changed = await showMissionImagePicker(context, mission);
+                      if (changed && dialogContext.mounted) {
+                        final refreshed = await ref.read(missionRepositoryProvider).byId(mission.id);
+                        if (refreshed != null) {
+                          heroImageUrl.text = refreshed.heroImageUrl ?? '';
+                          setState(() {});
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.image_search_rounded, size: 16),
+                    label: const Text('Find'),
+                  ),
+                ],
+              ]),
+              const SizedBox(height: 12),
+              TextField(
+                controller: storyHook,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: 'Story hook (curiosity only — never the destination)',
+                    helperText: 'e.g. "Someone disappeared following a trail through Marion '
+                        'County. The evidence survived. Can you figure out what it means?"',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: imageClueText,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                    labelText: 'Image clue (admin-only — never shown to players)',
+                    helperText: 'What the image secretly hints at, so a later story step can '
+                        'pay it off — e.g. "The lantern matches the one in the final reveal."',
+                    border: OutlineInputBorder()),
               ),
               const SizedBox(height: 20),
               const Text('Adventure Introduction',
@@ -296,6 +355,9 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
     'final_reveal_text': finalReveal.text.trim().isEmpty ? null : finalReveal.text.trim(),
     'completion_reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
     'completion_badge': badge.text.trim().isEmpty ? null : badge.text.trim(),
+    'hero_image_url': heroImageUrl.text.trim().isEmpty ? null : heroImageUrl.text.trim(),
+    'story_hook': storyHook.text.trim().isEmpty ? null : storyHook.text.trim(),
+    'image_clue_text': imageClueText.text.trim().isEmpty ? null : imageClueText.text.trim(),
   };
   final repo = ref.read(missionRepositoryProvider);
   if (mission == null) {

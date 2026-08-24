@@ -18,6 +18,9 @@ class Mission {
     this.introCharacterId,
     this.openingVideoUrl,
     this.finalRevealText,
+    this.heroImageUrl,
+    this.storyHook,
+    this.imageClueText,
   });
 
   final String id;
@@ -74,6 +77,22 @@ class Mission {
       (openingNarrationText ?? '').trim().isNotEmpty ||
       (openingNarrationAudioUrl ?? '').trim().isNotEmpty;
 
+  /// The Adventure Card / Mission Introduction's mystery artwork — NEVER a
+  /// photo of an actual destination, never auto-derived from a location
+  /// record. May contain a subtle, never-labeled visual clue a later story
+  /// step references (see [imageClueText], admin-only).
+  final String? heroImageUrl;
+  bool get hasHeroImage => (heroImageUrl ?? '').trim().isNotEmpty;
+
+  /// The short, curiosity-only teaser shown on the Adventure Card
+  /// ("WHY SHOULD I CARE?", never "WHERE AM I GOING?"). Separate from
+  /// [description] so it can be held to a strict no-spoiler rule.
+  final String? storyHook;
+
+  /// Admin-only authoring note: what [heroImageUrl] secretly hints at.
+  /// Never rendered to the player anywhere in the app.
+  final String? imageClueText;
+
   factory Mission.fromJson(Map<String, dynamic> j) => Mission(
         id: (j['id'] ?? '').toString(),
         title: (j['title'] ?? '') as String,
@@ -92,6 +111,9 @@ class Mission {
         introCharacterId: j['intro_character_id']?.toString(),
         openingVideoUrl: j['opening_video_url'] as String?,
         finalRevealText: j['final_reveal_text'] as String?,
+        heroImageUrl: j['hero_image_url'] as String?,
+        storyHook: j['story_hook'] as String?,
+        imageClueText: j['image_clue_text'] as String?,
       );
 
   Map<String, dynamic> toWrite() => {
@@ -111,5 +133,8 @@ class Mission {
         'intro_character_id': introCharacterId,
         'opening_video_url': openingVideoUrl,
         'final_reveal_text': finalRevealText,
+        'hero_image_url': heroImageUrl,
+        'story_hook': storyHook,
+        'image_clue_text': imageClueText,
       };
 }

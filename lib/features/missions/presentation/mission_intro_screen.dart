@@ -128,9 +128,20 @@ class _IntroContent extends StatelessWidget {
 
         // "The first thing a player should hear and see" — the avatar
         // video, when this adventure has one, takes priority over
-        // everything below it.
+        // everything below it. The mystery hero image (same artwork the
+        // Adventure Card used) is the fallback when no video exists yet —
+        // never both at once, and never a destination photo either way.
         if (mission.hasOpeningVideo) ...[
           _CharacterVideoHero(videoUrl: mission.openingVideoUrl!),
+          const SizedBox(height: RD.xl),
+        ] else if (mission.hasHeroImage) ...[
+          ClipRRect(
+            borderRadius: RD.brLg,
+            child: AspectRatio(
+              aspectRatio: 16 / 10,
+              child: Image.network(mission.heroImageUrl!, fit: BoxFit.cover),
+            ),
+          ),
           const SizedBox(height: RD.xl),
         ],
 
