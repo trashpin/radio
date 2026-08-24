@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -29,6 +30,7 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
   late final AnimationController _anim =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
   bool _spoken = false;
+  MissionCharacter? _character;
 
   @override
   void dispose() {
@@ -44,6 +46,12 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
     if (world.revealsFactKeys.isNotEmpty) {
       ref.read(activeMissionControllerProvider.notifier).markFactsRevealed(world.revealsFactKeys);
     }
+    // CHARACTER -> VOICE ID: same character, same voice, whether they're
+    // speaking during travel or here at the Old World reveal.
+    final character =
+        world.characterId == null ? null : await ref.read(missionRepositoryProvider).characterById(world.characterId!);
+    if (mounted) setState(() => _character = character);
+
     final text = (world.narrationText ?? '').trim();
     if (text.isEmpty && (world.narrationAudioUrl ?? '').isEmpty) return;
     String? audioUrl = world.narrationAudioUrl;
@@ -52,7 +60,7 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
             subjectId: world.id,
             kind: 'old_world',
             text: text,
-            voiceId: world.voiceId,
+            voiceId: (character?.voiceId ?? '').trim().isNotEmpty ? character!.voiceId : world.voiceId,
           );
       audioUrl = result?.audioUrl;
     }
@@ -86,7 +94,13 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
             child: ScaleTransition(
               scale: Tween(begin: 0.96, end: 1.0).animate(
                   CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic)),
-              child: SafeArea(child: _OldWorldContent(world: world, onNext: () => _onContinue(world))),
+              child: SafeArea(
+                child: _OldWorldContent(
+                  world: world,
+                  narratingCharacter: _character,
+                  onNext: () => _onContinue(world),
+                ),
+              ),
             ),
           );
         },
@@ -111,8 +125,9 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
 }
 
 class _OldWorldContent extends StatelessWidget {
-  const _OldWorldContent({required this.world, required this.onNext});
+  const _OldWorldContent({required this.world, required this.onNext, this.narratingCharacter});
   final OldWorld world;
+  final MissionCharacter? narratingCharacter;
   final VoidCallback onNext;
 
   @override
@@ -143,12 +158,12 @@ class _OldWorldContent extends StatelessWidget {
             child: Image.network(world.historicalMapImageUrl!, fit: BoxFit.cover),
           ),
         ],
-        if ((world.narratorName ?? '').isNotEmpty) ...[
+        if ((narratingCharacter?.name ?? world.narratorName ?? '').isNotEmpty) ...[
           const SizedBox(height: RD.lg),
           Row(children: [
             const Icon(Icons.record_voice_over_rounded, color: RD.amber, size: 18),
             const SizedBox(width: RD.xs),
-            Text('Narrated by ${world.narratorName}',
+            Text('Narrated by ${narratingCharacter?.name ?? world.narratorName}',
                 style: RD.caption.copyWith(color: Colors.white70)),
           ]),
         ],

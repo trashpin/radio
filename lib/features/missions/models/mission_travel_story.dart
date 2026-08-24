@@ -17,6 +17,7 @@ class MissionTravelStory {
     this.sortOrder = 0,
     this.speakerName,
     this.voiceId,
+    this.characterId,
     this.revealsFactKeys = const [],
   });
 
@@ -36,13 +37,21 @@ class MissionTravelStory {
   final int sortOrder;
 
   /// Who's speaking this beat (e.g. "Thomas", "Historian", "Narrator") —
-  /// optional; null reads as an unattributed narrator line.
+  /// free-text fallback for content with no character record; optional,
+  /// null reads as an unattributed narrator line. Ignored when
+  /// [characterId] is set — the character's own name is used instead.
   final String? speakerName;
 
-  /// An optional ElevenLabs voice override for this speaker. Null falls
-  /// back to the shared global default voice, exactly as every other
-  /// narration in this app already does.
+  /// An optional ElevenLabs voice override for this speaker, used only when
+  /// [characterId] is null. Null falls back to the shared global default
+  /// voice, exactly as every other narration in this app already does.
   final String? voiceId;
+
+  /// The [MissionCharacter] speaking this beat. When set, its name and
+  /// voice_id are used automatically — [speakerName]/[voiceId] are never
+  /// consulted (see [ActiveMissionController]'s character resolution). This
+  /// is the CHARACTER -> VOICE ID rule: a voice is never re-picked per scene.
+  final String? characterId;
 
   /// Named [MissionFact.key]s this beat reveals when played — the player
   /// may not know why yet; a later [MissionPuzzle] may ask about one of
@@ -68,6 +77,7 @@ class MissionTravelStory {
         sortOrder: (j['sort_order'] as num?)?.toInt() ?? 0,
         speakerName: j['speaker_name'] as String?,
         voiceId: j['voice_id'] as String?,
+        characterId: j['character_id']?.toString(),
         revealsFactKeys: _strs(j['reveals_fact_keys']),
       );
 
@@ -83,6 +93,7 @@ class MissionTravelStory {
         'sort_order': sortOrder,
         'speaker_name': speakerName,
         'voice_id': voiceId,
+        'character_id': characterId,
         'reveals_fact_keys': revealsFactKeys,
       };
 }

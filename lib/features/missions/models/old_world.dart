@@ -34,13 +34,22 @@ class OldWorld {
     this.clueText,
     this.nextStopId,
     this.voiceId,
+    this.characterId,
     this.revealsFactKeys = const [],
   });
 
   final String id;
   final String title;
   final String? historicalPeriod;
+
+  /// Free-text voice fallback, used only when [characterId] is null.
   final String? voiceId;
+
+  /// The [MissionCharacter] narrating this Old World reveal. When set, its
+  /// name/voice are used instead of [narratorName]/[voiceId] — the same
+  /// CHARACTER -> VOICE ID rule every other scene type follows. Distinct
+  /// from [characters], which is just a descriptive cast list with no voice.
+  final String? characterId;
 
   /// Named [MissionFact.key]s this Old World reveals when its narration
   /// plays — same mechanism as [MissionTravelStory.revealsFactKeys].
@@ -80,6 +89,7 @@ class OldWorld {
         clueText: j['clue_text'] as String?,
         nextStopId: j['next_stop_id']?.toString(),
         voiceId: j['voice_id'] as String?,
+        characterId: j['character_id']?.toString(),
         revealsFactKeys: j['reveals_fact_keys'] is List
             ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
             : const [],
@@ -98,6 +108,7 @@ class OldWorld {
         'clue_text': clueText,
         'next_stop_id': nextStopId,
         'voice_id': voiceId,
+        'character_id': characterId,
         'reveals_fact_keys': revealsFactKeys,
       };
 }

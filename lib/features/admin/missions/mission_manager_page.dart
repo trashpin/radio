@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_stops_page.dart';
+import 'package:explorer_os_mobile/features/admin/missions/story_builder_page.dart';
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
@@ -90,6 +91,13 @@ class _MissionRow extends ConsumerWidget {
               MaterialPageRoute(builder: (_) => MissionFactsPuzzlesPage(mission: mission)),
             ),
           ),
+          IconButton(
+            tooltip: 'Story Builder',
+            icon: const Icon(Icons.auto_stories_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => StoryBuilderPage(mission: mission)),
+            ),
+          ),
           PopupMenuButton<String>(
             onSelected: (v) async {
               final repo = ref.read(missionRepositoryProvider);
@@ -135,7 +143,10 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
   final badge = TextEditingController(text: mission?.completionBadge ?? '');
   final finalReveal = TextEditingController(text: mission?.finalRevealText ?? '');
   var difficulty = mission?.difficulty;
+  var introCharacterId = mission?.introCharacterId;
+  final characters = await ref.read(missionRepositoryProvider).allCharacters();
 
+  if (!context.mounted) return;
   final saved = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
@@ -193,10 +204,24 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
                 'Shown BEFORE the map/GPS player — the story that pulls the player in.',
                 style: TextStyle(fontSize: 12, color: Colors.grey)),
               const SizedBox(height: 8),
+              if (characters.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: characters.any((c) => c.id == introCharacterId) ? introCharacterId : null,
+                  decoration: const InputDecoration(
+                      labelText: 'Character who speaks the introduction',
+                      helperText: 'Their assigned voice speaks the opening narration below.',
+                      border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— none / use free text below —')),
+                    for (final c in characters) DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => introCharacterId = v),
+                ),
+              const SizedBox(height: 8),
               TextField(
                   controller: introCharacter,
                   decoration: const InputDecoration(
-                      labelText: 'Who speaks the introduction (optional)',
+                      labelText: 'Or: speaker name as free text (no character record)',
                       border: OutlineInputBorder())),
               const SizedBox(height: 12),
               TextField(
@@ -266,6 +291,7 @@ Future<void> showMissionEditorDialog(BuildContext context, WidgetRef ref, {Missi
     'estimated_duration_minutes': int.tryParse(duration.text.trim()),
     'opening_narration_text': openingText.text.trim().isEmpty ? null : openingText.text.trim(),
     'intro_character_name': introCharacter.text.trim().isEmpty ? null : introCharacter.text.trim(),
+    'intro_character_id': introCharacterId,
     'mission_brief_text': missionBrief.text.trim().isEmpty ? null : missionBrief.text.trim(),
     'final_reveal_text': finalReveal.text.trim().isEmpty ? null : finalReveal.text.trim(),
     'completion_reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,

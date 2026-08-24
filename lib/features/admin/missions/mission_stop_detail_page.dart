@@ -153,25 +153,51 @@ class MissionStopDetailPage extends ConsumerWidget {
 
   Future<void> _editArrivalText(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController(text: stop.arrivalNarrationText ?? '');
-    final text = await showDialog<String>(
+    final characters = await ref.read(missionRepositoryProvider).allCharacters();
+    var arrivalCharacterId = stop.arrivalCharacterId;
+    if (!context.mounted) return;
+    final saved = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Arrival narration'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          decoration: const InputDecoration(border: OutlineInputBorder()),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: const Text('Arrival narration'),
+          content: SizedBox(
+            width: 380,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (characters.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue:
+                      characters.any((c) => c.id == arrivalCharacterId) ? arrivalCharacterId : null,
+                  decoration: const InputDecoration(
+                      labelText: 'Character speaking on arrival', border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— narrator / global default —')),
+                    for (final c in characters) DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => arrivalCharacterId = v),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                maxLines: 4,
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+              ),
+            ]),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Save')),
+          ],
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Save')),
-        ],
       ),
     );
-    if (text == null) return;
-    await ref.read(missionRepositoryProvider).updateStop(stop.id, {'arrival_narration_text': text});
+    if (saved != true) return;
+    await ref.read(missionRepositoryProvider).updateStop(stop.id, {
+      'arrival_narration_text': controller.text.trim(),
+      'arrival_character_id': arrivalCharacterId,
+    });
     ref.read(missionsRefreshProvider.notifier).bump();
   }
 
@@ -182,7 +208,10 @@ class MissionStopDetailPage extends ConsumerWidget {
     final speakerName = TextEditingController(text: story?.speakerName ?? '');
     final revealsFactKeys = TextEditingController(text: story?.revealsFactKeys.join(', ') ?? '');
     var triggerType = story?.triggerType ?? 'travel';
+    var characterId = story?.characterId;
+    final characters = await ref.read(missionRepositoryProvider).allCharacters();
 
+    if (!context.mounted) return;
     final saved = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -209,10 +238,22 @@ class MissionStopDetailPage extends ConsumerWidget {
                       border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 12),
+                if (characters.isNotEmpty)
+                  DropdownButtonFormField<String?>(
+                    initialValue: characters.any((c) => c.id == characterId) ? characterId : null,
+                    decoration: const InputDecoration(
+                        labelText: 'Character', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('— none / use free text below —')),
+                      for (final c in characters) DropdownMenuItem(value: c.id, child: Text(c.name)),
+                    ],
+                    onChanged: (v) => setState(() => characterId = v),
+                  ),
+                const SizedBox(height: 12),
                 TextField(
                     controller: speakerName,
                     decoration: const InputDecoration(
-                        labelText: 'Speaker (optional, e.g. "Thomas")',
+                        labelText: 'Or: speaker name as free text (no character record)',
                         border: OutlineInputBorder())),
                 const SizedBox(height: 12),
                 TextField(
@@ -252,6 +293,7 @@ class MissionStopDetailPage extends ConsumerWidget {
       'trigger_distance_meters': miles * 1609.344,
       'text': text.text.trim(),
       'speaker_name': speakerName.text.trim().isEmpty ? null : speakerName.text.trim(),
+      'character_id': characterId,
       'reveals_fact_keys': revealsFactKeys.text
           .split(',')
           .map((k) => k.trim())
@@ -403,8 +445,11 @@ Future<void> showOldWorldEditorDialog(
   final clue = TextEditingController(text: world.clueText ?? '');
   final revealsFactKeys = TextEditingController(text: world.revealsFactKeys.join(', '));
   var isFictional = world.isFictional;
-  final characters = [...world.characters];
+  final castCharacters = [...world.characters];
+  var narratingCharacterId = world.characterId;
+  final missionCharacters = await ref.read(missionRepositoryProvider).allCharacters();
 
+  if (!context.mounted) return;
   await showDialog<void>(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
@@ -443,10 +488,27 @@ Future<void> showOldWorldEditorDialog(
                       labelText: 'Historical map image URL (optional)',
                       border: OutlineInputBorder())),
               const SizedBox(height: 12),
+              if (missionCharacters.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: missionCharacters.any((c) => c.id == narratingCharacterId)
+                      ? narratingCharacterId
+                      : null,
+                  decoration: const InputDecoration(
+                      labelText: 'Character narrating this reveal',
+                      helperText: 'Their assigned voice is reused — same voice as their other scenes.',
+                      border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— none / use free text below —')),
+                    for (final c in missionCharacters) DropdownMenuItem(value: c.id, child: Text(c.name)),
+                  ],
+                  onChanged: (v) => setState(() => narratingCharacterId = v),
+                ),
+              const SizedBox(height: 12),
               TextField(
                   controller: narrator,
                   decoration: const InputDecoration(
-                      labelText: 'Narrator name (optional)', border: OutlineInputBorder())),
+                      labelText: 'Or: narrator name as free text (no character record)',
+                      border: OutlineInputBorder())),
               const SizedBox(height: 12),
               TextField(
                   controller: clue,
@@ -468,20 +530,21 @@ Future<void> showOldWorldEditorDialog(
               ),
               const SizedBox(height: 8),
               Row(children: [
-                const Text('Characters', style: TextStyle(fontWeight: FontWeight.w700)),
+                const Text('Cast (descriptive only, no voice)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
                 const Spacer(),
                 TextButton.icon(
                   onPressed: () => setState(
-                      () => characters.add(const OldWorldCharacter(name: 'New character'))),
+                      () => castCharacters.add(const OldWorldCharacter(name: 'New character'))),
                   icon: const Icon(Icons.add_rounded, size: 16),
                   label: const Text('Add'),
                 ),
               ]),
-              for (var i = 0; i < characters.length; i++)
+              for (var i = 0; i < castCharacters.length; i++)
                 _CharacterEditorRow(
-                  character: characters[i],
-                  onChanged: (c) => setState(() => characters[i] = c),
-                  onRemove: () => setState(() => characters.removeAt(i)),
+                  character: castCharacters[i],
+                  onChanged: (c) => setState(() => castCharacters[i] = c),
+                  onRemove: () => setState(() => castCharacters.removeAt(i)),
                 ),
             ]),
           ),
@@ -498,6 +561,7 @@ Future<void> showOldWorldEditorDialog(
                 'historical_map_image_url':
                     mapImage.text.trim().isEmpty ? null : mapImage.text.trim(),
                 'narrator_name': narrator.text.trim().isEmpty ? null : narrator.text.trim(),
+                'character_id': narratingCharacterId,
                 'clue_text': clue.text.trim().isEmpty ? null : clue.text.trim(),
                 'reveals_fact_keys': revealsFactKeys.text
                     .split(',')
@@ -505,7 +569,7 @@ Future<void> showOldWorldEditorDialog(
                     .where((k) => k.isNotEmpty)
                     .toList(),
                 'is_fictional': isFictional,
-                'characters': characters.map((c) => c.toJson()).toList(),
+                'characters': castCharacters.map((c) => c.toJson()).toList(),
               });
               ref.read(missionsRefreshProvider.notifier).bump();
               if (dialogContext.mounted) Navigator.pop(dialogContext);
