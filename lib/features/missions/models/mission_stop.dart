@@ -21,6 +21,7 @@ class MissionStop {
     this.qrPortalId,
     this.oldWorldId,
     this.nextStopId,
+    this.treasureDiscoveryId,
   });
 
   final String id;
@@ -43,6 +44,12 @@ class MissionStop {
   final String? oldWorldId;
   final String? nextStopId;
 
+  /// The Treasure Hunt Discovery stage shown after arrival, before the
+  /// player reaches the existing QR scanner. Null skips straight to the
+  /// plain "Scan QR Marker" flow, exactly as every stop already worked
+  /// before this feature existed — fully backward compatible.
+  final String? treasureDiscoveryId;
+
   static double _d(dynamic v) => (v as num?)?.toDouble() ?? 0;
 
   factory MissionStop.fromJson(Map<String, dynamic> j) => MissionStop(
@@ -61,6 +68,7 @@ class MissionStop {
         qrPortalId: j['qr_portal_id']?.toString(),
         oldWorldId: j['old_world_id']?.toString(),
         nextStopId: j['next_stop_id']?.toString(),
+        treasureDiscoveryId: j['treasure_discovery_id']?.toString(),
       );
 
   Map<String, dynamic> toWrite() => {
@@ -78,5 +86,6 @@ class MissionStop {
         'qr_portal_id': qrPortalId,
         'old_world_id': oldWorldId,
         'next_stop_id': nextStopId,
+        'treasure_discovery_id': treasureDiscoveryId,
       };
 }

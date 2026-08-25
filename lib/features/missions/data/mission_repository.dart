@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/missions/models/mission_story_step.d
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
 import 'package:explorer_os_mobile/features/missions/models/qr_portal.dart';
+import 'package:explorer_os_mobile/features/missions/models/treasure_discovery.dart';
 
 /// Read/write access to the Marion County Adventures content tables
 /// (migration 0061). Read-safe: returns `[]`/`null` when Supabase isn't
@@ -227,6 +228,32 @@ class MissionRepository {
   Future<void> deleteStoryStep(String id) =>
       SupabaseService.client.from('mission_story_steps').delete().eq('id', id);
 
+  Future<TreasureDiscovery?> treasureDiscoveryById(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('treasure_discoveries')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : TreasureDiscovery.fromJson(row);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String> createTreasureDiscovery(Map<String, dynamic> row) async {
+    final inserted = await SupabaseService.client
+        .from('treasure_discoveries')
+        .insert(row)
+        .select('id')
+        .single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updateTreasureDiscovery(String id, Map<String, dynamic> fields) => _resilient(
+      fields, (r) => SupabaseService.client.from('treasure_discoveries').update(r).eq('id', id));
+
   Future<MissionCharacter?> characterById(String id) async {
     if (!SupabaseService.isConfigured) return null;
     try {
@@ -426,6 +453,11 @@ final missionCharactersProvider = FutureProvider<List<MissionCharacter>>((ref) {
 final missionCharacterByIdProvider = FutureProvider.family<MissionCharacter?, String>((ref, id) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).characterById(id);
+});
+
+final treasureDiscoveryByIdProvider = FutureProvider.family<TreasureDiscovery?, String>((ref, id) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).treasureDiscoveryById(id);
 });
 
 /// A mission's Story Builder sequence, in order.

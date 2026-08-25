@@ -64,6 +64,9 @@ enum AppRoute {
   missionIntro('/missions/:id/intro'),
   missionPlayer('/missions/:id'),
   qrScan('/qr-scan'),
+  // No id — like missionPuzzle below, reads the current stop's
+  // TreasureDiscovery off the already-active ActiveMissionController.
+  treasureMap('/treasure-map'),
   oldWorld('/old-world/:id'),
   // No id — reads the pending puzzle off the already-active
   // ActiveMissionController, the same way MissionCompleteScreen already
