@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:explorer_os_mobile/features/missions/data/mission_progress_repository.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
+import 'package:explorer_os_mobile/features/missions/models/guide_step.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_map_piece.dart';
 
 /// One "Clues Found" list item — a clue-flagged `mission_travel_stories`
@@ -78,6 +79,7 @@ final treasureMapProvider = FutureProvider.family<TreasureMapData, String>((ref,
   final stops = await repo.stopsForMission(missionId);
   final oldWorldIds = stops.map((s) => s.oldWorldId).whereType<String>().toList();
   final oldWorlds = await repo.oldWorldsByIds(oldWorldIds);
+  final guideSteps = await repo.guideStepsForMission(missionId);
 
   final foundPieceIds = <String>{};
   final clues = <FoundClue>[];
@@ -127,9 +129,53 @@ final treasureMapProvider = FutureProvider.family<TreasureMapData, String>((ref,
     ));
   }
 
+  // Guide Steps (talked through the Guide tab, see nextGuideStepProvider)
+  // are one more clue source — a CLUE-content step or any step with
+  // unlocksMapPieceId set feeds the same Treasure Map, using the exact
+  // same `firedIds` set every other clue source already uses (see
+  // ActiveMissionController.markGuideStepShown).
+  for (final step in guideSteps) {
+    final isClueLike = step.contentType == kGuideContentClue || step.unlocksMapPieceId != null;
+    if (!isClueLike || !firedIds.contains(step.id)) continue;
+    if (step.unlocksMapPieceId != null) foundPieceIds.add(step.unlocksMapPieceId!);
+    String? characterName;
+    String? characterImageUrl;
+    if (step.characterId != null) {
+      final character = await repo.characterById(step.characterId!);
+      characterName = character?.name;
+      characterImageUrl = character?.imageUrl;
+    }
+    final text = (step.script ?? '').trim();
+    clues.add(FoundClue(
+      id: step.id,
+      title: text.length > 48 ? '${text.substring(0, 48)}…' : (text.isEmpty ? step.title : text),
+      clueType: _clueTypeForGuideContent(step.contentType),
+      text: text.isEmpty ? null : text,
+      audioUrl: step.audioUrl,
+      imageUrl: step.imageUrl,
+      videoUrl: step.avatarVideoUrl,
+      characterName: characterName,
+      characterImageUrl: characterImageUrl,
+    ));
+  }
+
   final pieceStatuses = [
     for (final piece in pieces) MapPieceStatus(piece: piece, found: foundPieceIds.contains(piece.id)),
   ];
 
   return TreasureMapData(pieces: pieceStatuses, clues: clues);
 });
+
+/// Maps a Guide Step's [GuideStep.contentType] onto the Treasure Map's own
+/// clue-type vocabulary — the two are separate concepts (a Guide Step's
+/// content type also covers PONDER/CHOICE/etc., which never appear in the
+/// Clues Found list at all; only genuinely clue-like content types reach
+/// this function, see the `isClueLike` check above).
+String _clueTypeForGuideContent(String guideContentType) => switch (guideContentType) {
+      kGuideContentImage || kGuideContentInspect => kClueTypeImage,
+      kGuideContentAudio => kClueTypeAudio,
+      kGuideContentVideo => kClueTypeVideo,
+      kGuideContentMap || kGuideContentDiscovery => kClueTypeMapFragment,
+      kGuideContentTalk => kClueTypeCharacterMessage,
+      _ => kClueTypeText,
+    };

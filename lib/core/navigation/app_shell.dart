@@ -8,6 +8,8 @@ import 'package:explorer_os_mobile/core/theme/app_shadows.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 import 'package:explorer_os_mobile/features/discover_home/presentation/discover_mini_player.dart';
+import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
+import 'package:explorer_os_mobile/features/missions/data/guide_step_provider.dart';
 
 /// The persistent shell hosting the floating bottom navigation bar.
 ///
@@ -19,15 +21,16 @@ import 'package:explorer_os_mobile/features/discover_home/presentation/discover_
 ///
 /// ADVENTURE-FIRST: the app's primary purpose is Marion County Adventures —
 /// the map, GPS, stories, and everything else are supporting systems for the
-/// adventure game, not peers of it. Exactly three primary tabs (fixed
+/// adventure game, not peers of it. Exactly four primary tabs (fixed
 /// order): Adventures (index 0 — the adventure storefront/landing screen),
 /// Map (index 1 — the active adventure's game board, or the general explore
-/// map when no adventure is active), My Discoveries (index 2 — the player's
-/// journal). To change tabs, keep this bar and the branch list in
-/// `AppRouter` index-aligned. Radio, Discover's recommendation feed,
+/// map when no adventure is active), Guide (index 2 — THE GUIDE's permanent
+/// per-adventure companion screen, `GuideHomeScreen`), Discoveries (index 3
+/// — the player's journal). To change tabs, keep this bar and the branch
+/// list in `AppRouter` index-aligned. Radio, Discover's recommendation feed,
 /// Wildlife Guide, and everything else live one tap away via More —
 /// reachable from a menu button on each primary screen's app bar, not a
-/// fourth bottom tab (see `more_screen.dart`). Radio playback itself stays
+/// fifth bottom tab (see `more_screen.dart`). Radio playback itself stays
 /// glanceable/controllable from any primary tab via [DiscoverMiniPlayer],
 /// reused as-is (same widget/engine Discover already used it with) rather
 /// than earning its own tab.
@@ -59,6 +62,10 @@ class AppShell extends ConsumerWidget {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(activeTabIndexProvider.notifier).value = navigationShell.currentIndex;
     });
+    final activeMissionId = ref.watch(activeMissionControllerProvider).mission?.id;
+    final hasNewGuideContent = activeMissionId == null
+        ? false
+        : ref.watch(nextGuideStepProvider(activeMissionId)).value != null;
     final navTheme = NavigationBarThemeData(
       height: 68,
       backgroundColor: _barColor,
@@ -110,21 +117,36 @@ class AppShell extends ConsumerWidget {
                     child: NavigationBar(
                       selectedIndex: navigationShell.currentIndex,
                       onDestinationSelected: _goToBranch,
-                      destinations: const [
-                        NavigationDestination(
+                      destinations: [
+                        const NavigationDestination(
                           icon: Icon(Icons.explore_outlined),
                           selectedIcon: Icon(Icons.explore_rounded),
                           label: 'Adventures',
                         ),
-                        NavigationDestination(
+                        const NavigationDestination(
                           icon: Icon(Icons.map_outlined),
                           selectedIcon: Icon(Icons.map_rounded),
                           label: 'Map',
                         ),
                         NavigationDestination(
+                          icon: Badge(
+                            isLabelVisible: hasNewGuideContent,
+                            backgroundColor: _gold,
+                            smallSize: 8,
+                            child: const Icon(Icons.person_search_outlined),
+                          ),
+                          selectedIcon: Badge(
+                            isLabelVisible: hasNewGuideContent,
+                            backgroundColor: _gold,
+                            smallSize: 8,
+                            child: const Icon(Icons.person_search_rounded),
+                          ),
+                          label: 'Guide',
+                        ),
+                        const NavigationDestination(
                           icon: Icon(Icons.auto_stories_outlined),
                           selectedIcon: Icon(Icons.auto_stories_rounded),
-                          label: 'My Discoveries',
+                          label: 'Discoveries',
                         ),
                       ],
                     ),
