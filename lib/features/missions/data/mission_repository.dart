@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
+import 'package:explorer_os_mobile/features/missions/models/guide_step.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_fact.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_map_piece.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
@@ -75,6 +76,50 @@ class MissionRepository {
       return const [];
     }
   }
+
+  /// An adventure's Guide sequence, active-only, in play order — what
+  /// `nextGuideStepProvider` scans to find the next relevant beat.
+  Future<List<GuideStep>> guideStepsForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('guide_steps')
+          .select()
+          .eq('mission_id', missionId)
+          .eq('active', true)
+          .order('step_order', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(GuideStep.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Every Guide Step, active or not — the admin editor's full list.
+  Future<List<GuideStep>> allGuideStepsForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('guide_steps')
+          .select()
+          .eq('mission_id', missionId)
+          .order('step_order', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(GuideStep.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<String> createGuideStep(Map<String, dynamic> row) async {
+    final inserted =
+        await SupabaseService.client.from('guide_steps').insert(row).select('id').single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updateGuideStep(String id, Map<String, dynamic> fields) => _resilient(
+      fields, (r) => SupabaseService.client.from('guide_steps').update(r).eq('id', id));
+
+  Future<void> deleteGuideStep(String id) =>
+      SupabaseService.client.from('guide_steps').delete().eq('id', id);
 
   /// A mission's Treasure Map fragments, in assembly order — the fixed
   /// list `treasureMapProvider` cross-references against whichever clues
@@ -224,6 +269,23 @@ class MissionRepository {
           .limit(1) as List;
       if (rows.isEmpty) return null;
       return MissionPuzzle.fromJson(rows.first as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A single puzzle by id — how a RIDDLE/QUESTION Guide Step resolves the
+  /// `mission_puzzles` row it reuses for answer-checking and progressive
+  /// hints, rather than duplicating that shape on `guide_steps`.
+  Future<MissionPuzzle?> puzzleById(String id) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final row = await SupabaseService.client
+          .from('mission_puzzles')
+          .select()
+          .eq('id', id)
+          .maybeSingle();
+      return row == null ? null : MissionPuzzle.fromJson(row);
     } catch (_) {
       return null;
     }
@@ -517,6 +579,18 @@ final mapPiecesForMissionProvider =
     FutureProvider.family<List<MissionMapPiece>, String>((ref, missionId) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).mapPiecesForMission(missionId);
+});
+
+final guideStepsForMissionProvider =
+    FutureProvider.family<List<GuideStep>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).guideStepsForMission(missionId);
+});
+
+final allGuideStepsForMissionProvider =
+    FutureProvider.family<List<GuideStep>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).allGuideStepsForMission(missionId);
 });
 
 final oldWorldByIdProvider = FutureProvider.family<OldWorld?, String>((ref, id) {

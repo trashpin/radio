@@ -423,6 +423,21 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
         );
   }
 
+  /// Marks [puzzleId] solved without gating mission completion the way
+  /// [solvePuzzle] does — for a RIDDLE/QUESTION Guide Step's own linked
+  /// puzzle, answered inline within the Guide tab. This is what lets a
+  /// later Guide Step's `puzzle_solved` trigger see it.
+  void markPuzzleSolved(String puzzleId) {
+    state = state.copyWith(solvedPuzzleIds: {...state.solvedPuzzleIds, puzzleId});
+    _persist();
+  }
+
+  /// Records that a `guide_steps` row has been shown — reuses the exact
+  /// same `firedIds`/`mission_progress.fired_content_ids` mechanism a
+  /// travel story already uses, so `nextGuideStepProvider` never re-offers
+  /// a beat the player has already seen, with no new tracking column.
+  void markGuideStepShown(String guideStepId) => _markFired(guideStepId);
+
   void _markFired(String id) {
     state = state.copyWith(firedIds: {...state.firedIds, id});
     _persist();

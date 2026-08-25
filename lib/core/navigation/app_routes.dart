@@ -17,6 +17,9 @@ enum AppRoute {
   aiRanger('/ai-ranger'),
   stories('/stories'),
   map('/map'),
+  // THE GUIDE's permanent per-adventure companion tab -- distinct from
+  // AppRoute.guideIntro (the one-time onboarding flow).
+  guideHome('/guide-home'),
   myDiscoveries('/my-discoveries'),
   more('/more'),
   // A Nature & Parks/Springs & Water/etc. browsing feed — kept exactly as it

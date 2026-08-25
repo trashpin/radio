@@ -22,6 +22,7 @@ import 'package:explorer_os_mobile/features/discovery/presentation/discovery_cat
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/adventure_map_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/guide_home_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/guide_intro_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_complete_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_intro_screen.dart';
@@ -100,6 +101,7 @@ class AppRouter {
         branches: [
           _branch(AppRoute.missionsHome.path, const MissionsHomeScreen()),
           _branch(AppRoute.map.path, const AdventureMapScreen()),
+          _branch(AppRoute.guideHome.path, const GuideHomeScreen()),
           _branch(AppRoute.myDiscoveries.path, const PlayerDiscoveriesScreen()),
         ],
       ),

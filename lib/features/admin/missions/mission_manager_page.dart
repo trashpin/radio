@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:explorer_os_mobile/features/admin/missions/guide_step_builder_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_image_picker.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_stops_page.dart';
@@ -97,6 +98,13 @@ class _MissionRow extends ConsumerWidget {
             icon: const Icon(Icons.auto_stories_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => StoryBuilderPage(mission: mission)),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Guide Steps',
+            icon: const Icon(Icons.person_search_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => GuideStepBuilderPage(mission: mission)),
             ),
           ),
           PopupMenuButton<String>(

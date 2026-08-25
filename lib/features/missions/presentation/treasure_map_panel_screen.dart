@@ -6,16 +6,9 @@ import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_c
 import 'package:explorer_os_mobile/features/missions/data/treasure_map_provider.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_map_piece.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
+import 'package:explorer_os_mobile/features/missions/services/safe_travel.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
-
-/// A player is "safely stopped" below this speed (~3.4 mph, brisk walking
-/// pace) — the one signal gating interactive clue types while driving
-/// (spec: "Do NOT require the player to interact with images, riddles, map
-/// pieces, or puzzles while driving. Audio clues may be played during
-/// travel."). Reuses the GPS fix already streaming into every other
-/// location-aware feature — no new sensor or system.
-const double _kMovingSpeedThresholdMps = 1.5;
 
 /// THE SECOND LAYER — "what have I discovered?", alongside (never instead
 /// of) the existing navigation map's "where do I go?". Opened from a
@@ -125,7 +118,7 @@ class _ClueRow extends ConsumerWidget {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          builder: (_) => _ClueViewerSheet(clue: clue),
+          builder: (_) => ClueViewerSheet(clue: clue),
         ),
         child: Row(children: [
           Icon(_icon, color: RD.amber, size: 20),
@@ -143,15 +136,17 @@ class _ClueRow extends ConsumerWidget {
 /// The type-specific viewer for one already-found clue. The safe-travel
 /// gate lives here, not on the list — the player can always see WHAT
 /// they've found while driving, just not interact with a visual clue
-/// until they're safely stopped (audio is never gated).
-class _ClueViewerSheet extends ConsumerWidget {
-  const _ClueViewerSheet({required this.clue});
+/// until they're safely stopped (audio is never gated). Public because
+/// `GuideHomeScreen`'s "AVAILABLE CLUES" quick-access chips reuse it
+/// directly rather than re-implementing clue playback a second time.
+class ClueViewerSheet extends ConsumerWidget {
+  const ClueViewerSheet({super.key, required this.clue});
   final FoundClue clue;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final speed = ref.watch(gpsControllerProvider).location?.speedMps ?? 0;
-    final moving = speed > _kMovingSpeedThresholdMps;
+    final speed = ref.watch(gpsControllerProvider).location?.speedMps;
+    final moving = isMovingTooFastForInteraction(speed);
     final needsSafeStop = clue.clueType != kClueTypeAudio;
 
     return DraggableScrollableSheet(
