@@ -209,6 +209,7 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
   bool? _puzzleCorrect;
   int _hintsUsed = 0;
   String? _choiceResponse;
+  bool _showTranscript = false;
 
   @override
   void initState() {
@@ -266,6 +267,15 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
     }
   }
 
+  /// Whether [GuideStep.script] is "what the Guide just said" (spoken via
+  /// the video/audio above, so showing it again by default would be the
+  /// exact duplicate the spec asks to remove — kept only behind VIEW
+  /// TRANSCRIPT) as opposed to a written prompt that IS the activity
+  /// itself (PONDER/CLUE, always visible — there's nothing to duplicate,
+  /// it's the only copy of a question the player needs to keep re-reading).
+  bool get _scriptIsSpokenDialogue =>
+      widget.step.contentType != kGuideContentPonder && widget.step.contentType != kGuideContentClue;
+
   @override
   Widget build(BuildContext context) {
     final speed = ref.watch(gpsControllerProvider).location?.speedMps;
@@ -276,46 +286,105 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
     // safely stopped, same as VIDEO.
     final audioOnly = widget.step.contentType == kGuideContentAudio ||
         (widget.step.contentType == kGuideContentTalk && !widget.step.hasAvatarVideo);
+    final script = (widget.step.script ?? '').trim();
+    final hasTranscript = script.isNotEmpty && _scriptIsSpokenDialogue;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _speak());
 
-    return GlassPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if ((widget.step.script ?? '').isNotEmpty) ...[
-            Text(widget.step.script!, style: RD.body.copyWith(color: Colors.white, fontSize: 15, height: 1.5)),
-            const SizedBox(height: RD.md),
-          ],
-          if (!audioOnly && moving)
-            GlassPanel(
-              color: RD.amber.withValues(alpha: 0.12),
-              child: Row(children: [
-                const Icon(Icons.directions_car_filled_rounded, color: RD.amber),
-                const SizedBox(width: RD.sm),
-                Expanded(
-                  child: Text(
-                    "A clue is waiting for you. We'll show it when you arrive or when you're safely stopped.",
-                    style: RD.body.copyWith(color: Colors.white),
-                  ),
-                ),
-              ]),
-            )
-          else
-            ..._buildBody(),
-          const SizedBox(height: RD.lg),
-          if (_showContinueButton(moving, audioOnly))
-            SizedBox(
-              height: 48,
-              child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: RD.green, foregroundColor: RD.onGreen),
-                onPressed: widget.onDone,
-                child: const Text('CONTINUE', style: TextStyle(fontWeight: FontWeight.w700)),
-              ),
+    final contentPanel = (!audioOnly && moving) ? null : _buildContentPanel(script);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. GUIDE VIDEO AT THE TOP — the primary communication. No caption
+        // underneath by default (spec: "Do not display a duplicate text
+        // version of what the Guide just said underneath the video").
+        _GuideVideoBlock(step: widget.step, guide: widget.guide),
+        if (hasTranscript) ...[
+          const SizedBox(height: RD.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showTranscript = !_showTranscript),
+              icon: Icon(_showTranscript ? Icons.expand_less_rounded : Icons.subtitles_outlined,
+                  size: 16, color: RD.textSecondary),
+              label: Text(_showTranscript ? 'Hide Transcript' : 'View Transcript',
+                  style: RD.caption.copyWith(color: RD.textSecondary)),
+            ),
+          ),
+          if (_showTranscript)
+            Padding(
+              padding: const EdgeInsets.only(bottom: RD.sm),
+              child: Text(script,
+                  style: RD.body.copyWith(color: Colors.white70, fontSize: 14, height: 1.4)),
             ),
         ],
-      ),
+        if (!audioOnly && moving) ...[
+          const SizedBox(height: RD.md),
+          GlassPanel(
+            color: RD.amber.withValues(alpha: 0.12),
+            child: Row(children: [
+              const Icon(Icons.directions_car_filled_rounded, color: RD.amber),
+              const SizedBox(width: RD.sm),
+              Expanded(
+                child: Text(
+                  "A clue is waiting for you. We'll show it when you arrive or when you're safely stopped.",
+                  style: RD.body.copyWith(color: Colors.white),
+                ),
+              ),
+            ]),
+          ),
+        ] else if (contentPanel != null) ...[
+          // 2. CLUE / ACTIVITY PRESENTED BELOW — a visually distinct block,
+          // separate from the Guide's own video (spec: "The Guide video and
+          // the clue are two separate components").
+          const SizedBox(height: RD.md),
+          Text(_contentLabel(), style: RD.tagline.copyWith(color: RD.amber, letterSpacing: 2, fontSize: 12)),
+          const SizedBox(height: RD.sm),
+          GlassPanel(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: contentPanel)),
+        ],
+        const SizedBox(height: RD.lg),
+        // 3. ACTION BUTTON
+        if (_showContinueButton(moving, audioOnly))
+          SizedBox(
+            height: 48,
+            child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: RD.green, foregroundColor: RD.onGreen),
+              onPressed: _onActionPressed,
+              child: Text(_actionLabel(), style: const TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+      ],
     );
+  }
+
+  String _contentLabel() => switch (widget.step.contentType) {
+        kGuideContentImage || kGuideContentInspect => 'PHOTO CLUE',
+        kGuideContentAudio => 'AUDIO CLUE',
+        kGuideContentPonder => 'PONDER',
+        kGuideContentRiddle => 'RIDDLE',
+        kGuideContentQuestion => 'QUESTION',
+        kGuideContentMap || kGuideContentDiscovery => 'MAP DISCOVERY',
+        kGuideContentChoice => 'CHOICE',
+        _ => 'CLUE',
+      };
+
+  // Once a riddle/question/choice's own inline interaction is already
+  // complete, the bottom button always just means "move on" — only
+  // IMAGE/INSPECT and MAP/DISCOVERY have no inline interaction of their
+  // own, so the bottom button IS their first and only action there.
+  String _actionLabel() => switch (widget.step.contentType) {
+        kGuideContentImage || kGuideContentInspect => 'INSPECT',
+        kGuideContentMap || kGuideContentDiscovery => 'VIEW MAP',
+        _ => 'CONTINUE',
+      };
+
+  void _onActionPressed() {
+    if (widget.step.contentType == kGuideContentMap ||
+        widget.step.contentType == kGuideContentDiscovery) {
+      context.push(AppRoute.missionDiscoveries.missionDiscoveriesPathFor(widget.step.missionId));
+    }
+    widget.onDone();
   }
 
   bool _showContinueButton(bool moving, bool audioOnly) {
@@ -331,26 +400,34 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
     }
   }
 
-  List<Widget> _buildBody() {
+  /// The "CLUE / ACTIVITY" block underneath the Guide's video — a visually
+  /// distinct panel (spec: "The Guide video and the clue are two separate
+  /// components"). Returns null for a bare TALK/VIDEO/simple message with
+  /// nothing to show beyond the video itself (spec's "SIMPLE GUIDE
+  /// MOMENTS": just the video and CONTINUE, "do not create an unnecessary
+  /// text card").
+  List<Widget>? _buildContentPanel(String script) {
     switch (widget.step.contentType) {
       case kGuideContentTalk:
       case kGuideContentVideo:
-        return [
-          if (widget.step.hasAvatarVideo) CharacterVideoHero(videoUrl: widget.step.avatarVideoUrl!),
-        ];
+        return null;
       case kGuideContentImage:
       case kGuideContentInspect:
+        if ((widget.step.imageUrl ?? '').isEmpty) return null;
         return [
-          if ((widget.step.imageUrl ?? '').isNotEmpty)
-            ClipRRect(
-              borderRadius: RD.brLg,
-              child: InteractiveViewer(maxScale: 4, child: Image.network(widget.step.imageUrl!)),
-            ),
+          ClipRRect(
+            borderRadius: RD.brLg,
+            child: InteractiveViewer(maxScale: 4, child: Image.network(widget.step.imageUrl!)),
+          ),
         ];
       case kGuideContentAudio:
         return [_AudioControls(step: widget.step, guide: widget.guide)];
       case kGuideContentPonder:
         return [
+          if (script.isNotEmpty) ...[
+            Text(script, style: RD.body.copyWith(color: Colors.white, fontSize: 16, height: 1.4)),
+            const SizedBox(height: RD.md),
+          ],
           Wrap(spacing: RD.sm, runSpacing: RD.sm, children: [
             OutlinedButton(onPressed: () {}, child: const Text('I HAVE AN IDEA')),
             OutlinedButton(onPressed: () {}, child: const Text("I'M NOT SURE")),
@@ -405,19 +482,16 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
                 style: RD.body.copyWith(color: RD.green)),
         ];
       case kGuideContentClue:
-        return [];
+        if (script.isEmpty) return null;
+        return [Text(script, style: RD.body.copyWith(color: Colors.white, fontSize: 15, height: 1.5))];
       case kGuideContentMap:
       case kGuideContentDiscovery:
         return [
-          SizedBox(
-            height: 44,
-            child: OutlinedButton.icon(
-              onPressed: () => context.push(
-                  AppRoute.missionDiscoveries.missionDiscoveriesPathFor(widget.step.missionId)),
-              icon: const Icon(Icons.map_outlined),
-              label: const Text('Look at your map'),
-            ),
-          ),
+          Row(children: [
+            const Icon(Icons.auto_awesome_rounded, color: RD.amber),
+            const SizedBox(width: RD.sm),
+            Text('NEW MAP PIECE', style: RD.cardTitle.copyWith(color: Colors.white)),
+          ]),
         ];
       case kGuideContentChoice:
         if (_choiceResponse != null) {
@@ -433,8 +507,52 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
           ]),
         ];
       default:
-        return [];
+        return null;
     }
+  }
+}
+
+/// GUIDE VIDEO AT THE TOP — the primary communication (spec). Falls back
+/// to the Guide's static portrait, still visually prominent, when this
+/// step has no avatar video of its own (generating one per step is
+/// deliberately out of scope — see the shipped feature reports for why).
+class _GuideVideoBlock extends StatelessWidget {
+  const _GuideVideoBlock({required this.step, required this.guide});
+  final GuideStep step;
+  final MissionCharacter? guide;
+
+  @override
+  Widget build(BuildContext context) {
+    if (step.hasAvatarVideo) {
+      return CharacterVideoHero(videoUrl: step.avatarVideoUrl!);
+    }
+    return AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: RD.brLg,
+        child: Container(
+          color: RD.panelAlt,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircleAvatar(
+                  radius: 56,
+                  backgroundColor: RD.panel,
+                  backgroundImage:
+                      (guide?.imageUrl ?? '').isNotEmpty ? NetworkImage(guide!.imageUrl!) : null,
+                  child: (guide?.imageUrl ?? '').isEmpty
+                      ? const Icon(Icons.person_rounded, color: RD.textSecondary, size: 48)
+                      : null,
+                ),
+                const SizedBox(height: RD.md),
+                Text(guide?.name ?? 'The Guide', style: RD.cardTitle.copyWith(color: Colors.white)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
