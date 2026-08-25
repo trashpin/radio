@@ -9,6 +9,7 @@ import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_travel_story.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
+import 'package:explorer_os_mobile/features/missions/models/treasure_discovery.dart';
 
 /// Admin -> one stop's content: arrival narration, travel/approach stories
 /// (ADD TRAVEL STORY / ADD APPROACH STORY / ADD ARRIVAL STORY), the QR
@@ -26,6 +27,9 @@ class MissionStopDetailPage extends ConsumerWidget {
     final allStopsAsync = ref.watch(missionStopsProvider(mission.id));
     final oldWorldAsync =
         stop.oldWorldId == null ? null : ref.watch(oldWorldByIdProvider(stop.oldWorldId!));
+    final treasureAsync = stop.treasureDiscoveryId == null
+        ? null
+        : ref.watch(treasureDiscoveryByIdProvider(stop.treasureDiscoveryId!));
 
     return Scaffold(
       appBar: AppBar(title: Text(stop.title)),
@@ -89,6 +93,44 @@ class MissionStopDetailPage extends ConsumerWidget {
                           ),
                   ),
               ],
+            ]),
+          ),
+          const SizedBox(height: 16),
+          AdminSectionCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(
+                    child: Text('Treasure Discovery', style: Theme.of(context).textTheme.titleMedium)),
+                if (stop.qrPortalId == null)
+                  const Text('Needs a QR Portal first', style: TextStyle(fontSize: 12, color: Colors.grey)),
+              ]),
+              const Text(
+                'Stage 2 after GPS arrival: a stylized map + clue that makes the player explore '
+                'before reaching the QR marker. GPS still gets them to this stop\'s arrival radius; '
+                'this never reveals the exact QR spot. Uses this stop\'s existing QR Portal above — '
+                'no second QR system.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              if (stop.treasureDiscoveryId == null)
+                FilledButton(
+                  onPressed: stop.qrPortalId == null
+                      ? null
+                      : () => _createTreasureDiscovery(context, ref),
+                  child: const Text('Create Treasure Discovery'),
+                )
+              else if (treasureAsync != null)
+                treasureAsync.when(
+                  loading: () => const CircularProgressIndicator(),
+                  error: (e, _) => Text('$e'),
+                  data: (discovery) => discovery == null
+                      ? const Text('Treasure discovery not found.')
+                      : _TreasureDiscoverySummary(
+                          discovery: discovery,
+                          onEdit: () =>
+                              showTreasureDiscoveryEditorDialog(context, ref, discovery: discovery),
+                        ),
+                ),
             ]),
           ),
           const SizedBox(height: 16),
@@ -352,6 +394,19 @@ class MissionStopDetailPage extends ConsumerWidget {
     });
     await repo.updateStop(stop.id, {'qr_portal_id': qrPortalId, 'old_world_id': oldWorldId});
     ref.read(missionsRefreshProvider.notifier).bump();
+  }
+
+  Future<void> _createTreasureDiscovery(BuildContext context, WidgetRef ref) async {
+    final repo = ref.read(missionRepositoryProvider);
+    final id = await repo.createTreasureDiscovery({'mission_id': mission.id, 'stop_id': stop.id});
+    await repo.updateStop(stop.id, {'treasure_discovery_id': id});
+    ref.read(missionsRefreshProvider.notifier).bump();
+    if (context.mounted) {
+      final discovery = await repo.treasureDiscoveryById(id);
+      if (discovery != null && context.mounted) {
+        await showTreasureDiscoveryEditorDialog(context, ref, discovery: discovery);
+      }
+    }
   }
 }
 
@@ -638,4 +693,185 @@ class _CharacterEditorRowState extends State<_CharacterEditorRow> {
       ),
     );
   }
+}
+
+class _TreasureDiscoverySummary extends StatelessWidget {
+  const _TreasureDiscoverySummary({required this.discovery, required this.onEdit});
+  final TreasureDiscovery discovery;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Expanded(
+          child: Text(discovery.discoveryTitle ?? 'Treasure Discovery',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+        ),
+        if ((discovery.difficulty ?? '').isNotEmpty) StatusBadge(BadgeStatus.review, label: discovery.difficulty!),
+      ]),
+      if ((discovery.clueText ?? '').isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text(discovery.clueText!, maxLines: 2, overflow: TextOverflow.ellipsis),
+      ],
+      const SizedBox(height: 4),
+      Text(
+        [
+          if (discovery.hasMapImage) 'map set' else 'no map yet (placeholder shown)',
+          if (discovery.hasHint1 || discovery.hasHint2 || discovery.hasFinalHint)
+            '${[discovery.hasHint1, discovery.hasHint2, discovery.hasFinalHint].where((b) => b).length} hint(s)'
+          else
+            'no hints',
+        ].join(' · '),
+        style: const TextStyle(fontSize: 12, color: Colors.grey),
+      ),
+      const SizedBox(height: 8),
+      OutlinedButton(onPressed: onEdit, child: const Text('Edit Treasure Discovery')),
+    ]);
+  }
+}
+
+/// The Treasure Discovery editor — map image URL, clue, progressive hint
+/// ladder, discovery title/difficulty, and optional search-area guidance.
+/// Deliberately has no QR-picker field of its own: this stage always
+/// resolves through the stop's OWN existing `qr_portal_id`, so there is
+/// nothing to duplicate here (spec: "The QR itself should not be
+/// duplicated"). Reused for both the initial (minimal) row created
+/// alongside the stop and later enrichment, exactly like
+/// [showOldWorldEditorDialog].
+Future<void> showTreasureDiscoveryEditorDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required TreasureDiscovery discovery,
+}) async {
+  final mapImageUrl = TextEditingController(text: discovery.treasureMapImageUrl ?? '');
+  final clueText = TextEditingController(text: discovery.clueText ?? '');
+  final hint1 = TextEditingController(text: discovery.hint1Text ?? '');
+  final hint2 = TextEditingController(text: discovery.hint2Text ?? '');
+  final finalHint = TextEditingController(text: discovery.finalHintText ?? '');
+  final discoveryTitle = TextEditingController(text: discovery.discoveryTitle ?? '');
+  final landmarksText = TextEditingController(text: discovery.landmarksText ?? '');
+  final searchAreaFeet = TextEditingController(
+      text: discovery.searchAreaMeters == null
+          ? ''
+          : (discovery.searchAreaMeters! * 3.28084).round().toString());
+  var difficulty = discovery.difficulty;
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) => AlertDialog(
+        title: const Text('Edit Treasure Discovery'),
+        content: SizedBox(
+          width: 460,
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              TextField(
+                  controller: mapImageUrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Treasure map image URL (optional — placeholder shown if empty)',
+                      helperText: 'Mystery/adventure artwork of the real area — never a GPS map, '
+                          'never a pin on the exact QR spot.',
+                      border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                controller: clueText,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                    labelText: 'Clue',
+                    helperText: 'Short, solvable, connected to the real location — e.g. "Follow '
+                        'the trail toward the old trees. When the path bends, look for something '
+                        'that has stood here longer than the trail itself."',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: hint1,
+                  decoration: const InputDecoration(
+                      labelText: 'Hint 1 (subtle, optional)', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: hint2,
+                  decoration: const InputDecoration(
+                      labelText: 'Hint 2 — stronger (optional)', border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: finalHint,
+                  decoration: const InputDecoration(
+                      labelText: 'Final hint — makes it easy (optional)',
+                      border: OutlineInputBorder())),
+              const SizedBox(height: 20),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: discoveryTitle,
+                    decoration: const InputDecoration(
+                        labelText: 'Discovery title (optional, e.g. "YOU FOUND THE FIRST PIECE")',
+                        border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    initialValue: difficulty,
+                    decoration:
+                        const InputDecoration(labelText: 'Difficulty', border: OutlineInputBorder()),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('—')),
+                      for (final d in kTreasureDiscoveryDifficulties)
+                        DropdownMenuItem(value: d, child: Text(d)),
+                    ],
+                    onChanged: (v) => setState(() => difficulty = v),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 12),
+              TextField(
+                controller: searchAreaFeet,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                    labelText: 'Search area radius in feet (optional)',
+                    helperText: 'Shown to the player as a soft bound, e.g. "somewhere within '
+                        'about 300 feet of here" — never the exact QR distance.',
+                    border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: landmarksText,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                      labelText: 'Landmarks (admin notes, optional)',
+                      helperText: 'Production reference only — not shown to the player as-is.',
+                      border: OutlineInputBorder())),
+            ]),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final feet = double.tryParse(searchAreaFeet.text.trim());
+              await ref.read(missionRepositoryProvider).updateTreasureDiscovery(discovery.id, {
+                'treasure_map_image_url':
+                    mapImageUrl.text.trim().isEmpty ? null : mapImageUrl.text.trim(),
+                'clue_text': clueText.text.trim().isEmpty ? null : clueText.text.trim(),
+                'hint_1_text': hint1.text.trim().isEmpty ? null : hint1.text.trim(),
+                'hint_2_text': hint2.text.trim().isEmpty ? null : hint2.text.trim(),
+                'final_hint_text': finalHint.text.trim().isEmpty ? null : finalHint.text.trim(),
+                'discovery_title':
+                    discoveryTitle.text.trim().isEmpty ? null : discoveryTitle.text.trim(),
+                'landmarks_text':
+                    landmarksText.text.trim().isEmpty ? null : landmarksText.text.trim(),
+                'difficulty': difficulty,
+                'search_area_meters': feet == null ? null : feet / 3.28084,
+              });
+              ref.read(missionsRefreshProvider.notifier).bump();
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

@@ -184,19 +184,27 @@ class _NowPlayingCard extends StatelessWidget {
   }
 }
 
+/// Routes to the Treasure Hunt Discovery stage when the current stop has
+/// one configured — otherwise falls straight through to the existing QR
+/// scanner exactly as before this feature existed (fully backward
+/// compatible with every stop that has no treasure discovery set up).
 class _FindQrButton extends ConsumerWidget {
   const _FindQrButton({required this.missionId});
   final String missionId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final hasTreasureHunt =
+        ref.watch(activeMissionControllerProvider).currentStop?.treasureDiscoveryId != null;
     return SizedBox(
       height: 56,
       child: FilledButton.icon(
         style: FilledButton.styleFrom(backgroundColor: RD.green, foregroundColor: RD.onGreen),
-        onPressed: () => context.push(AppRoute.qrScan.path),
-        icon: const Icon(Icons.qr_code_scanner_rounded),
-        label: const Text('Scan QR Marker', style: TextStyle(fontWeight: FontWeight.w700)),
+        onPressed: () => context.push(
+            hasTreasureHunt ? AppRoute.treasureMap.path : AppRoute.qrScan.path),
+        icon: Icon(hasTreasureHunt ? Icons.map_outlined : Icons.qr_code_scanner_rounded),
+        label: Text(hasTreasureHunt ? 'Your Next Discovery' : 'Scan QR Marker',
+            style: const TextStyle(fontWeight: FontWeight.w700)),
       ),
     );
   }

@@ -29,6 +29,7 @@ import 'package:explorer_os_mobile/features/missions/presentation/mission_puzzle
 import 'package:explorer_os_mobile/features/missions/presentation/missions_home_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/old_world_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/qr_scan_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/treasure_map_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_forest_screen.dart';
 import 'package:explorer_os_mobile/features/profile/presentation/profile_screen.dart';
@@ -175,6 +176,7 @@ class AppRouter {
         ),
       ),
       _route(AppRoute.qrScan.path, const QrScanScreen()),
+      _route(AppRoute.treasureMap.path, const TreasureMapScreen()),
       GoRoute(
         path: AppRoute.oldWorld.path,
         builder: (context, state) => OldWorldScreen(

@@ -23,6 +23,13 @@ import 'package:explorer_os_mobile/features/missions/services/mission_story_engi
 /// field is a natural, non-breaking follow-up.
 const int _kQrScanXp = 25;
 
+/// XP deducted per hint requested during a stop's Treasure Hunt Discovery
+/// stage, floored so hints are never heavily punished (spec: "do not
+/// punish the player heavily for using hints — the goal is to encourage
+/// exploration, not frustration").
+const int _kHintXpPenalty = 5;
+const int _kMinQrScanXp = 10;
+
 /// The result of attempting to scan a QR code — the QR scan screen reads
 /// this to decide whether to transition into the Old World or show an error.
 class QrScanOutcome {
@@ -55,6 +62,7 @@ class ActiveMissionState {
     this.lastNarrationText,
     this.loading = false,
     this.charactersById = const {},
+    this.hintsUsed = 0,
   });
 
   final Mission? mission;
@@ -89,6 +97,12 @@ class ActiveMissionState {
   final String? lastNarrationText;
   final bool loading;
 
+  /// How many hints the player has requested during the CURRENT stop's
+  /// Treasure Hunt Discovery stage — reset whenever the current stop
+  /// changes (see [_completeStop]). Reduces the eventual QR-scan XP award,
+  /// never heavily.
+  final int hintsUsed;
+
   bool get hasActiveMission => mission != null;
   bool get hasPendingPuzzle => pendingPuzzle != null;
 
@@ -110,6 +124,7 @@ class ActiveMissionState {
     String? lastNarrationText,
     bool? loading,
     Map<String, MissionCharacter>? charactersById,
+    int? hintsUsed,
   }) =>
       ActiveMissionState(
         mission: mission ?? this.mission,
@@ -128,6 +143,7 @@ class ActiveMissionState {
         lastNarrationText: lastNarrationText ?? this.lastNarrationText,
         loading: loading ?? this.loading,
         charactersById: charactersById ?? this.charactersById,
+        hintsUsed: hintsUsed ?? this.hintsUsed,
       );
 }
 
@@ -358,6 +374,13 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     _persist();
   }
 
+  /// Called by the Treasure Map screen each time the player requests
+  /// another hint — reduces the eventual QR-scan XP award by a small,
+  /// floored amount (see [onQrScanned]), never blocks anything.
+  void useHint() {
+    state = state.copyWith(hintsUsed: state.hintsUsed + 1);
+  }
+
   Future<void> _speak({
     required String subjectId,
     required String kind,
@@ -399,10 +422,11 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
 
     final portal = await ref.read(missionRepositoryProvider).portalByCode(code);
     if (portal == null || !portal.active) {
-      return QrScanOutcome.failure('This QR code isn\'t recognized.');
+      return QrScanOutcome.failure("That's not the discovery you're looking for.");
     }
     if (!portal.isGlobal && portal.missionStopId != null && portal.missionStopId != stop.id) {
-      return QrScanOutcome.failure("This QR code belongs to a different part of the adventure.");
+      return QrScanOutcome.failure("That's not the discovery you're looking for — not for this part "
+          "of the adventure, anyway.");
     }
 
     if (portal.requiresGpsProximity && lat != null && lng != null) {
@@ -414,7 +438,9 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     }
 
     final oldWorldId = portal.oldWorldId ?? stop.oldWorldId;
-    state = state.copyWith(xp: state.xp + _kQrScanXp);
+    final awardedXp =
+        (_kQrScanXp - state.hintsUsed * _kHintXpPenalty).clamp(_kMinQrScanXp, _kQrScanXp);
+    state = state.copyWith(xp: state.xp + awardedXp);
     final missionComplete = await _completeStop(stop, oldWorldId: oldWorldId);
     return QrScanOutcome.success(oldWorldId: oldWorldId, missionComplete: missionComplete);
   }
@@ -450,6 +476,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       currentStop: next,
       currentStopStories: stories,
       awaitingQr: false,
+      hintsUsed: 0,
     );
     await _persist();
     return false;
