@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart'
-    show showPuzzleEditorDialog;
+    show showPuzzleEditorDialog, showPuzzleHintsPreviewDialog;
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
@@ -126,6 +126,11 @@ class MissionStopDetailPage extends ConsumerWidget {
                         subtitle: Text('Accepts: ${puzzle.acceptedAnswers.join(", ")} · '
                             '+${puzzle.rewardXp} XP'),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            tooltip: 'Preview hints',
+                            icon: const Icon(Icons.visibility_outlined),
+                            onPressed: () => showPuzzleHintsPreviewDialog(context, puzzle),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.edit_outlined),
                             onPressed: () => showPuzzleEditorDialog(context, ref,

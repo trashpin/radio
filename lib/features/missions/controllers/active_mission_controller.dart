@@ -520,16 +520,24 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
 
   /// Checks [answer] against the pending final puzzle (spec: a simple,
   /// honest string match, not an AI grader). On success, awards the
-  /// puzzle's own XP and completes the mission; on failure, the pending
-  /// puzzle stays in place so the player can try again.
-  bool solvePuzzle(String answer) {
+  /// puzzle's own XP (reduced by [hintsUsed] * the puzzle's own
+  /// `hintXpPenalty`, see [AskTheGuidePanel]) and completes the mission; on
+  /// failure, the pending puzzle stays in place so the player can try
+  /// again. [revealed] skips the answer check entirely — set only after
+  /// the player has used REVEAL ANSWER, which always awards 0 XP but,
+  /// exactly like a normal solve, never blocks completing the adventure.
+  bool solvePuzzle(String answer, {int hintsUsed = 0, bool revealed = false}) {
     final puzzle = state.pendingPuzzle;
     if (puzzle == null) return false;
-    if (!puzzle.checkAnswer(answer)) return false;
+    if (!revealed && !puzzle.checkAnswer(answer)) return false;
+
+    final awardedXp = revealed
+        ? 0
+        : (puzzle.rewardXp - hintsUsed * puzzle.hintXpPenalty).clamp(0, puzzle.rewardXp);
 
     state = state.copyWith(
       solvedPuzzleIds: {...state.solvedPuzzleIds, puzzle.id},
-      xp: state.xp + puzzle.rewardXp,
+      xp: state.xp + awardedXp,
       clearPendingPuzzle: true,
     );
     _finalizeMissionComplete();
