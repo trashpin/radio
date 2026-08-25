@@ -3,20 +3,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/gps/controllers/gps_controller.dart';
+import 'package:explorer_os_mobile/features/gps/utils/geo_math.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
-/// "TODAY -> ENTER THE OLD WORLD" (spec Phase 5). The transition itself is a
-/// simple fade/scale reveal — special without needing new animation
-/// infrastructure. Plays the Old World's narration through the SAME
-/// duck/resume audio mechanism every other mission beat uses.
+enum _Phase { discoveryFound, chapter, quiz, nextObjective }
+
+/// "TODAY -> ENTER THE OLD WORLD" — the post-QR "next chapter" experience.
+/// Scanning a valid QR doesn't just open an info page; it's a doorway into
+/// a sequence: a brief DISCOVERY FOUND beat, the character's chapter
+/// (video/narration/clue — unchanged from before this feature), an
+/// OPTIONAL stop-level "test of wits" question (never blocks progression),
+/// then YOUR NEXT OBJECTIVE before the existing journey map opens for the
+/// next stop. [ActiveMissionController]'s single-active-geofence
+/// transition already happened by the time any of this is on screen (see
+/// [onQrScanned]/`_completeStop`) — this screen only decides what the
+/// player sees next, never which geofence is active.
 class OldWorldScreen extends ConsumerStatefulWidget {
   const OldWorldScreen({super.key, required this.oldWorldId, this.missionComplete = false});
   final String oldWorldId;
@@ -32,6 +43,9 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
       AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
   bool _spoken = false;
   MissionCharacter? _character;
+  _Phase _phase = _Phase.discoveryFound;
+  MissionPuzzle? _stopPuzzle;
+  bool _puzzleChecked = false;
 
   @override
   void dispose() {
@@ -42,6 +56,13 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
   Future<void> _speak(OldWorld world) async {
     if (_spoken) return;
     _spoken = true;
+
+    // The brief "DISCOVERY FOUND" beat before the chapter reveals itself —
+    // a doorway, not an instant info dump.
+    Future.delayed(const Duration(milliseconds: 1100), () {
+      if (mounted) setState(() => _phase = _Phase.chapter);
+    });
+
     // Facts are revealed the moment this Old World is shown — the player
     // may not know why yet (spec: "I was supposed to remember that").
     if (world.revealsFactKeys.isNotEmpty) {
@@ -52,6 +73,13 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
     final character =
         world.characterId == null ? null : await ref.read(missionRepositoryProvider).characterById(world.characterId!);
     if (mounted) setState(() => _character = character);
+
+    if (!_puzzleChecked) {
+      _puzzleChecked = true;
+      final puzzle =
+          world.stopId == null ? null : await ref.read(missionRepositoryProvider).puzzleForStop(world.stopId!);
+      if (mounted) setState(() => _stopPuzzle = puzzle);
+    }
 
     // "A NEW CHARACTER APPEARS" — when this reveal has an avatar video, it
     // already carries its own lip-synced narration audio, so the
@@ -98,21 +126,63 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
           WidgetsBinding.instance.addPostFrameCallback((_) => _speak(world));
           return FadeTransition(
             opacity: _anim,
-            child: ScaleTransition(
-              scale: Tween(begin: 0.96, end: 1.0).animate(
-                  CurvedAnimation(parent: _anim, curve: Curves.easeOutCubic)),
-              child: SafeArea(
-                child: _OldWorldContent(
-                  world: world,
-                  narratingCharacter: _character,
-                  onNext: () => _onContinue(world),
-                ),
-              ),
-            ),
+            child: SafeArea(child: _buildPhase(context, world)),
           );
         },
       ),
     );
+  }
+
+  Widget _buildPhase(BuildContext context, OldWorld world) {
+    switch (_phase) {
+      case _Phase.discoveryFound:
+        return const _DiscoveryFoundFlash();
+      case _Phase.chapter:
+        return _OldWorldContent(
+          world: world,
+          narratingCharacter: _character,
+          onNext: () => _afterChapter(world),
+        );
+      case _Phase.quiz:
+        return _QuizPhase(
+          puzzle: _stopPuzzle!,
+          onDone: (correct) {
+            if (correct) {
+              ref.read(activeMissionControllerProvider.notifier).awardBonusXp(_stopPuzzle!.rewardXp);
+            }
+            _afterQuiz(world);
+          },
+        );
+      case _Phase.nextObjective:
+        return _NextObjectivePhase(
+          world: world,
+          onBeginJourney: () => _onContinue(world),
+        );
+    }
+  }
+
+  void _afterChapter(OldWorld world) {
+    if (_stopPuzzle != null) {
+      setState(() => _phase = _Phase.quiz);
+    } else {
+      _afterQuiz(world);
+    }
+  }
+
+  void _afterQuiz(OldWorld world) {
+    final state = ref.read(activeMissionControllerProvider);
+    // A genuine next stop to reveal only exists if the controller actually
+    // advanced currentStop away from the one this Old World belongs to,
+    // and the adventure isn't wrapping up right now.
+    final hasNextStop = !state.missionComplete &&
+        !state.hasPendingPuzzle &&
+        state.currentStop != null &&
+        state.currentStop!.id != world.stopId;
+    if (hasNextStop) {
+      setState(() => _phase = _Phase.nextObjective);
+    } else {
+      _onContinue(world);
+    }
   }
 
   void _onContinue(OldWorld world) {
@@ -128,6 +198,28 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
     } else {
       context.pop();
     }
+  }
+}
+
+/// The brief "doorway" beat between a validated QR scan and the chapter
+/// itself — makes the discovery feel like it caused something, rather
+/// than instantly dumping the player into an info page.
+class _DiscoveryFoundFlash extends StatelessWidget {
+  const _DiscoveryFoundFlash();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.auto_awesome_rounded, color: RD.amber, size: 48),
+          const SizedBox(height: RD.md),
+          Text('DISCOVERY FOUND',
+              style: RD.tagline.copyWith(color: RD.amber, letterSpacing: 4, fontSize: 16)),
+        ],
+      ),
+    );
   }
 }
 
@@ -245,6 +337,155 @@ class _OldWorldContent extends StatelessWidget {
             style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
             onPressed: onNext,
             child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The optional "test of wits" — never blocks progression (spec: "the
+/// adventure should NOT end" on a wrong answer). Reuses
+/// [MissionPuzzle.checkAnswer]'s existing case-insensitive match, the same
+/// mechanism the final puzzle already uses — just without the gate.
+class _QuizPhase extends StatefulWidget {
+  const _QuizPhase({required this.puzzle, required this.onDone});
+  final MissionPuzzle puzzle;
+  final void Function(bool correct) onDone;
+
+  @override
+  State<_QuizPhase> createState() => _QuizPhaseState();
+}
+
+class _QuizPhaseState extends State<_QuizPhase> {
+  final _answer = TextEditingController();
+  bool? _correct;
+
+  void _submit() {
+    if (_correct != null) return;
+    final correct = widget.puzzle.checkAnswer(_answer.text);
+    setState(() => _correct = correct);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(RD.lg),
+      children: [
+        Text('WHAT DO YOU REMEMBER?', style: RD.tagline.copyWith(color: RD.amber, letterSpacing: 3)),
+        const SizedBox(height: RD.lg),
+        GlassPanel(
+          color: Colors.black.withValues(alpha: 0.4),
+          child: Text(widget.puzzle.prompt,
+              style: RD.body.copyWith(color: Colors.white, fontSize: 16, height: 1.4)),
+        ),
+        const SizedBox(height: RD.lg),
+        if (_correct == null) ...[
+          TextField(
+            controller: _answer,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Colors.white.withValues(alpha: 0.08),
+              hintText: 'Your answer',
+              hintStyle: const TextStyle(color: Colors.white38),
+              border: OutlineInputBorder(borderRadius: RD.brLg, borderSide: BorderSide.none),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+          const SizedBox(height: RD.lg),
+          SizedBox(
+            height: 52,
+            child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
+              onPressed: _submit,
+              child: const Text('Answer', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ] else ...[
+          GlassPanel(
+            color: (_correct! ? RD.green : Colors.orange).withValues(alpha: 0.15),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_correct! ? 'YOU REMEMBERED.' : 'NOT QUITE.',
+                    style: RD.sectionLabel.copyWith(color: _correct! ? RD.green : Colors.orange)),
+                const SizedBox(height: RD.xs),
+                Text(
+                  _correct!
+                      ? (widget.puzzle.successText ?? 'That detail mattered more than you knew.')
+                      : (widget.puzzle.hint ?? 'That\'s alright — not every detail is easy to catch.'),
+                  style: RD.body.copyWith(color: Colors.white, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: RD.lg),
+          SizedBox(
+            height: 52,
+            child: FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
+              onPressed: () => widget.onDone(_correct!),
+              child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// "YOUR NEXT OBJECTIVE" — a non-spoiler teaser, then the existing journey
+/// map's own destination/distance framing, reached only after the chapter
+/// (and any test-of-wits question) is finished. Tapping BEGIN JOURNEY is
+/// what actually returns to [MissionPlayerScreen]/the existing JourneyMap
+/// — no new GPS/geofence system, no early reveal of the destination name
+/// before this point.
+class _NextObjectivePhase extends ConsumerWidget {
+  const _NextObjectivePhase({required this.world, required this.onBeginJourney});
+  final OldWorld world;
+  final VoidCallback onBeginJourney;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final nextStop = ref.watch(activeMissionControllerProvider).currentStop;
+    final playerLoc = ref.watch(gpsControllerProvider).location;
+    final distanceMeters = (nextStop != null && playerLoc != null)
+        ? GeoMath.distanceMeters(
+            playerLoc.latitude, playerLoc.longitude, nextStop.latitude, nextStop.longitude)
+        : null;
+
+    return ListView(
+      padding: const EdgeInsets.all(RD.lg),
+      children: [
+        Text('YOUR NEXT OBJECTIVE', style: RD.tagline.copyWith(color: RD.amber, letterSpacing: 3)),
+        const SizedBox(height: RD.lg),
+        if ((world.nextObjectiveText ?? '').isNotEmpty)
+          GlassPanel(
+            color: Colors.black.withValues(alpha: 0.4),
+            child: Text(world.nextObjectiveText!,
+                style: RD.body.copyWith(color: Colors.white, fontSize: 16, height: 1.5)),
+          ),
+        const SizedBox(height: RD.xxl),
+        if (nextStop != null) ...[
+          Text('NEXT DISCOVERY', style: RD.sectionLabel.copyWith(color: Colors.white54)),
+          const SizedBox(height: RD.xs),
+          Text(nextStop.title,
+              style: RD.wordmark.copyWith(color: Colors.white, fontSize: 22)),
+          if (distanceMeters != null) ...[
+            const SizedBox(height: RD.xs),
+            Text('${(distanceMeters / 1609.344).toStringAsFixed(1)} miles away',
+                style: RD.caption.copyWith(color: Colors.white54)),
+          ],
+        ],
+        const SizedBox(height: RD.xxl),
+        SizedBox(
+          height: 56,
+          child: FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
+            onPressed: onBeginJourney,
+            child: const Text('BEGIN JOURNEY',
+                style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1)),
           ),
         ),
       ],

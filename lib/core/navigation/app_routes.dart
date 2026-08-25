@@ -1,11 +1,14 @@
 /// Strongly-typed route table for ExplorerOS.
 ///
 /// Using an enum instead of raw path strings ("/home", "/map"…) prevents typos
-/// and makes navigation refactors safe. Sunshine Travel Radio is a two-tab
-/// experience — the bottom-navigation tabs (see AppShell/AppRouter) are
-/// exactly: explore (the radio player — "Listen to Marion County"), and
-/// discoverHome ("Find something to do"). Everything else is one tap away
-/// via the More screen (reachable from either tab's own menu).
+/// and makes navigation refactors safe. The app is Adventure-first — Marion
+/// County Adventures is the primary purpose, everything else is a supporting
+/// system. The bottom-navigation tabs (see AppShell/AppRouter) are exactly:
+/// missionsHome ("Adventures" — the adventure storefront/landing screen),
+/// map ("Map" — the active adventure's game board, or the general explore
+/// map when none is active), myDiscoveries ("My Discoveries" — the player's
+/// journal). Radio, discoverHome, and everything else are one tap away via
+/// the More screen (reachable from a menu button on each primary screen).
 enum AppRoute {
   aroundMe('/around-me'),
   home('/home'),
@@ -14,11 +17,10 @@ enum AppRoute {
   aiRanger('/ai-ranger'),
   stories('/stories'),
   map('/map'),
+  myDiscoveries('/my-discoveries'),
   more('/more'),
-  // The pre-two-tab "Explore" content (a Nature & Parks/Springs & Water/etc.
-  // browsing feed) — kept exactly as it was, just relabeled "Places &
-  // Categories" and reached from More now that the primary Explore tab is
-  // the radio player itself (see AppRoute.explore below).
+  // A Nature & Parks/Springs & Water/etc. browsing feed — kept exactly as it
+  // was, relabeled "Places & Categories", reached from More.
   placesGuide('/places-guide'),
 
   // Authentication (outside the tab shell).
@@ -38,10 +40,9 @@ enum AppRoute {
   discover('/discover'),
   discoverArea('/discover-area'),
   nearbyPlaces('/nearby-places'),
-  // The primary "Explore" tab — Sunshine Travel Radio itself (RadioScreen).
-  // "Explore" as a word now means the audio/listening experience; the old
-  // browsing-feed screen that used to live at this path moved to
-  // AppRoute.placesGuide above.
+  // No longer a primary tab (see [AppRoute.radio], the pushed route now
+  // used everywhere) — kept defined but unreferenced rather than removed,
+  // to avoid churn beyond this navigation pass.
   explore('/explore'),
   profile('/profile'),
   settings('/settings'),
@@ -58,6 +59,10 @@ enum AppRoute {
 
   // Marion County Adventures (GPS + storytelling + QR exploration game).
   missionsHome('/missions'),
+  // THE GUIDE — the permanent, game-wide introduction character (distinct
+  // from any adventure's own storytelling characters). First-time auto-
+  // launch and REPLAY GUIDE both push here.
+  guideIntro('/guide-intro'),
   // The Adventure Introduction (spec: pulled into a story BEFORE any map/
   // GPS/travel begins) — selecting a mission goes here first, never
   // straight to the GPS-tracking player.

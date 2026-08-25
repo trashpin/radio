@@ -54,6 +54,7 @@ class ActiveMissionState {
     this.completedStopIds = const [],
     this.revealedFactKeys = const {},
     this.solvedPuzzleIds = const {},
+    this.unlockedOldWorldIds = const {},
     this.pendingPuzzle,
     this.xp = 0,
     this.awaitingQr = false,
@@ -82,6 +83,11 @@ class ActiveMissionState {
   /// supposed to remember that").
   final Set<String> revealedFactKeys;
   final Set<String> solvedPuzzleIds;
+
+  /// Which `old_worlds` ids the player has unlocked (via a QR scan) so far
+  /// this mission — mirrors [MissionProgress.unlockedOldWorldIds], which is
+  /// what "My Discoveries" reads across every mission a player has played.
+  final Set<String> unlockedOldWorldIds;
 
   /// Set once the final stop is complete and a mission-level puzzle exists
   /// but hasn't been solved yet — the UI shows the puzzle screen while this
@@ -115,6 +121,7 @@ class ActiveMissionState {
     List<String>? completedStopIds,
     Set<String>? revealedFactKeys,
     Set<String>? solvedPuzzleIds,
+    Set<String>? unlockedOldWorldIds,
     MissionPuzzle? pendingPuzzle,
     bool clearPendingPuzzle = false,
     int? xp,
@@ -135,6 +142,7 @@ class ActiveMissionState {
         completedStopIds: completedStopIds ?? this.completedStopIds,
         revealedFactKeys: revealedFactKeys ?? this.revealedFactKeys,
         solvedPuzzleIds: solvedPuzzleIds ?? this.solvedPuzzleIds,
+        unlockedOldWorldIds: unlockedOldWorldIds ?? this.unlockedOldWorldIds,
         pendingPuzzle: clearPendingPuzzle ? null : (pendingPuzzle ?? this.pendingPuzzle),
         xp: xp ?? this.xp,
         awaitingQr: awaitingQr ?? this.awaitingQr,
@@ -246,6 +254,7 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       completedStopIds: progress.completedStopIds,
       revealedFactKeys: progress.revealedFactKeys.toSet(),
       solvedPuzzleIds: progress.solvedPuzzleIds.toSet(),
+      unlockedOldWorldIds: progress.unlockedOldWorldIds.toSet(),
       xp: progress.xp,
       awaitingQr: alreadyArrived && currentStop.requiresQr,
       loading: false,
@@ -381,6 +390,16 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     state = state.copyWith(hintsUsed: state.hintsUsed + 1);
   }
 
+  /// Awards XP for a correctly-answered stop-level "test of wits" question
+  /// (see `puzzleForStopProvider`) — deliberately separate from
+  /// [solvePuzzle]: this never gates progression. A wrong answer simply
+  /// doesn't call this; the player continues either way.
+  void awardBonusXp(int amount) {
+    if (amount <= 0) return;
+    state = state.copyWith(xp: state.xp + amount);
+    _persist();
+  }
+
   Future<void> _speak({
     required String subjectId,
     required String kind,
@@ -458,6 +477,9 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
   /// both the completed stop and the next stop are simultaneously active.
   Future<bool> _completeStop(MissionStop stop, {String? oldWorldId}) async {
     final completed = {...state.completedStopIds, stop.id}.toList();
+    final unlocked = oldWorldId == null
+        ? state.unlockedOldWorldIds
+        : {...state.unlockedOldWorldIds, oldWorldId};
 
     MissionStop? next;
     if (stop.nextStopId != null) {
@@ -466,13 +488,15 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
     next ??= state.stops.where((s) => s.sequence == stop.sequence + 1).firstOrNull;
 
     if (next == null) {
-      state = state.copyWith(completedStopIds: completed, awaitingQr: false);
+      state = state.copyWith(
+          completedStopIds: completed, unlockedOldWorldIds: unlocked, awaitingQr: false);
       return _checkFinalPuzzleOrComplete();
     }
 
     final stories = await ref.read(missionRepositoryProvider).travelStoriesForStop(next.id);
     state = state.copyWith(
       completedStopIds: completed,
+      unlockedOldWorldIds: unlocked,
       currentStop: next,
       currentStopStories: stories,
       awaitingQr: false,
@@ -531,12 +555,14 @@ class ActiveMissionController extends Notifier<ActiveMissionState> {
       firedContentIds: state.firedIds.toList(),
       revealedFactKeys: state.revealedFactKeys.toList(),
       solvedPuzzleIds: state.solvedPuzzleIds.toList(),
+      unlockedOldWorldIds: state.unlockedOldWorldIds.toList(),
       xp: state.xp,
       status: status ?? base.status,
       completedAt: status == 'completed' ? DateTime.now().toUtc() : base.completedAt,
     );
     _progress = updated;
     await ref.read(missionProgressRepositoryProvider).save(updated);
+    ref.read(missionProgressRefreshProvider.notifier).bump();
   }
 }
 

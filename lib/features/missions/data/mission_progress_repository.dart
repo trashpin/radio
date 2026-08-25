@@ -81,3 +81,31 @@ class MissionProgressRepository {
 
 final missionProgressRepositoryProvider =
     Provider<MissionProgressRepository>((ref) => const MissionProgressRepository());
+
+/// Bumped whenever [ActiveMissionController] persists progress (stop
+/// completed, mission completed) — lets "My Discoveries" and the Adventure
+/// Card's progress badge know to refetch instead of showing stale data for
+/// the rest of the app session.
+class MissionProgressRefresh extends Notifier<int> {
+  @override
+  int build() => 0;
+  void bump() => state++;
+}
+
+final missionProgressRefreshProvider =
+    NotifierProvider<MissionProgressRefresh, int>(MissionProgressRefresh.new);
+
+/// One mission's progress for the signed-in player — powers the Adventure
+/// Card's "In Progress"/"Completed" badge.
+final missionProgressProvider =
+    FutureProvider.family<MissionProgress?, String>((ref, missionId) {
+  ref.watch(missionProgressRefreshProvider);
+  return ref.watch(missionProgressRepositoryProvider).forMission(missionId);
+});
+
+/// Every mission the signed-in player has started or finished — the raw
+/// data source for "My Discoveries".
+final allMissionProgressProvider = FutureProvider<List<MissionProgress>>((ref) {
+  ref.watch(missionProgressRefreshProvider);
+  return ref.watch(missionProgressRepositoryProvider).all();
+});

@@ -53,9 +53,23 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+// Which authoring table this request targets -- mission_story_steps (the
+// Story Production System, default, every existing caller) or
+// game_guide_steps (the permanent Game Guide's own content, added
+// alongside its own migration). Both tables share the exact column names
+// this function touches (heygen_video_id, avatar_video_url,
+// production_status), so this is a plain table-name swap, not per-table
+// branching logic.
+type StepTable = "mission_story_steps" | "game_guide_steps";
+
+function isStepTable(v: unknown): v is StepTable {
+  return v === "mission_story_steps" || v === "game_guide_steps";
+}
+
 interface GenerateRequest {
   action: "generate";
   stepId: string;
+  table?: StepTable;
   // HeyGen's v3 API takes a single avatar_id for both stock/studio avatars
   // AND custom photo avatars (talking photo look ids) -- no type
   // discriminator needed, unlike the legacy v2 API this used to call.
@@ -65,34 +79,43 @@ interface GenerateRequest {
   avatarId: string;
   avatarType?: string;
   // The character's ALREADY-GENERATED ElevenLabs narration for this step
-  // (mission_story_steps.audio_url) -- HeyGen lip-syncs to this audio track
-  // directly (audio_url) rather than re-speaking the script with one of
-  // HeyGen's own, unrelated voice IDs. This is what makes a character's
-  // avatar video sound EXACTLY like their audio-only scenes, not just "a
-  // similar HeyGen voice" -- true consistency, not an approximation.
-  // Generate Voice must run before Generate Avatar.
+  // (mission_story_steps.audio_url / game_guide_steps.audio_url) -- HeyGen
+  // lip-syncs to this audio track directly (audio_url) rather than
+  // re-speaking the script with one of HeyGen's own, unrelated voice IDs.
+  // This is what makes a character's avatar video sound EXACTLY like their
+  // audio-only scenes, not just "a similar HeyGen voice" -- true
+  // consistency, not an approximation. Generate Voice must run before
+  // Generate Avatar.
   audioUrl: string;
 }
 
 interface StatusRequest {
   action: "status";
   stepId: string;
+  table?: StepTable;
 }
 
 type HeygenRequest = GenerateRequest | StatusRequest;
 
-async function updateStep(stepId: string, fields: Record<string, unknown>): Promise<void> {
-  await fetch(buildSupabaseUrl(`rest/v1/mission_story_steps?id=eq.${encodeURIComponent(stepId)}`), {
+async function updateStep(
+  table: StepTable,
+  stepId: string,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  await fetch(buildSupabaseUrl(`rest/v1/${table}?id=eq.${encodeURIComponent(stepId)}`), {
     method: "PATCH",
     headers: { ...SB, "Content-Type": "application/json", Prefer: "return=minimal" },
     body: JSON.stringify(fields),
   });
 }
 
-async function getStep(stepId: string): Promise<{ heygen_video_id: string | null } | null> {
+async function getStep(
+  table: StepTable,
+  stepId: string,
+): Promise<{ heygen_video_id: string | null } | null> {
   const r = await fetch(
     buildSupabaseUrl(
-      `rest/v1/mission_story_steps?select=heygen_video_id&id=eq.${encodeURIComponent(stepId)}&limit=1`,
+      `rest/v1/${table}?select=heygen_video_id&id=eq.${encodeURIComponent(stepId)}&limit=1`,
     ),
     { headers: SB },
   );
@@ -102,6 +125,7 @@ async function getStep(stepId: string): Promise<{ heygen_video_id: string | null
 }
 
 async function generate(body: GenerateRequest): Promise<Response> {
+  const table = body.table ?? "mission_story_steps";
   if (!body.audioUrl?.trim()) {
     return json({ error: "audioUrl is required -- generate this step's voice narration first" }, 400);
   }
@@ -134,7 +158,7 @@ async function generate(body: GenerateRequest): Promise<Response> {
   }
 
   const videoId = data.data.video_id as string;
-  await updateStep(body.stepId, {
+  await updateStep(table, body.stepId, {
     heygen_video_id: videoId,
     production_status: "video_generated", // "generating" isn't in the status vocabulary; the client's own UI shows a spinner while polling
   });
@@ -142,7 +166,8 @@ async function generate(body: GenerateRequest): Promise<Response> {
 }
 
 async function checkStatus(body: StatusRequest): Promise<Response> {
-  const step = await getStep(body.stepId);
+  const table = body.table ?? "mission_story_steps";
+  const step = await getStep(table, body.stepId);
   if (!step?.heygen_video_id) {
     return json({ error: "No HeyGen render has been started for this step." }, 400);
   }
@@ -184,7 +209,7 @@ async function checkStatus(body: StatusRequest): Promise<Response> {
   }
   const videoUrl = buildSupabaseUrl(`storage/v1/object/public/${VIDEOS_BUCKET}/${path}`);
 
-  await updateStep(body.stepId, { avatar_video_url: videoUrl, production_status: "video_generated" });
+  await updateStep(table, body.stepId, { avatar_video_url: videoUrl, production_status: "video_generated" });
   return json({ status: "completed", videoUrl });
 }
 
@@ -197,6 +222,9 @@ Deno.serve(async (req: Request) => {
   const body = await req.json().catch(() => null) as HeygenRequest | null;
   if (!body?.stepId || (body.action !== "generate" && body.action !== "status")) {
     return json({ error: "stepId and a valid action ('generate' | 'status') are required" }, 400);
+  }
+  if (body.table !== undefined && !isStepTable(body.table)) {
+    return json({ error: "table must be 'mission_story_steps' or 'game_guide_steps'" }, 400);
   }
 
   try {

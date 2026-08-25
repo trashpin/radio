@@ -103,6 +103,22 @@ class MissionRepository {
     }
   }
 
+  /// Bulk lookup for "My Discoveries" — every Old World the player has
+  /// unlocked across every mission they've played, in one query instead of
+  /// one per id.
+  Future<List<OldWorld>> oldWorldsByIds(List<String> ids) async {
+    if (!SupabaseService.isConfigured || ids.isEmpty) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('old_worlds')
+          .select()
+          .inFilter('id', ids) as List;
+      return rows.cast<Map<String, dynamic>>().map(OldWorld.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   Future<QrPortal?> portalById(String id) async {
     if (!SupabaseService.isConfigured) return null;
     try {
@@ -156,6 +172,28 @@ class MissionRepository {
           .select()
           .eq('mission_id', missionId)
           .isFilter('stop_id', null)
+          .order('sequence', ascending: true)
+          .limit(1) as List;
+      if (rows.isEmpty) return null;
+      return MissionPuzzle.fromJson(rows.first as Map<String, dynamic>);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A stop-level "test of wits" question, shown right after that stop's
+  /// QR discovery chapter — distinct from [finalPuzzleForMission], which
+  /// gates mission completion. This one never blocks anything (see
+  /// [ActiveMissionController.awardBonusXp]): right or wrong, the player
+  /// continues either way. Returns the first by [sequence] if more than
+  /// one exists.
+  Future<MissionPuzzle?> puzzleForStop(String stopId) async {
+    if (!SupabaseService.isConfigured) return null;
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_puzzles')
+          .select()
+          .eq('stop_id', stopId)
           .order('sequence', ascending: true)
           .limit(1) as List;
       if (rows.isEmpty) return null;
@@ -429,6 +467,11 @@ final oldWorldByIdProvider = FutureProvider.family<OldWorld?, String>((ref, id) 
 final factsForMissionProvider = FutureProvider.family<List<MissionFact>, String>((ref, missionId) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).factsForMission(missionId);
+});
+
+final puzzleForStopProvider = FutureProvider.family<MissionPuzzle?, String>((ref, stopId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).puzzleForStop(stopId);
 });
 
 final finalPuzzleForMissionProvider =

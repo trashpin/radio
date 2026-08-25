@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/core/theme/app_radius.dart';
 import 'package:explorer_os_mobile/core/theme/app_shadows.dart';
 import 'package:explorer_os_mobile/core/theme/app_spacing.dart';
 import 'package:explorer_os_mobile/core/theme/app_typography.dart';
+import 'package:explorer_os_mobile/features/discover_home/presentation/discover_mini_player.dart';
 
 /// The persistent shell hosting the floating bottom navigation bar.
 ///
@@ -16,13 +17,20 @@ import 'package:explorer_os_mobile/core/theme/app_typography.dart';
 /// `extendBody` lets screen content flow underneath the floating bar for the
 /// premium edge-to-edge look.
 ///
-/// Sunshine Travel Radio is exactly two primary tabs (fixed order): Explore
-/// (index 0 — the radio player, "Listen to Marion County") and Discover
-/// (index 1 — "Find something to do"). To change tabs, keep this bar and the
-/// branch list in `AppRouter` index-aligned. Map, Wildlife Guide, and
-/// everything else live one tap away via More — reachable from Explore's own
-/// menu sheet and a button on Discover's greeting header, not a third bottom
-/// tab (see `more_screen.dart`).
+/// ADVENTURE-FIRST: the app's primary purpose is Marion County Adventures —
+/// the map, GPS, stories, and everything else are supporting systems for the
+/// adventure game, not peers of it. Exactly three primary tabs (fixed
+/// order): Adventures (index 0 — the adventure storefront/landing screen),
+/// Map (index 1 — the active adventure's game board, or the general explore
+/// map when no adventure is active), My Discoveries (index 2 — the player's
+/// journal). To change tabs, keep this bar and the branch list in
+/// `AppRouter` index-aligned. Radio, Discover's recommendation feed,
+/// Wildlife Guide, and everything else live one tap away via More —
+/// reachable from a menu button on each primary screen's app bar, not a
+/// fourth bottom tab (see `more_screen.dart`). Radio playback itself stays
+/// glanceable/controllable from any primary tab via [DiscoverMiniPlayer],
+/// reused as-is (same widget/engine Discover already used it with) rather
+/// than earning its own tab.
 ///
 /// The bar is styled as a dark, floating pill with a gold active state (a
 /// premium National-Geographic feel) regardless of the app's light/dark mode,
@@ -83,33 +91,47 @@ class AppShell extends ConsumerWidget {
             AppSpacing.lg,
             AppSpacing.md,
           ),
-          child: DecoratedBox(
-            decoration: const BoxDecoration(
-              borderRadius: AppRadius.xlAll,
-              boxShadow: AppShadows.elevated,
-            ),
-            child: ClipRRect(
-              borderRadius: AppRadius.xlAll,
-              child: NavigationBarTheme(
-                data: navTheme,
-                child: NavigationBar(
-                  selectedIndex: navigationShell.currentIndex,
-                  onDestinationSelected: _goToBranch,
-                  destinations: const [
-                    NavigationDestination(
-                      icon: Icon(Icons.podcasts_outlined),
-                      selectedIcon: Icon(Icons.podcasts_rounded),
-                      label: 'Explore',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Radio stays glanceable/controllable from every primary tab
+              // without a tab of its own — see this widget's own doc comment.
+              const DiscoverMiniPlayer(),
+              const SizedBox(height: AppSpacing.sm),
+              DecoratedBox(
+                decoration: const BoxDecoration(
+                  borderRadius: AppRadius.xlAll,
+                  boxShadow: AppShadows.elevated,
+                ),
+                child: ClipRRect(
+                  borderRadius: AppRadius.xlAll,
+                  child: NavigationBarTheme(
+                    data: navTheme,
+                    child: NavigationBar(
+                      selectedIndex: navigationShell.currentIndex,
+                      onDestinationSelected: _goToBranch,
+                      destinations: const [
+                        NavigationDestination(
+                          icon: Icon(Icons.explore_outlined),
+                          selectedIcon: Icon(Icons.explore_rounded),
+                          label: 'Adventures',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.map_outlined),
+                          selectedIcon: Icon(Icons.map_rounded),
+                          label: 'Map',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(Icons.auto_stories_outlined),
+                          selectedIcon: Icon(Icons.auto_stories_rounded),
+                          label: 'My Discoveries',
+                        ),
+                      ],
                     ),
-                    NavigationDestination(
-                      icon: Icon(Icons.recommend_outlined),
-                      selectedIcon: Icon(Icons.recommend_rounded),
-                      label: 'Discover',
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),

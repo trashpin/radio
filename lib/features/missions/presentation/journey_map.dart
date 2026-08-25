@@ -205,7 +205,8 @@ class _JourneyMapState extends ConsumerState<JourneyMap> {
               if (!_programmaticMove) _autoFollow = false;
             },
           ),
-          // NEXT DISCOVERY label — top of the map, always visible.
+          // CURRENT ADVENTURE / MISSION PROGRESS / NEXT DISCOVERY — the game
+          // board's header, top of the map, always visible.
           Positioned(
             left: RD.md,
             right: RD.md,
@@ -215,6 +216,20 @@ class _JourneyMapState extends ConsumerState<JourneyMap> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if ((missionState.mission?.title ?? '').isNotEmpty)
+                    Row(children: [
+                      Expanded(
+                        child: Text(missionState.mission!.title.toUpperCase(),
+                            style: const TextStyle(
+                                color: RD.green, fontSize: 11, fontWeight: FontWeight.w800),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      if (missionState.stops.isNotEmpty)
+                        Text('STOP ${stop.sequence} OF ${missionState.stops.length}',
+                            style: const TextStyle(color: Colors.white54, fontSize: 10)),
+                    ]),
+                  const SizedBox(height: 2),
                   Text('NEXT DISCOVERY', style: RD.sectionLabel.copyWith(fontSize: 11)),
                   Text(stop.title,
                       style: RD.cardTitle.copyWith(color: Colors.white),

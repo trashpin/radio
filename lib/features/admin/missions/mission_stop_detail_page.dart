@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'package:explorer_os_mobile/features/admin/missions/mission_facts_puzzles_page.dart'
+    show showPuzzleEditorDialog;
 import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
@@ -30,6 +32,7 @@ class MissionStopDetailPage extends ConsumerWidget {
     final treasureAsync = stop.treasureDiscoveryId == null
         ? null
         : ref.watch(treasureDiscoveryByIdProvider(stop.treasureDiscoveryId!));
+    final stopPuzzleAsync = ref.watch(puzzleForStopProvider(stop.id));
 
     return Scaffold(
       appBar: AppBar(title: Text(stop.title)),
@@ -93,6 +96,51 @@ class MissionStopDetailPage extends ConsumerWidget {
                           ),
                   ),
               ],
+            ]),
+          ),
+          const SizedBox(height: 16),
+          AdminSectionCard(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Test of Wits (optional)', style: Theme.of(context).textTheme.titleMedium),
+              const Text(
+                'A short question shown right after this stop\'s QR discovery chapter. Right or '
+                'wrong, the adventure always continues — this never blocks progression, unlike '
+                'the mission\'s Final Puzzle (Facts & Puzzle page).',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              stopPuzzleAsync.when(
+                loading: () => const CircularProgressIndicator(),
+                error: (e, _) => Text('$e'),
+                data: (puzzle) => puzzle == null
+                    ? OutlinedButton.icon(
+                        onPressed: () => showPuzzleEditorDialog(context, ref,
+                            missionId: mission.id, stopId: stop.id),
+                        icon: const Icon(Icons.add_rounded),
+                        label: const Text('Add test of wits'),
+                      )
+                    : ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: StatusBadge(BadgeStatus.review, label: puzzle.type),
+                        title: Text(puzzle.prompt),
+                        subtitle: Text('Accepts: ${puzzle.acceptedAnswers.join(", ")} · '
+                            '+${puzzle.rewardXp} XP'),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => showPuzzleEditorDialog(context, ref,
+                                missionId: mission.id, stopId: stop.id, puzzle: puzzle),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            onPressed: () async {
+                              await ref.read(missionRepositoryProvider).deletePuzzle(puzzle.id);
+                              ref.read(missionsRefreshProvider.notifier).bump();
+                            },
+                          ),
+                        ]),
+                      ),
+              ),
             ]),
           ),
           const SizedBox(height: 16),
@@ -386,6 +434,7 @@ class MissionStopDetailPage extends ConsumerWidget {
     final oldWorldId = await repo.createOldWorld({
       'title': title.text.trim(),
       'is_fictional': true,
+      'stop_id': stop.id,
     });
     final qrPortalId = await repo.createQrPortal({
       'code': code.text.trim(),
@@ -498,6 +547,7 @@ Future<void> showOldWorldEditorDialog(
   final mapImage = TextEditingController(text: world.historicalMapImageUrl ?? '');
   final narrator = TextEditingController(text: world.narratorName ?? '');
   final clue = TextEditingController(text: world.clueText ?? '');
+  final nextObjective = TextEditingController(text: world.nextObjectiveText ?? '');
   final revealsFactKeys = TextEditingController(text: world.revealsFactKeys.join(', '));
   var isFictional = world.isFictional;
   final castCharacters = [...world.characters];
@@ -571,6 +621,16 @@ Future<void> showOldWorldEditorDialog(
                       labelText: 'Clue (optional)', border: OutlineInputBorder())),
               const SizedBox(height: 12),
               TextField(
+                  controller: nextObjective,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                      labelText: 'Next objective (non-spoiler teaser, optional)',
+                      helperText:
+                          'Shown as "YOUR NEXT OBJECTIVE" after this chapter — never name the '
+                          'next destination or route here, the app reveals that itself.',
+                      border: OutlineInputBorder())),
+              const SizedBox(height: 12),
+              TextField(
                   controller: revealsFactKeys,
                   decoration: const InputDecoration(
                       labelText: 'Reveals fact keys (comma-separated, optional)',
@@ -618,6 +678,8 @@ Future<void> showOldWorldEditorDialog(
                 'narrator_name': narrator.text.trim().isEmpty ? null : narrator.text.trim(),
                 'character_id': narratingCharacterId,
                 'clue_text': clue.text.trim().isEmpty ? null : clue.text.trim(),
+                'next_objective_text':
+                    nextObjective.text.trim().isEmpty ? null : nextObjective.text.trim(),
                 'reveals_fact_keys': revealsFactKeys.text
                     .split(',')
                     .map((k) => k.trim())

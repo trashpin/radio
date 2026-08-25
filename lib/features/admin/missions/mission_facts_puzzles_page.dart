@@ -80,8 +80,9 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
             ),
           ]),
           const Text(
-            'Shown after the last stop, before Mission Complete. Only one final '
-            'puzzle is used today (stop-specific puzzles are a future step).',
+            'Shown after the last stop, before Mission Complete, and always blocks '
+            'progression until solved. For a non-blocking "test of wits" tied to one '
+            'stop\'s QR discovery chapter, use that stop\'s own detail page instead.',
             style: TextStyle(fontSize: 12, color: Colors.grey),
           ),
           const SizedBox(height: 8),
@@ -100,7 +101,8 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                         IconButton(
                           icon: const Icon(Icons.edit_outlined),
-                          onPressed: () => _addOrEditPuzzle(context, ref, puzzle: p),
+                          onPressed: () => showPuzzleEditorDialog(context, ref,
+                              missionId: mission.id, stopId: null, puzzle: p),
                         ),
                         IconButton(
                           icon: const Icon(Icons.delete_outline_rounded),
@@ -114,7 +116,8 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
                   ),
                 if (finalPuzzles.isEmpty)
                   OutlinedButton.icon(
-                    onPressed: () => _addOrEditPuzzle(context, ref),
+                    onPressed: () =>
+                        showPuzzleEditorDialog(context, ref, missionId: mission.id, stopId: null),
                     icon: const Icon(Icons.add_rounded),
                     label: const Text('Add final puzzle'),
                   ),
@@ -173,20 +176,36 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
     ref.read(missionsRefreshProvider.notifier).bump();
   }
 
-  Future<void> _addOrEditPuzzle(BuildContext context, WidgetRef ref, {MissionPuzzle? puzzle}) async {
-    final prompt = TextEditingController(text: puzzle?.prompt ?? '');
-    final answers = TextEditingController(text: puzzle?.acceptedAnswers.join(', ') ?? '');
-    final hint = TextEditingController(text: puzzle?.hint ?? '');
-    final successText = TextEditingController(text: puzzle?.successText ?? '');
-    final rewardXp = TextEditingController(text: '${puzzle?.rewardXp ?? 0}');
-    var type = puzzle?.type ?? 'memory';
+}
 
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setState) => AlertDialog(
-          title: Text(puzzle == null ? 'Add final puzzle' : 'Edit final puzzle'),
-          content: SizedBox(
+/// Shared create/edit dialog for a [MissionPuzzle] — the SAME mechanism
+/// whether it's the mission-level final puzzle ([stopId] null, gates
+/// Mission Complete) or a stop-level "test of wits" ([stopId] set, shown
+/// right after that stop's QR discovery chapter and never blocks
+/// progression — see `ActiveMissionController.awardBonusXp`). Both cases
+/// share this one dialog rather than duplicating the puzzle form.
+Future<void> showPuzzleEditorDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  required String missionId,
+  required String? stopId,
+  MissionPuzzle? puzzle,
+}) async {
+  final prompt = TextEditingController(text: puzzle?.prompt ?? '');
+  final answers = TextEditingController(text: puzzle?.acceptedAnswers.join(', ') ?? '');
+  final hint = TextEditingController(text: puzzle?.hint ?? '');
+  final successText = TextEditingController(text: puzzle?.successText ?? '');
+  final rewardXp = TextEditingController(text: '${puzzle?.rewardXp ?? 0}');
+  var type = puzzle?.type ?? 'memory';
+
+  final saved = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setState) => AlertDialog(
+        title: Text(puzzle == null
+            ? (stopId == null ? 'Add final puzzle' : 'Add test of wits')
+            : (stopId == null ? 'Edit final puzzle' : 'Edit test of wits')),
+        content: SizedBox(
             width: 420,
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -255,12 +274,11 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
       'success_text': successText.text.trim().isEmpty ? null : successText.text.trim(),
       'reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
     };
-    final repo = ref.read(missionRepositoryProvider);
-    if (puzzle == null) {
-      await repo.createPuzzle({...row, 'mission_id': mission.id, 'stop_id': null});
-    } else {
-      await repo.updatePuzzle(puzzle.id, row);
-    }
-    ref.read(missionsRefreshProvider.notifier).bump();
+  final repo = ref.read(missionRepositoryProvider);
+  if (puzzle == null) {
+    await repo.createPuzzle({...row, 'mission_id': missionId, 'stop_id': stopId});
+  } else {
+    await repo.updatePuzzle(puzzle.id, row);
   }
+  ref.read(missionsRefreshProvider.notifier).bump();
 }

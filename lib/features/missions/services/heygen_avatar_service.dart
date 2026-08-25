@@ -31,11 +31,17 @@ class HeyGenAvatarService {
   /// [checkStatus] afterward) — false on any failure (missing key, bad
   /// avatar id, HeyGen error), with [onError] receiving a human-readable
   /// reason.
+  /// [table] defaults to `'mission_story_steps'`; the permanent Game
+  /// Guide's own content (see `GameGuideRepository`) passes
+  /// `'game_guide_steps'` instead — the edge function reads/writes whichever
+  /// table is named, since both share the same `heygen_video_id`/
+  /// `avatar_video_url`/`production_status` columns.
   Future<bool> generate({
     required String stepId,
     required String avatarId,
     required String avatarType,
     required String audioUrl,
+    String table = 'mission_story_steps',
     void Function(String message)? onError,
   }) async {
     if (!SupabaseService.isConfigured) return false;
@@ -45,6 +51,7 @@ class HeyGenAvatarService {
         body: {
           'action': 'generate',
           'stepId': stepId,
+          'table': table,
           'avatarId': avatarId,
           'avatarType': avatarType,
           'audioUrl': audioUrl,
@@ -62,14 +69,14 @@ class HeyGenAvatarService {
     }
   }
 
-  Future<HeyGenStatusResult> checkStatus(String stepId) async {
+  Future<HeyGenStatusResult> checkStatus(String stepId, {String table = 'mission_story_steps'}) async {
     if (!SupabaseService.isConfigured) {
       return const HeyGenStatusResult(status: 'failed', error: 'Not configured');
     }
     try {
       final res = await SupabaseService.client.functions.invoke(
         'heygen-avatar',
-        body: {'action': 'status', 'stepId': stepId},
+        body: {'action': 'status', 'stepId': stepId, 'table': table},
       ).timeout(const Duration(seconds: 30));
       final data = res.data;
       if (data is Map) {

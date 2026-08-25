@@ -22,6 +22,7 @@ import 'package:explorer_os_mobile/features/admin/nearby_gems/nearby_gems_manage
 import 'package:explorer_os_mobile/features/admin/events/events_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_discovery_page.dart';
 import 'package:explorer_os_mobile/features/admin/events/event_notification_test_page.dart';
+import 'package:explorer_os_mobile/features/admin/missions/game_guide_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_character_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/missions/mission_manager_page.dart';
 import 'package:explorer_os_mobile/features/admin/locations/locations_admin_page.dart';
@@ -84,6 +85,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const MissionManagerPage();
       case AdminModule.missionCharacters:
         return const MissionCharacterManagerPage();
+      case AdminModule.gameGuide:
+        return const GameGuideManagerPage();
       case AdminModule.eventDiscovery:
         return const EventDiscoveryPage();
       case AdminModule.eventNotificationTest:

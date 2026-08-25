@@ -80,7 +80,7 @@ async function globalDefaultVoiceId(): Promise<string | null> {
   }
 }
 
-type SubjectType = "event" | "gem" | "location" | "greeting" | "mission";
+type SubjectType = "event" | "gem" | "location" | "greeting" | "mission" | "guide";
 type Kind =
   | "short"
   | "long"
@@ -95,7 +95,11 @@ type Kind =
   // (discovery/qr/clue/final_reveal beats) — mission_introduction/
   // travel_story/approach_story/arrival still map to the specific kinds
   // above so their cache entries line up with pre-existing mission content.
-  | "story_step";
+  | "story_step"
+  // The permanent Game Guide character's introduction/tutorial lines
+  // (subjectType "guide", subjectId = a game_guide_steps.id) — always
+  // admin-authored verbatim, same as mission narration.
+  | "guide";
 
 interface DiscoverRequest {
   subjectType: SubjectType;
@@ -134,22 +138,22 @@ interface DiscoverRequest {
 
 function isSubjectType(v: unknown): v is SubjectType {
   return v === "event" || v === "gem" || v === "location" || v === "greeting" ||
-    v === "mission";
+    v === "mission" || v === "guide";
 }
 function isKind(v: unknown): v is Kind {
   return v === "short" || v === "long" || v === "greeting" || v === "alert" ||
     v === "opening" || v === "travel" || v === "approach" || v === "arrival" ||
-    v === "old_world" || v === "story_step";
+    v === "old_world" || v === "story_step" || v === "guide";
 }
 
-/** Mission narration (Marion County Adventures) is always admin-authored
- * verbatim script -- travel/approach/arrival beats and Old World narration
- * are written once by an admin, never generated per-request. Speaking it
+/** Mission narration (Marion County Adventures) and the Game Guide's
+ * introduction/tutorial lines are always admin-authored verbatim script --
+ * written once by an admin, never generated per-request. Speaking it
  * exactly (skipping OpenAI) reuses the same shortcut already built for
  * subjectType 'greeting', for the same reason: a hand-written line should
  * never be silently paraphrased by a model. */
 function speaksVerbatim(subjectType: SubjectType): boolean {
-  return subjectType === "greeting" || subjectType === "mission";
+  return subjectType === "greeting" || subjectType === "mission" || subjectType === "guide";
 }
 
 const SYSTEM_PROMPT = `You are a friendly, knowledgeable local guide for Marion County, Florida, helping a visitor discover things to do — events, parks, springs, trails, museums, historic sites, and local gems.

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
+import 'package:explorer_os_mobile/features/missions/data/explorer_profile_repository.dart';
+import 'package:explorer_os_mobile/features/missions/data/mission_progress_repository.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -13,18 +15,52 @@ import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 /// player WANT to pick one, never to explain the whole journey — see
 /// [_AdventureCard]'s own doc comment for the no-spoiler rules that govern
 /// what a card is allowed to show.
-class MissionsHomeScreen extends ConsumerWidget {
+///
+/// Also where THE GUIDE connects to Adventures: a first-time player is
+/// auto-routed into `GuideIntroScreen` before this storefront is
+/// meaningfully interactive (see [_maybeLaunchGuide]), and "Meet Your
+/// Guide" in the app bar replays it any time afterward (REPLAY GUIDE).
+class MissionsHomeScreen extends ConsumerStatefulWidget {
   const MissionsHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MissionsHomeScreen> createState() => _MissionsHomeScreenState();
+}
+
+class _MissionsHomeScreenState extends ConsumerState<MissionsHomeScreen> {
+  bool _checkedGuide = false;
+
+  void _maybeLaunchGuide(bool needsIntroduction) {
+    if (_checkedGuide || !needsIntroduction) return;
+    _checkedGuide = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.push(AppRoute.guideIntro.path);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final missionsAsync = ref.watch(publishedMissionsProvider);
+    final explorerAsync = ref.watch(explorerProfileProvider);
+    explorerAsync.whenData((p) => _maybeLaunchGuide(p.needsIntroduction));
     return Scaffold(
       backgroundColor: RD.bg,
       appBar: AppBar(
         backgroundColor: RD.bg,
         foregroundColor: RD.textPrimary,
         title: const Text('Marion County Adventures'),
+        actions: [
+          IconButton(
+            tooltip: 'Meet Your Guide',
+            icon: const Icon(Icons.person_search_rounded),
+            onPressed: () => context.push(AppRoute.guideIntro.path),
+          ),
+          IconButton(
+            tooltip: 'More',
+            icon: const Icon(Icons.menu_rounded),
+            onPressed: () => context.push(AppRoute.more.path),
+          ),
+        ],
       ),
       body: SafeArea(
         child: missionsAsync.when(
@@ -72,12 +108,13 @@ class MissionsHomeScreen extends ConsumerWidget {
 /// [Mission.category]/[Mission.difficulty]/[Mission.estimatedDurationMinutes].
 /// It never reads mission stops, locations, or the route — it has no way to
 /// leak them because it never fetches them.
-class _AdventureCard extends StatelessWidget {
+class _AdventureCard extends ConsumerWidget {
   const _AdventureCard({required this.mission});
   final Mission mission;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final progressAsync = ref.watch(missionProgressProvider(mission.id));
     return GlassPanel(
       padding: EdgeInsets.zero,
       radius: RD.rLg,
@@ -85,21 +122,36 @@ class _AdventureCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(RD.rLg)),
-            child: AspectRatio(
-              aspectRatio: 16 / 10,
-              child: mission.hasHeroImage
-                  ? Image.network(
-                      mission.heroImageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const _HeroPlaceholder(),
-                      loadingBuilder: (c, child, p) => p == null
-                          ? child
-                          : const _HeroPlaceholder(loading: true),
-                    )
-                  : const _HeroPlaceholder(),
-            ),
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(RD.rLg)),
+                child: AspectRatio(
+                  aspectRatio: 16 / 10,
+                  child: mission.hasHeroImage
+                      ? Image.network(
+                          mission.heroImageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => const _HeroPlaceholder(),
+                          loadingBuilder: (c, child, p) => p == null
+                              ? child
+                              : const _HeroPlaceholder(loading: true),
+                        )
+                      : const _HeroPlaceholder(),
+                ),
+              ),
+              Positioned(
+                left: RD.sm,
+                top: RD.sm,
+                child: progressAsync.maybeWhen(
+                  data: (progress) {
+                    if (progress == null) return const SizedBox.shrink();
+                    return _ProgressBadge(completed: progress.isCompleted);
+                  },
+                  orElse: () => const SizedBox.shrink(),
+                ),
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.all(RD.lg),
@@ -157,6 +209,32 @@ class _AdventureCard extends StatelessWidget {
           Text(label, style: RD.caption),
         ]),
       );
+}
+
+/// "Progress if started" (spec: Adventure Cards should show it) — the only
+/// thing this reveals is whether the player has touched this adventure
+/// before, never any stop/route detail, so the no-spoiler rule holds.
+class _ProgressBadge extends StatelessWidget {
+  const _ProgressBadge({required this.completed});
+  final bool completed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: RD.sm, vertical: 4),
+      decoration: BoxDecoration(
+        color: (completed ? RD.green : RD.amber).withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(RD.rPill),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(completed ? Icons.check_circle_rounded : Icons.play_circle_fill_rounded,
+            size: 13, color: Colors.black),
+        const SizedBox(width: 4),
+        Text(completed ? 'COMPLETED' : 'IN PROGRESS',
+            style: RD.badge.copyWith(color: Colors.black, fontSize: 10)),
+      ]),
+    );
+  }
 }
 
 /// Shown when a mission has no [Mission.heroImageUrl] yet — deliberately
