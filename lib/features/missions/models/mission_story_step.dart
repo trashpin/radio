@@ -38,6 +38,10 @@ class MissionStoryStep {
     this.publishedRowId,
     this.heygenVideoId,
     this.revealsFactKeys = const [],
+    this.isClue = false,
+    this.clueType,
+    this.clueImageUrl,
+    this.unlocksMapPieceId,
   });
 
   final String id;
@@ -85,6 +89,21 @@ class MissionStoryStep {
   /// `old_worlds.reveals_fact_keys` depending on [stepType].
   final List<String> revealsFactKeys;
 
+  /// Whether this step is also a Treasure Map discovery item — copied
+  /// through onto the runtime row `StoryStepPublisher` writes into
+  /// (`mission_travel_stories.is_clue` / `old_worlds.is_clue`), which is
+  /// what the player-facing Treasure Map actually reads.
+  final bool isClue;
+
+  /// image | audio | text | video | riddle | map_fragment | character_message.
+  final String? clueType;
+
+  /// Image clues (and the map-fragment preview) only.
+  final String? clueImageUrl;
+
+  /// The `mission_map_pieces.id` this clue unlocks, if any.
+  final String? unlocksMapPieceId;
+
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
   bool get hasAvatarVideo => (avatarVideoUrl ?? '').trim().isNotEmpty;
   bool get needsAvatar => presentationType == kPresentationAvatarVideo;
@@ -119,6 +138,10 @@ class MissionStoryStep {
         revealsFactKeys: j['reveals_fact_keys'] is List
             ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
             : const [],
+        isClue: (j['is_clue'] ?? false) as bool,
+        clueType: j['clue_type'] as String?,
+        clueImageUrl: j['clue_image_url'] as String?,
+        unlocksMapPieceId: j['unlocks_map_piece_id']?.toString(),
       );
 
   Map<String, dynamic> toWrite() => {
@@ -146,6 +169,10 @@ class MissionStoryStep {
         'published_row_id': publishedRowId,
         'heygen_video_id': heygenVideoId,
         'reveals_fact_keys': revealsFactKeys,
+        'is_clue': isClue,
+        'clue_type': clueType,
+        'clue_image_url': clueImageUrl,
+        'unlocks_map_piece_id': unlocksMapPieceId,
       };
 }
 

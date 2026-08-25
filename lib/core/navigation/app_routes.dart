@@ -77,7 +77,13 @@ enum AppRoute {
   // ActiveMissionController, the same way MissionCompleteScreen already
   // reads its summary from that controller's state.
   missionPuzzle('/mission-puzzle'),
-  missionComplete('/mission-complete');
+  missionComplete('/mission-complete'),
+  // The Treasure Map + Clue layer (spec: "WHAT HAVE I DISCOVERED?") --
+  // deliberately a distinct name from AppRoute.treasureMap (the per-stop
+  // physical-search stage, "Your Next Discovery") even though both use the
+  // words "treasure map" in their player-facing copy; they are unrelated
+  // screens reading unrelated data.
+  missionDiscoveries('/mission-discoveries/:id');
 
   const AppRoute(this.path);
   final String path;
@@ -97,4 +103,7 @@ enum AppRoute {
 
   /// `AppRoute.oldWorld.oldWorldPathFor('42')` → `/old-world/42`.
   String oldWorldPathFor(String id) => '/old-world/$id';
+
+  /// `AppRoute.missionDiscoveries.missionDiscoveriesPathFor('42')` → `/mission-discoveries/42`.
+  String missionDiscoveriesPathFor(String id) => '/mission-discoveries/$id';
 }

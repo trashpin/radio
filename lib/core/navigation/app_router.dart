@@ -31,6 +31,7 @@ import 'package:explorer_os_mobile/features/missions/presentation/missions_home_
 import 'package:explorer_os_mobile/features/missions/presentation/old_world_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/player_discoveries_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/qr_scan_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/treasure_map_panel_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/treasure_map_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
 import 'package:explorer_os_mobile/features/ocala_forest/presentation/ocala_forest_screen.dart';
@@ -189,6 +190,12 @@ class AppRouter {
       ),
       _route(AppRoute.missionPuzzle.path, const MissionPuzzleScreen()),
       _route(AppRoute.missionComplete.path, const MissionCompleteScreen()),
+      GoRoute(
+        path: AppRoute.missionDiscoveries.path,
+        builder: (context, state) => TreasureMapPanelScreen(
+          missionId: state.pathParameters['id'] ?? '',
+        ),
+      ),
     ],
   );
 

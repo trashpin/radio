@@ -39,6 +39,10 @@ class OldWorld {
     this.revealsFactKeys = const [],
     this.stopId,
     this.nextObjectiveText,
+    this.isClue = false,
+    this.clueType,
+    this.clueImageUrl,
+    this.unlocksMapPieceId,
   });
 
   final String id;
@@ -75,6 +79,21 @@ class OldWorld {
   /// ahead, shown once this chapter (and any test-of-wits question)
   /// finishes, before the journey map opens for the next stop.
   final String? nextObjectiveText;
+
+  /// Whether this reveal also appears in the Treasure Map's "Clues Found"
+  /// list (see `treasureMapProvider`) — "found" once this row's [id] is in
+  /// `MissionProgress.unlockedOldWorldIds`, already written the instant a
+  /// QR scan resolves to this Old World.
+  final bool isClue;
+
+  /// image | audio | text | video | riddle | map_fragment | character_message.
+  final String? clueType;
+
+  /// Image clues (and the map-fragment preview) only.
+  final String? clueImageUrl;
+
+  /// The `mission_map_pieces.id` this clue unlocks, if any.
+  final String? unlocksMapPieceId;
 
   /// Defaults to true deliberately — content must be explicitly marked
   /// verified-historical by an admin, never accidentally presented as real
@@ -114,6 +133,10 @@ class OldWorld {
         characterVideoUrl: j['character_video_url'] as String?,
         stopId: j['stop_id']?.toString(),
         nextObjectiveText: j['next_objective_text'] as String?,
+        isClue: (j['is_clue'] ?? false) as bool,
+        clueType: j['clue_type'] as String?,
+        clueImageUrl: j['clue_image_url'] as String?,
+        unlocksMapPieceId: j['unlocks_map_piece_id']?.toString(),
         revealsFactKeys: j['reveals_fact_keys'] is List
             ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
             : const [],
@@ -136,6 +159,10 @@ class OldWorld {
         'character_video_url': characterVideoUrl,
         'stop_id': stopId,
         'next_objective_text': nextObjectiveText,
+        'is_clue': isClue,
+        'clue_type': clueType,
+        'clue_image_url': clueImageUrl,
+        'unlocks_map_piece_id': unlocksMapPieceId,
         'reveals_fact_keys': revealsFactKeys,
       };
 }

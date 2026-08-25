@@ -5,6 +5,7 @@ import 'package:explorer_os_mobile/core/services/supabase_service.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_fact.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_map_piece.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_story_step.dart';
@@ -70,6 +71,53 @@ class MissionRepository {
           .eq('mission_id', missionId)
           .order('sequence', ascending: true) as List;
       return rows.cast<Map<String, dynamic>>().map(MissionStop.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// A mission's Treasure Map fragments, in assembly order — the fixed
+  /// list `treasureMapProvider` cross-references against whichever clues
+  /// the player has actually found to decide which are still locked.
+  Future<List<MissionMapPiece>> mapPiecesForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_map_pieces')
+          .select()
+          .eq('mission_id', missionId)
+          .order('piece_order', ascending: true) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionMapPiece.fromJson).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<String> createMapPiece(Map<String, dynamic> row) async {
+    final inserted = await SupabaseService.client
+        .from('mission_map_pieces')
+        .insert(row)
+        .select('id')
+        .single();
+    return inserted['id'].toString();
+  }
+
+  Future<void> updateMapPiece(String id, Map<String, dynamic> fields) => _resilient(
+      fields, (r) => SupabaseService.client.from('mission_map_pieces').update(r).eq('id', id));
+
+  Future<void> deleteMapPiece(String id) =>
+      SupabaseService.client.from('mission_map_pieces').delete().eq('id', id);
+
+  /// Every travel story across a whole mission (not scoped to one stop) —
+  /// what `treasureMapProvider` scans for `is_clue` rows.
+  Future<List<MissionTravelStory>> travelStoriesForMission(String missionId) async {
+    if (!SupabaseService.isConfigured) return const [];
+    try {
+      final rows = await SupabaseService.client
+          .from('mission_travel_stories')
+          .select()
+          .eq('mission_id', missionId) as List;
+      return rows.cast<Map<String, dynamic>>().map(MissionTravelStory.fromJson).toList();
     } catch (_) {
       return const [];
     }
@@ -457,6 +505,18 @@ final travelStoriesForStopProvider =
     FutureProvider.family<List<MissionTravelStory>, String>((ref, stopId) {
   ref.watch(missionsRefreshProvider);
   return ref.watch(missionRepositoryProvider).travelStoriesForStop(stopId);
+});
+
+final travelStoriesForMissionProvider =
+    FutureProvider.family<List<MissionTravelStory>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).travelStoriesForMission(missionId);
+});
+
+final mapPiecesForMissionProvider =
+    FutureProvider.family<List<MissionMapPiece>, String>((ref, missionId) {
+  ref.watch(missionsRefreshProvider);
+  return ref.watch(missionRepositoryProvider).mapPiecesForMission(missionId);
 });
 
 final oldWorldByIdProvider = FutureProvider.family<OldWorld?, String>((ref, id) {
