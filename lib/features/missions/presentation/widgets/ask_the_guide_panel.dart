@@ -56,18 +56,23 @@ class _AskTheGuidePanelState extends ConsumerState<AskTheGuidePanel> {
   int? _spokenForLevel;
   bool _revealShown = false;
 
-  Future<void> _speak(String text, int level, String? voiceId, String? guideName) async {
+  Future<void> _speak(String text, int level) async {
     if (_spokenForLevel == level) return;
     _spokenForLevel = level;
+    // Resolve the real Guide rather than trusting build()'s possibly-still-
+    // loading snapshot — same fix as GuideIntroScreen._speak, otherwise a
+    // hint requested the instant this panel first mounts could fall back
+    // to the server's default voice instead of the Guide's own.
+    final guide = await ref.read(activeGuideCharacterProvider.future);
     final result = await ref.read(missionNarrationServiceProvider).requestFor(
           subjectId: '${widget.subjectId}:$level',
           kind: 'guide',
           subjectType: 'guide',
           text: text,
-          voiceId: voiceId,
+          voiceId: guide?.voiceId,
         );
     await ref.read(missionAudioControllerProvider.notifier).play(
-          title: guideName ?? 'The Guide',
+          title: guide?.name ?? 'The Guide',
           audioUrl: result?.audioUrl,
           spokenText: text,
         );
@@ -100,7 +105,7 @@ class _AskTheGuidePanelState extends ConsumerState<AskTheGuidePanel> {
 
     if (hintText != null) {
       WidgetsBinding.instance.addPostFrameCallback(
-          (_) => _speak(hintText, levelIndex, guide?.voiceId, guide?.name));
+          (_) => _speak(hintText, levelIndex));
     }
 
     return GlassPanel(
@@ -142,7 +147,7 @@ class _AskTheGuidePanelState extends ConsumerState<AskTheGuidePanel> {
               OutlinedButton(
                 onPressed: () {
                   setState(() => _revealShown = true);
-                  _speak(widget.answerRevealText!, -1, guide?.voiceId, guide?.name);
+                  _speak(widget.answerRevealText!, -1);
                 },
                 style: OutlinedButton.styleFrom(foregroundColor: RD.textSecondary, side: const BorderSide(color: RD.textSecondary)),
                 child: const Text('Reveal Answer'),
