@@ -48,7 +48,7 @@ class _TreasureMapScreenState extends ConsumerState<TreasureMapScreen> {
     // physical treasure-hunt hints") — the hint ladder/XP logic above is
     // completely unchanged, this just speaks the new hint through the
     // Guide's own voice, same as every other Guide-delivered hint.
-    final guide = ref.read(activeGuideCharacterProvider).value;
+    final guide = await ref.read(activeGuideCharacterProvider.future);
     final text = available[level];
     final result = await ref.read(missionNarrationServiceProvider).requestFor(
           subjectId: 'hint:treasure:${discovery.id}:$level',

@@ -322,7 +322,7 @@ class _StepRowState extends ConsumerState<_StepRow> {
                       label: const Text('Edit'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _busy ? null : _generateVoice,
+                      onPressed: _busy ? null : () => _generateVoice(force: step.hasAudio),
                       icon: const Icon(Icons.record_voice_over_rounded, size: 16),
                       label: Text(step.hasAudio ? 'Regenerate Voice' : 'Generate Voice'),
                     ),

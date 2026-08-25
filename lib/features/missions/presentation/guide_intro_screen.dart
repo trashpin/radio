@@ -36,6 +36,15 @@ class _GuideIntroScreenState extends ConsumerState<GuideIntroScreen> {
     if (_spokenForStepId == step.id) return;
     _spokenForStepId = step.id;
 
+    // `character` is only a snapshot of activeGuideCharacterProvider at the
+    // moment this step's build() ran — on a cold launch that provider's
+    // very first fetch can still be in flight, which would otherwise lock
+    // in a null character (and the server's fallback voice) for this step
+    // forever, since _spokenForStepId above never lets it retry. Awaiting
+    // the future directly guarantees the real Guide voice is used even if
+    // the initial watch snapshot was still loading.
+    character ??= await ref.read(activeGuideCharacterProvider.future);
+
     if (!_markedStarted) {
       _markedStarted = true;
       ref.read(explorerProfileRepositoryProvider).markIntroductionStarted();
