@@ -290,6 +290,8 @@ class _StepRowState extends ConsumerState<_StepRow> {
                     _tag(step.contentType, icon: Icons.category_outlined),
                     if (widget.character != null) _tag(widget.character!.name, icon: Icons.person),
                     _tag(step.triggerType.replaceAll('_', ' '), icon: Icons.gps_fixed_rounded),
+                    if (step.evidenceType != null)
+                      _tag(evidenceTypeLabel(step.evidenceType!), icon: Icons.movie_filter_outlined),
                   ]),
                   if ((step.script ?? '').isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -396,6 +398,7 @@ Future<void> _showStepEditorDialog(
   var characterId = step?.characterId;
   var puzzleId = step?.puzzleId;
   var unlocksMapPieceId = step?.unlocksMapPieceId;
+  var evidenceType = step?.evidenceType;
   var triggerType = step?.triggerType ?? kGuideTriggerManualDiscovery;
   var active = step?.active ?? true;
 
@@ -423,12 +426,42 @@ Future<void> _showStepEditorDialog(
                 ],
                 onChanged: (v) => setState(() => contentType = v ?? contentType),
               ),
+              if (contentType == kGuideContentVideo ||
+                  contentType == kGuideContentAudio ||
+                  contentType == kGuideContentImage ||
+                  contentType == kGuideContentInspect ||
+                  contentType == kGuideContentClue) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: evidenceType,
+                  decoration: const InputDecoration(
+                      labelText: 'Evidence type (optional — marks this HISTORICAL EVIDENCE)',
+                      border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— not evidence, this is the Guide —')),
+                    for (final t in kEvidenceTypes)
+                      DropdownMenuItem(value: t, child: Text(evidenceTypeLabel(t))),
+                  ],
+                  onChanged: (v) => setState(() => evidenceType = v),
+                ),
+                if (evidenceType != null)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6, left: 4),
+                    child: Text(
+                      'Shown with an archived, period visual treatment and voiced/appeared by the '
+                      'character selected below — not the Guide.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<String?>(
                 initialValue: characters.any((c) => c.id == characterId) ? characterId : null,
-                decoration: const InputDecoration(
-                    labelText: 'Character override (optional — defaults to the active Guide)',
-                    border: OutlineInputBorder()),
+                decoration: InputDecoration(
+                    labelText: evidenceType != null
+                        ? 'Historical character (their existing voice + HeyGen avatar)'
+                        : 'Character override (optional — defaults to the active Guide)',
+                    border: const OutlineInputBorder()),
                 items: [
                   const DropdownMenuItem(value: null, child: Text('— use the active Guide —')),
                   for (final c in characters) DropdownMenuItem(value: c.id, child: Text(c.name)),
@@ -569,6 +602,7 @@ Future<void> _showStepEditorDialog(
     'image_url': imageUrl.text.trim().isEmpty ? null : imageUrl.text.trim(),
     'puzzle_id': puzzleId,
     'unlocks_map_piece_id': unlocksMapPieceId,
+    'evidence_type': evidenceType,
     'choice_options': choices.where((c) => c.label.trim().isNotEmpty).map((c) => c.toJson()).toList(),
     'trigger_type': triggerType,
     'trigger_distance_meters': miles == null ? null : miles * 1609.344,
