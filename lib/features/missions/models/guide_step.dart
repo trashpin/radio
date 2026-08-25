@@ -37,6 +37,7 @@ class GuideStep {
     this.imageUrl,
     this.puzzleId,
     this.unlocksMapPieceId,
+    this.evidenceType,
     this.choiceOptions = const [],
     this.triggerType = kGuideTriggerManualDiscovery,
     this.triggerDistanceMeters,
@@ -70,6 +71,13 @@ class GuideStep {
   /// clue | map | discovery content types.
   final String? unlocksMapPieceId;
 
+  /// Non-null marks this step as HISTORICAL EVIDENCE delivered by
+  /// [characterId] (an adventure character, e.g. Amos Ritter) rather than
+  /// THE GUIDE's own modern presentation — orthogonal to [contentType],
+  /// which still decides which UI component renders it (video/audio/
+  /// image). Drives the archived/period visual treatment.
+  final String? evidenceType;
+
   /// choice content type only.
   final List<GuideChoiceOption> choiceOptions;
 
@@ -80,6 +88,7 @@ class GuideStep {
 
   bool get hasAudio => (audioUrl ?? '').trim().isNotEmpty;
   bool get hasAvatarVideo => (avatarVideoUrl ?? '').trim().isNotEmpty;
+  bool get isHistoricalEvidence => (evidenceType ?? '').trim().isNotEmpty;
 
   factory GuideStep.fromJson(Map<String, dynamic> j) => GuideStep(
         id: (j['id'] ?? '').toString(),
@@ -97,6 +106,7 @@ class GuideStep {
         imageUrl: j['image_url'] as String?,
         puzzleId: j['puzzle_id']?.toString(),
         unlocksMapPieceId: j['unlocks_map_piece_id']?.toString(),
+        evidenceType: j['evidence_type'] as String?,
         choiceOptions: j['choice_options'] is List
             ? (j['choice_options'] as List)
                 .whereType<Map>()
@@ -124,6 +134,7 @@ class GuideStep {
         'image_url': imageUrl,
         'puzzle_id': puzzleId,
         'unlocks_map_piece_id': unlocksMapPieceId,
+        'evidence_type': evidenceType,
         'choice_options': choiceOptions.map((c) => c.toJson()).toList(),
         'trigger_type': triggerType,
         'trigger_distance_meters': triggerDistanceMeters,
@@ -186,3 +197,34 @@ const List<String> kGuideTriggerTypes = [
 const kGuideStepStatusDraft = 'draft';
 const kGuideStepStatusReady = 'ready';
 const kGuideStepStatusVideoGenerated = 'video_generated';
+
+// ── evidence_type — Historical Evidence, migration 0078 ────────────────────
+const kEvidenceVideo = 'video';
+const kEvidenceAudio = 'audio';
+const kEvidencePhotograph = 'photograph';
+const kEvidenceDocument = 'document';
+const kEvidenceMap = 'map';
+const kEvidenceObject = 'object';
+const kEvidenceCharacterRecording = 'character_recording';
+
+const List<String> kEvidenceTypes = [
+  kEvidenceVideo,
+  kEvidenceAudio,
+  kEvidencePhotograph,
+  kEvidenceDocument,
+  kEvidenceMap,
+  kEvidenceObject,
+  kEvidenceCharacterRecording,
+];
+
+/// Player-facing label for an [GuideStep.evidenceType] value.
+String evidenceTypeLabel(String type) => switch (type) {
+      kEvidenceVideo => 'HISTORICAL FOOTAGE',
+      kEvidenceAudio => 'ARCHIVED RECORDING',
+      kEvidencePhotograph => 'HISTORICAL PHOTOGRAPH',
+      kEvidenceDocument => 'HISTORICAL DOCUMENT',
+      kEvidenceMap => 'HISTORICAL MAP FRAGMENT',
+      kEvidenceObject => 'HISTORICAL OBJECT',
+      kEvidenceCharacterRecording => 'CHARACTER RECORDING',
+      _ => 'EVIDENCE',
+    };

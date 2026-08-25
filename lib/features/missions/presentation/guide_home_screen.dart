@@ -14,6 +14,7 @@ import 'package:explorer_os_mobile/features/missions/models/guide_step.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/treasure_map_panel_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/archived_evidence_frame.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/widgets/ask_the_guide_panel.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
@@ -126,21 +127,31 @@ class _ActiveGuideContentState extends ConsumerState<_ActiveGuideContent> {
         stepAsync.when(
           loading: () => const Center(child: CircularProgressIndicator(color: RD.green)),
           error: (e, _) => Text('Could not reach your Guide right now.', style: RD.body),
-          data: (step) => step == null
-              ? GlassPanel(
-                  child: Text(
-                    "Nothing new right now — keep exploring. I'll have more to say soon.",
-                    style: RD.body.copyWith(color: Colors.white70),
-                  ),
-                )
-              : GuideStepContent(
-                  step: step,
-                  guide: guide,
-                  onDone: () {
-                    ref.read(activeMissionControllerProvider.notifier).markGuideStepShown(step.id);
-                    _refresh();
-                  },
+          data: (step) {
+            if (step == null) {
+              return GlassPanel(
+                child: Text(
+                  "Nothing new right now — keep exploring. I'll have more to say soon.",
+                  style: RD.body.copyWith(color: Colors.white70),
                 ),
+              );
+            }
+            // Historical Evidence steps override the speaker with an
+            // adventure character (e.g. Amos Ritter) rather than THE
+            // GUIDE — resolved here so voice/video/name stay correct.
+            final stepCharacter = (step.characterId ?? '').isEmpty
+                ? null
+                : ref.watch(missionCharacterByIdProvider(step.characterId!)).value;
+            return GuideStepContent(
+              step: step,
+              guide: guide,
+              stepCharacter: stepCharacter,
+              onDone: () {
+                ref.read(activeMissionControllerProvider.notifier).markGuideStepShown(step.id);
+                _refresh();
+              },
+            );
+          },
         ),
         if (widget.missionState.hasPendingPuzzle) ...[
           const SizedBox(height: RD.lg),
@@ -192,9 +203,23 @@ class _ActiveGuideContentState extends ConsumerState<_ActiveGuideContent> {
 /// existing media/interaction widget in this app — no new player, no new
 /// answer-checking, no new hint system.
 class GuideStepContent extends ConsumerStatefulWidget {
-  const GuideStepContent({super.key, required this.step, required this.guide, required this.onDone});
+  const GuideStepContent({
+    super.key,
+    required this.step,
+    required this.guide,
+    required this.onDone,
+    this.stepCharacter,
+  });
   final GuideStep step;
+
+  /// THE GUIDE — always the fallback speaker/portrait.
   final MissionCharacter? guide;
+
+  /// This step's own [GuideStep.characterId], when set — an adventure
+  /// character (e.g. Amos Ritter) speaking as HISTORICAL EVIDENCE, not
+  /// THE GUIDE. When present, this is who actually voices/appears in this
+  /// step; [guide] is used only as the fallback.
+  final MissionCharacter? stepCharacter;
   final VoidCallback onDone;
 
   @override
@@ -230,6 +255,10 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
     }
   }
 
+  /// Who actually speaks this step — this step's own [GuideStep.characterId]
+  /// override when set (a Historical Evidence character), else THE GUIDE.
+  MissionCharacter? get _speaker => widget.stepCharacter ?? widget.guide;
+
   Future<void> _speak() async {
     if (_spoken) return;
     _spoken = true;
@@ -243,12 +272,12 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
             kind: 'guide',
             subjectType: 'guide',
             text: text,
-            voiceId: widget.guide?.voiceId,
+            voiceId: _speaker?.voiceId,
           );
       audioUrl = result?.audioUrl;
     }
     await ref.read(missionAudioControllerProvider.notifier).play(
-          title: widget.guide?.name ?? 'The Guide',
+          title: _speaker?.name ?? 'The Guide',
           audioUrl: audioUrl,
           spokenText: text,
         );
@@ -299,7 +328,7 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
         // 1. GUIDE VIDEO AT THE TOP — the primary communication. No caption
         // underneath by default (spec: "Do not display a duplicate text
         // version of what the Guide just said underneath the video").
-        _GuideVideoBlock(step: widget.step, guide: widget.guide),
+        _GuideVideoBlock(step: widget.step, guide: widget.guide, stepCharacter: widget.stepCharacter),
         if (hasTranscript) ...[
           const SizedBox(height: RD.xs),
           Align(
@@ -358,7 +387,9 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
     );
   }
 
-  String _contentLabel() => switch (widget.step.contentType) {
+  String _contentLabel() {
+    if (widget.step.isHistoricalEvidence) return evidenceTypeLabel(widget.step.evidenceType!);
+    return switch (widget.step.contentType) {
         kGuideContentImage || kGuideContentInspect => 'PHOTO CLUE',
         kGuideContentAudio => 'AUDIO CLUE',
         kGuideContentPonder => 'PONDER',
@@ -368,6 +399,7 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
         kGuideContentChoice => 'CHOICE',
         _ => 'CLUE',
       };
+  }
 
   // Once a riddle/question/choice's own inline interaction is already
   // complete, the bottom button always just means "move on" — only
@@ -414,14 +446,14 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
       case kGuideContentImage:
       case kGuideContentInspect:
         if ((widget.step.imageUrl ?? '').isEmpty) return null;
+        final viewer = InteractiveViewer(maxScale: 4, child: Image.network(widget.step.imageUrl!));
         return [
-          ClipRRect(
-            borderRadius: RD.brLg,
-            child: InteractiveViewer(maxScale: 4, child: Image.network(widget.step.imageUrl!)),
-          ),
+          widget.step.isHistoricalEvidence
+              ? ArchivedPaperFrame(label: evidenceTypeLabel(widget.step.evidenceType!), child: viewer)
+              : ClipRRect(borderRadius: RD.brLg, child: viewer),
         ];
       case kGuideContentAudio:
-        return [_AudioControls(step: widget.step, guide: widget.guide)];
+        return [_AudioControls(step: widget.step, character: _speaker)];
       case kGuideContentPonder:
         return [
           if (script.isNotEmpty) ...[
@@ -517,70 +549,94 @@ class _GuideStepContentState extends ConsumerState<GuideStepContent> {
 /// step has no avatar video of its own (generating one per step is
 /// deliberately out of scope — see the shipped feature reports for why).
 class _GuideVideoBlock extends StatelessWidget {
-  const _GuideVideoBlock({required this.step, required this.guide});
+  const _GuideVideoBlock({required this.step, required this.guide, this.stepCharacter});
   final GuideStep step;
   final MissionCharacter? guide;
+  final MissionCharacter? stepCharacter;
 
   @override
   Widget build(BuildContext context) {
+    final speaker = stepCharacter ?? guide;
+    final historical = step.isHistoricalEvidence;
     if (step.hasAvatarVideo) {
-      return CharacterVideoHero(videoUrl: step.avatarVideoUrl!);
+      final hero = CharacterVideoHero(videoUrl: step.avatarVideoUrl!);
+      if (!historical) return hero;
+      return ArchivedFilmOverlay(
+        label: speaker != null ? '${evidenceTypeLabel(step.evidenceType!)} — ${speaker.name}' : null,
+        child: hero,
+      );
     }
-    return AspectRatio(
+    final portrait = AspectRatio(
       aspectRatio: 1,
-      child: ClipRRect(
-        borderRadius: RD.brLg,
-        child: Container(
-          color: RD.panelAlt,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CircleAvatar(
-                  radius: 56,
-                  backgroundColor: RD.panel,
-                  backgroundImage:
-                      (guide?.imageUrl ?? '').isNotEmpty ? NetworkImage(guide!.imageUrl!) : null,
-                  child: (guide?.imageUrl ?? '').isEmpty
-                      ? const Icon(Icons.person_rounded, color: RD.textSecondary, size: 48)
-                      : null,
-                ),
-                const SizedBox(height: RD.md),
-                Text(guide?.name ?? 'The Guide', style: RD.cardTitle.copyWith(color: Colors.white)),
+      child: Container(
+        color: RD.panelAlt,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: 56,
+                backgroundColor: RD.panel,
+                backgroundImage:
+                    (speaker?.imageUrl ?? '').isNotEmpty ? NetworkImage(speaker!.imageUrl!) : null,
+                child: (speaker?.imageUrl ?? '').isEmpty
+                    ? const Icon(Icons.person_rounded, color: RD.textSecondary, size: 48)
+                    : null,
+              ),
+              const SizedBox(height: RD.md),
+              Text(speaker?.name ?? 'The Guide', style: RD.cardTitle.copyWith(color: Colors.white)),
+              if (historical) ...[
+                const SizedBox(height: RD.xs),
+                Text('AWAITING FOOTAGE',
+                    style: RD.caption.copyWith(color: RD.textSecondary, letterSpacing: 1)),
               ],
-            ),
+            ],
           ),
         ),
       ),
+    );
+    if (!historical) return ClipRRect(borderRadius: RD.brLg, child: portrait);
+    return ArchivedPaperFrame(
+      label: evidenceTypeLabel(step.evidenceType!),
+      child: portrait,
     );
   }
 }
 
 class _AudioControls extends ConsumerWidget {
-  const _AudioControls({required this.step, required this.guide});
+  const _AudioControls({required this.step, required this.character});
   final GuideStep step;
-  final MissionCharacter? guide;
+
+  /// Whoever actually speaks this audio — the step's own character
+  /// override for Historical Evidence, else THE GUIDE.
+  final MissionCharacter? character;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final audioState = ref.watch(missionAudioControllerProvider);
-    final playing = audioState.isActive && audioState.title == (guide?.name ?? 'The Guide');
-    return SizedBox(
+    final title = character?.name ?? 'The Guide';
+    final playing = audioState.isActive && audioState.title == title;
+    final button = SizedBox(
       height: 48,
       child: FilledButton.icon(
         style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
         onPressed: () {
           final controller = ref.read(missionAudioControllerProvider.notifier);
           if (playing) {
-            controller.replay(guide?.name ?? 'The Guide');
+            controller.replay(title);
           } else {
-            controller.play(
-                title: guide?.name ?? 'The Guide', audioUrl: step.audioUrl, spokenText: step.script);
+            controller.play(title: title, audioUrl: step.audioUrl, spokenText: step.script);
           }
         },
         icon: Icon(playing ? Icons.replay_rounded : Icons.play_arrow_rounded),
         label: Text(playing ? 'PLAY AGAIN' : 'PLAY'),
       ),
     );
+    if (!step.isHistoricalEvidence) return button;
+    return Row(children: [
+      const Icon(Icons.album_outlined, color: Color(0xFF8A7358)),
+      const SizedBox(width: RD.sm),
+      Expanded(child: button),
+    ]);
   }
 }

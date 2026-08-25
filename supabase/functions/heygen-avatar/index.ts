@@ -54,16 +54,16 @@ function json(body: unknown, status = 200): Response {
 }
 
 // Which authoring table this request targets -- mission_story_steps (the
-// Story Production System, default, every existing caller) or
-// game_guide_steps (the permanent Game Guide's own content, added
-// alongside its own migration). Both tables share the exact column names
-// this function touches (heygen_video_id, avatar_video_url,
-// production_status), so this is a plain table-name swap, not per-table
-// branching logic.
-type StepTable = "mission_story_steps" | "game_guide_steps";
+// Story Production System, default, every existing caller), game_guide_steps
+// (the permanent Game Guide's own content), or guide_steps (a mission's
+// per-adventure Guide sequence, including Historical Evidence steps). All
+// three share the exact column names this function touches (heygen_video_id,
+// avatar_video_url, production_status), so this is a plain table-name swap,
+// not per-table branching logic.
+type StepTable = "mission_story_steps" | "game_guide_steps" | "guide_steps";
 
 function isStepTable(v: unknown): v is StepTable {
-  return v === "mission_story_steps" || v === "game_guide_steps";
+  return v === "mission_story_steps" || v === "game_guide_steps" || v === "guide_steps";
 }
 
 interface GenerateRequest {
@@ -224,7 +224,10 @@ Deno.serve(async (req: Request) => {
     return json({ error: "stepId and a valid action ('generate' | 'status') are required" }, 400);
   }
   if (body.table !== undefined && !isStepTable(body.table)) {
-    return json({ error: "table must be 'mission_story_steps' or 'game_guide_steps'" }, 400);
+    return json(
+      { error: "table must be 'mission_story_steps', 'game_guide_steps', or 'guide_steps'" },
+      400,
+    );
   }
 
   try {
