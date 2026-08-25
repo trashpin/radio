@@ -24,19 +24,25 @@ class MissionNarrationService {
   /// content row's own id (a mission_travel_stories/old_worlds id, or the
   /// mission's own id for the opening line) so the cache in
   /// `discover_narrations` never collides across missions/stops.
+  ///
+  /// [subjectType] defaults to `'mission'`; the permanent Game Guide's
+  /// content (see `GameGuideRepository`) passes `'guide'` instead — both
+  /// values speak [text] verbatim server-side (`speaksVerbatim` in
+  /// discover-narration), never rewritten by OpenAI.
   Future<MissionNarrationResult?> requestFor({
     required String subjectId,
     required String kind,
     required String text,
     String? voiceId,
     bool force = false,
+    String subjectType = 'mission',
   }) async {
     if (!SupabaseService.isConfigured || text.trim().isEmpty) return null;
     try {
       final res = await SupabaseService.client.functions.invoke(
         'discover-narration',
         body: {
-          'subjectType': 'mission',
+          'subjectType': subjectType,
           'subjectId': subjectId,
           'kind': kind,
           'text': text,

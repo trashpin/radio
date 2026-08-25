@@ -37,6 +37,8 @@ class OldWorld {
     this.characterId,
     this.characterVideoUrl,
     this.revealsFactKeys = const [],
+    this.stopId,
+    this.nextObjectiveText,
   });
 
   final String id;
@@ -61,6 +63,18 @@ class OldWorld {
   /// falls back to the character's static image + audio-only narration.
   final String? characterVideoUrl;
   bool get hasCharacterVideo => (characterVideoUrl ?? '').trim().isNotEmpty;
+
+  /// Direct back-reference to the [MissionStop] this Old World belongs to
+  /// — needed to look up a stop-level "test of wits" question
+  /// ([MissionPuzzle] with a matching `stop_id`) after the player just
+  /// completed THIS stop, since by the time this reveal is on screen
+  /// `ActiveMissionState.currentStop` has already advanced to the next one.
+  final String? stopId;
+
+  /// "YOUR NEXT OBJECTIVE" — a short, non-spoiler teaser about what's
+  /// ahead, shown once this chapter (and any test-of-wits question)
+  /// finishes, before the journey map opens for the next stop.
+  final String? nextObjectiveText;
 
   /// Defaults to true deliberately — content must be explicitly marked
   /// verified-historical by an admin, never accidentally presented as real
@@ -98,6 +112,8 @@ class OldWorld {
         voiceId: j['voice_id'] as String?,
         characterId: j['character_id']?.toString(),
         characterVideoUrl: j['character_video_url'] as String?,
+        stopId: j['stop_id']?.toString(),
+        nextObjectiveText: j['next_objective_text'] as String?,
         revealsFactKeys: j['reveals_fact_keys'] is List
             ? (j['reveals_fact_keys'] as List).map((e) => e.toString()).toList()
             : const [],
@@ -118,6 +134,8 @@ class OldWorld {
         'voice_id': voiceId,
         'character_id': characterId,
         'character_video_url': characterVideoUrl,
+        'stop_id': stopId,
+        'next_objective_text': nextObjectiveText,
         'reveals_fact_keys': revealsFactKeys,
       };
 }

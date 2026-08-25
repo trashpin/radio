@@ -129,6 +129,14 @@ enum AdminModule {
           'Historian...), each with an ElevenLabs voice every story scene that names '
           'them inherits automatically.',
       table: 'mission_characters'),
+  gameGuide('Game Guide', Icons.person_search_rounded, AdminGroup.content,
+      ready: true,
+      description: 'THE GUIDE — the permanent character who introduces Marion County '
+          'Adventures itself, not any one adventure\'s story. Its identity (name/image/'
+          'voice/avatar) is a Character Manager row (character_type = local_guide); this '
+          'module edits what it says: the introduction, tutorial beats, and the one '
+          'observation moment new players see before becoming an Explorer.',
+      table: 'game_guide_steps'),
   eventDiscovery('Event Discovery', Icons.travel_explore_rounded,
       AdminGroup.content,
       ready: true,

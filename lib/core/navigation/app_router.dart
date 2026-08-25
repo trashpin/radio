@@ -21,13 +21,15 @@ import 'package:explorer_os_mobile/features/discover_area/presentation/nearby_pl
 import 'package:explorer_os_mobile/features/discovery/presentation/discovery_categories_screen.dart';
 import 'package:explorer_os_mobile/features/downloads/presentation/downloads_screen.dart';
 import 'package:explorer_os_mobile/features/home/presentation/home_screen.dart';
-import 'package:explorer_os_mobile/features/maps/presentation/maps_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/adventure_map_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/guide_intro_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_complete_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_intro_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_player_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/mission_puzzle_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/missions_home_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/old_world_screen.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/player_discoveries_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/qr_scan_screen.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/treasure_map_screen.dart';
 import 'package:explorer_os_mobile/features/more/presentation/more_screen.dart';
@@ -57,7 +59,9 @@ class AppRouter {
   const AppRouter._();
 
   static final GoRouter router = GoRouter(
-    initialLocation: AppRoute.discoverHome.path,
+    // Adventure-first: the app lands directly on the Adventures storefront,
+    // never a general map or a recommendation feed.
+    initialLocation: AppRoute.missionsHome.path,
     // Re-run [redirect] whenever auth state changes (sign in/out, guest).
     refreshListenable: authController,
     // Auth gate: require sign-in or guest before entering the app. When there's
@@ -76,23 +80,26 @@ class AppRouter {
         return atAuth ? null : AppRoute.welcome.path;
       }
       // Already signed in / guest — don't sit on an auth screen.
-      if (atAuth) return AppRoute.discoverHome.path;
+      if (atAuth) return AppRoute.missionsHome.path;
       return null;
     },
     routes: [
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
-        // Sunshine Travel Radio is exactly two primary tabs, in this order:
-        // Explore (RadioScreen — "Listen to Marion County") and Discover
-        // ("Find something to do"). Branch order MUST match the nav bar in
-        // AppShell. Map, Wildlife Guide, and everything else live one tap
-        // away via More (see the pushed routes below) — same demotion
-        // mechanism this router already used for Explore/Stories/Radio
-        // before this change, just applied to a different pair of screens.
+        // Adventure-first: exactly three primary tabs, in this order:
+        // Adventures (the adventure storefront/landing screen), Map (the
+        // active adventure's game board, or the general explore map when
+        // none is active), My Discoveries (the player's journal). Branch
+        // order MUST match the nav bar in AppShell. Radio, Discover's
+        // recommendation feed, Wildlife Guide, and everything else live one
+        // tap away via More (see the pushed routes below) — same demotion
+        // mechanism this router already used before this change, just
+        // applied to a different set of screens.
         branches: [
-          _branch(AppRoute.explore.path, const RadioScreen()),
-          _branch(AppRoute.discoverHome.path, const DiscoverHomeScreen()),
+          _branch(AppRoute.missionsHome.path, const MissionsHomeScreen()),
+          _branch(AppRoute.map.path, const AdventureMapScreen()),
+          _branch(AppRoute.myDiscoveries.path, const PlayerDiscoveriesScreen()),
         ],
       ),
       // Authentication (outside the tab shell).
@@ -101,17 +108,13 @@ class AppRouter {
       _route(AppRoute.createAccount.path, const CreateAccountScreen()),
       _route(AppRoute.forgotPassword.path, const ForgotPasswordScreen()),
 
-      // Pushed / full-screen routes reachable from More and links. Map and
-      // Wildlife Guide moved here (out of the primary shell branches) so the
-      // bottom nav can be exactly Explore + Discover; both screens are
-      // otherwise completely unchanged, still one tap away via More.
-      // AppRoute.radio stays a second, independent entry point to the exact
-      // same RadioScreen the Explore tab shows (e.g. the Discover
-      // mini-player and a couple of older internal links still reach it
-      // this way) — harmless, since it's just two doors to one shared,
-      // provider-backed playback state.
+      // Pushed / full-screen routes reachable from More and links. Radio,
+      // Discover's recommendation feed, and Wildlife Guide live here (out of
+      // the primary shell branches, which are now Adventures/Map/My
+      // Discoveries) — all three screens are otherwise completely
+      // unchanged, still one tap away via More or the persistent mini-player.
       _route(AppRoute.radio.path, const RadioScreen()),
-      _route(AppRoute.map.path, const MapsScreen()),
+      _route(AppRoute.discoverHome.path, const DiscoverHomeScreen()),
       _route(AppRoute.wildlife.path, const WildlifeScreen()),
       _route(AppRoute.more.path, const MoreScreen()),
       _route(AppRoute.placesGuide.path, const ExploreHomeScreen()),
@@ -159,10 +162,10 @@ class AppRouter {
         ),
       ),
 
-      // Marion County Adventures. Deliberately pushed routes, not shell
-      // branches — Phase 7's full EXPLORE/MISSIONS/DISCOVER/MY JOURNEY
-      // bottom-nav redesign is explicitly out of scope for this pass.
-      _route(AppRoute.missionsHome.path, const MissionsHomeScreen()),
+      // Marion County Adventures detail/gameplay routes. missionsHome
+      // itself is now the Adventures primary tab (see the shell branches
+      // above); everything below stays a pushed route reached from it.
+      _route(AppRoute.guideIntro.path, const GuideIntroScreen()),
       GoRoute(
         path: AppRoute.missionIntro.path,
         builder: (context, state) => MissionIntroScreen(
