@@ -19,6 +19,10 @@ class MissionTravelStory {
     this.voiceId,
     this.characterId,
     this.revealsFactKeys = const [],
+    this.isClue = false,
+    this.clueType,
+    this.clueImageUrl,
+    this.unlocksMapPieceId,
   });
 
   final String id;
@@ -58,6 +62,21 @@ class MissionTravelStory {
   /// them. Never inferred automatically; an admin tags these explicitly.
   final List<String> revealsFactKeys;
 
+  /// Whether this beat also appears in the Treasure Map's "Clues Found"
+  /// list (see `treasureMapProvider`) — "found" once this row's [id] is in
+  /// `MissionProgress.firedContentIds`, which `ActiveMissionController`
+  /// already writes the instant this story plays.
+  final bool isClue;
+
+  /// image | audio | text | video | riddle | map_fragment | character_message.
+  final String? clueType;
+
+  /// Image clues (and the map-fragment preview) only.
+  final String? clueImageUrl;
+
+  /// The `mission_map_pieces.id` this clue unlocks, if any.
+  final String? unlocksMapPieceId;
+
   bool get isApproach => triggerType == 'approach';
 
   static double _d(dynamic v) => (v as num?)?.toDouble() ?? 0;
@@ -79,6 +98,10 @@ class MissionTravelStory {
         voiceId: j['voice_id'] as String?,
         characterId: j['character_id']?.toString(),
         revealsFactKeys: _strs(j['reveals_fact_keys']),
+        isClue: (j['is_clue'] ?? false) as bool,
+        clueType: j['clue_type'] as String?,
+        clueImageUrl: j['clue_image_url'] as String?,
+        unlocksMapPieceId: j['unlocks_map_piece_id']?.toString(),
       );
 
   Map<String, dynamic> toWrite() => {
@@ -95,5 +118,9 @@ class MissionTravelStory {
         'voice_id': voiceId,
         'character_id': characterId,
         'reveals_fact_keys': revealsFactKeys,
+        'is_clue': isClue,
+        'clue_type': clueType,
+        'clue_image_url': clueImageUrl,
+        'unlocks_map_piece_id': unlocksMapPieceId,
       };
 }

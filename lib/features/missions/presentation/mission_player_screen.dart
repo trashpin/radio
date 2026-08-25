@@ -6,6 +6,7 @@ import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
+import 'package:explorer_os_mobile/features/missions/data/treasure_map_provider.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/journey_map.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
@@ -26,6 +27,15 @@ class MissionPlayerScreen extends ConsumerStatefulWidget {
 
 class _MissionPlayerScreenState extends ConsumerState<MissionPlayerScreen> {
   bool _started = false;
+  int _cluesLastSeen = 0;
+
+  void _openDiscoveries(String missionId, int currentCount) {
+    context
+        .push(AppRoute.missionDiscoveries.missionDiscoveriesPathFor(missionId))
+        .then((_) {
+      if (mounted) setState(() => _cluesLastSeen = currentCount);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,12 +80,28 @@ class _MissionPlayerScreenState extends ConsumerState<MissionPlayerScreen> {
           }
         });
 
+        final treasureMapAsync = ref.watch(treasureMapProvider(mission.id));
+        final clueCount = treasureMapAsync.value?.clues.length ?? 0;
+        final hasNewClue = clueCount > _cluesLastSeen;
+
         return Scaffold(
           backgroundColor: RD.bg,
           appBar: AppBar(
             backgroundColor: RD.bg,
             foregroundColor: RD.textPrimary,
             title: Text(mission.title, overflow: TextOverflow.ellipsis),
+            actions: [
+              IconButton(
+                tooltip: 'Treasure Map & Clues',
+                onPressed: () => _openDiscoveries(mission.id, clueCount),
+                icon: Badge(
+                  isLabelVisible: hasNewClue,
+                  backgroundColor: RD.amber,
+                  smallSize: 8,
+                  child: const Text('🗺️'),
+                ),
+              ),
+            ],
           ),
           body: SafeArea(
             child: state.loading || state.currentStop == null

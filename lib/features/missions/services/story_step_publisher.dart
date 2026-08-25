@@ -78,6 +78,10 @@ class StoryStepPublisher {
       'audio_url': step.audioUrl,
       'character_id': step.characterId,
       'reveals_fact_keys': step.revealsFactKeys,
+      'is_clue': step.isClue,
+      'clue_type': step.clueType,
+      'clue_image_url': step.clueImageUrl,
+      'unlocks_map_piece_id': step.unlocksMapPieceId,
     };
     String targetId;
     if ((step.publishedRowId ?? '').isNotEmpty) {
@@ -117,6 +121,10 @@ class StoryStepPublisher {
     final fields = <String, dynamic>{
       'character_id': step.characterId,
       'reveals_fact_keys': step.revealsFactKeys,
+      'is_clue': step.isClue,
+      'clue_type': step.clueType,
+      'clue_image_url': step.clueImageUrl,
+      'unlocks_map_piece_id': step.unlocksMapPieceId,
     };
     if (step.stepType == kStepTypeClue) {
       fields['clue_text'] = step.script;

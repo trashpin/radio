@@ -7,6 +7,7 @@ import 'package:explorer_os_mobile/features/admin/widgets/admin_widgets.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_map_piece.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_stop.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_story_step.dart';
 import 'package:explorer_os_mobile/features/missions/services/heygen_avatar_service.dart';
@@ -31,6 +32,7 @@ class StoryBuilderPage extends ConsumerWidget {
     final stepsAsync = ref.watch(storyStepsForMissionProvider(mission.id));
     final stopsAsync = ref.watch(missionStopsProvider(mission.id));
     final charactersAsync = ref.watch(missionCharactersProvider);
+    final mapPiecesAsync = ref.watch(mapPiecesForMissionProvider(mission.id));
 
     return Scaffold(
       appBar: AppBar(title: Text('Story Builder — ${mission.title}')),
@@ -40,6 +42,7 @@ class StoryBuilderPage extends ConsumerWidget {
         data: (steps) {
           final stops = stopsAsync.value ?? const [];
           final characters = charactersAsync.value ?? const [];
+          final mapPieces = mapPiecesAsync.value ?? const [];
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -55,6 +58,7 @@ class StoryBuilderPage extends ConsumerWidget {
                       mission: mission,
                       stops: stops,
                       characters: characters,
+                      mapPieces: mapPieces,
                       nextOrder: steps.isEmpty ? 1 : steps.last.stepOrder + 1,
                     ),
                     icon: const Icon(Icons.add_rounded, size: 18),
@@ -62,6 +66,8 @@ class StoryBuilderPage extends ConsumerWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 16),
+              _MapPiecesSection(mission: mission, pieces: mapPieces),
               const SizedBox(height: 16),
               if (steps.isEmpty)
                 const AdminEmptyState(
@@ -77,6 +83,7 @@ class StoryBuilderPage extends ConsumerWidget {
                     mission: mission,
                     stops: stops,
                     characters: characters,
+                    mapPieces: mapPieces,
                     character: characters.where((c) => c.id == steps[i].characterId).firstOrNull,
                   ),
             ],
@@ -84,6 +91,121 @@ class StoryBuilderPage extends ConsumerWidget {
         },
       ),
     );
+  }
+}
+
+/// The Treasure Map's fragments — a small CRUD list (title/image/order)
+/// a clue's "Unlocks map piece" dropdown references. Deliberately lives
+/// here rather than a separate admin page: pieces only ever make sense in
+/// the context of the mission whose Treasure Map they assemble.
+class _MapPiecesSection extends ConsumerWidget {
+  const _MapPiecesSection({required this.mission, required this.pieces});
+  final Mission mission;
+  final List<MissionMapPiece> pieces;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return AdminSectionCard(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Expanded(
+              child: Text('Treasure Map Pieces', style: TextStyle(fontWeight: FontWeight.w700))),
+          TextButton.icon(
+            onPressed: () => _showPieceEditor(context, ref),
+            icon: const Icon(Icons.add_rounded, size: 16),
+            label: const Text('Add Piece'),
+          ),
+        ]),
+        const Text(
+          'The fragments the player\'s Treasure Map assembles from. A clue below can be set '
+          'to "unlock" one of these.',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+        if (pieces.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('No pieces yet.', style: TextStyle(color: Colors.grey)),
+          )
+        else
+          for (final p in pieces)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: (p.imageUrl ?? '').isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.network(p.imageUrl!, width: 36, height: 36, fit: BoxFit.cover))
+                  : const Icon(Icons.extension_outlined),
+              title: Text(p.title),
+              subtitle: Text('Order: ${p.pieceOrder}'),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  onPressed: () => _showPieceEditor(context, ref, piece: p),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  onPressed: () async {
+                    await ref.read(missionRepositoryProvider).deleteMapPiece(p.id);
+                    ref.read(missionsRefreshProvider.notifier).bump();
+                  },
+                ),
+              ]),
+            ),
+      ]),
+    );
+  }
+
+  Future<void> _showPieceEditor(BuildContext context, WidgetRef ref, {MissionMapPiece? piece}) async {
+    final title = TextEditingController(text: piece?.title ?? '');
+    final imageUrl = TextEditingController(text: piece?.imageUrl ?? '');
+    final order = TextEditingController(text: '${piece?.pieceOrder ?? pieces.length}');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(piece == null ? 'Add map piece' : 'Edit map piece'),
+        content: SizedBox(
+          width: 380,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: title,
+                decoration: const InputDecoration(labelText: 'Title (admin-only)', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(
+                controller: imageUrl,
+                decoration: const InputDecoration(
+                    labelText: 'Fragment image URL', border: OutlineInputBorder())),
+            const SizedBox(height: 12),
+            TextField(
+              controller: order,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Order', border: OutlineInputBorder()),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(piece == null ? 'Add' : 'Save')),
+        ],
+      ),
+    );
+
+    if (saved != true || title.text.trim().isEmpty) return;
+    final row = {
+      'mission_id': mission.id,
+      'title': title.text.trim(),
+      'image_url': imageUrl.text.trim().isEmpty ? null : imageUrl.text.trim(),
+      'piece_order': int.tryParse(order.text.trim()) ?? 0,
+    };
+    final repo = ref.read(missionRepositoryProvider);
+    if (piece == null) {
+      await repo.createMapPiece(row);
+    } else {
+      await repo.updateMapPiece(piece.id, row);
+    }
+    ref.read(missionsRefreshProvider.notifier).bump();
   }
 }
 
@@ -95,6 +217,7 @@ class _StepRow extends ConsumerStatefulWidget {
     required this.mission,
     required this.stops,
     required this.characters,
+    required this.mapPieces,
     required this.character,
   });
   final MissionStoryStep step;
@@ -103,6 +226,7 @@ class _StepRow extends ConsumerStatefulWidget {
   final Mission mission;
   final List<MissionStop> stops;
   final List<MissionCharacter> characters;
+  final List<MissionMapPiece> mapPieces;
   final MissionCharacter? character;
 
   @override
@@ -316,6 +440,7 @@ class _StepRowState extends ConsumerState<_StepRow> {
                         mission: widget.mission,
                         stops: widget.stops,
                         characters: widget.characters,
+                        mapPieces: widget.mapPieces,
                         step: step,
                       ),
                       icon: const Icon(Icons.edit_outlined, size: 16),
@@ -444,6 +569,7 @@ Future<void> showStoryStepEditorDialog(
   required Mission mission,
   required List<MissionStop> stops,
   required List<MissionCharacter> characters,
+  List<MissionMapPiece> mapPieces = const [],
   MissionStoryStep? step,
   int nextOrder = 1,
 }) async {
@@ -458,11 +584,15 @@ Future<void> showStoryStepEditorDialog(
   final answerText = TextEditingController(text: step?.answerText ?? '');
   final xpReward = TextEditingController(text: '${step?.xpReward ?? 0}');
   final revealsFactKeys = TextEditingController(text: step?.revealsFactKeys.join(', ') ?? '');
+  final clueImageUrl = TextEditingController(text: step?.clueImageUrl ?? '');
   var stepType = step?.stepType ?? kStepTypeTravelStory;
   var characterId = step?.characterId;
   var stopId = step?.stopId;
   var presentationType = step?.presentationType ?? kPresentationAudioOnly;
   var triggerType = step?.triggerType ?? kTriggerDistanceFromDestination;
+  var isTreasureMapClue = step?.isClue ?? false;
+  var clueType = step?.clueType ?? kClueTypeText;
+  var unlocksMapPieceId = step?.unlocksMapPieceId;
 
   final saved = await showDialog<bool>(
     context: context,
@@ -590,6 +720,50 @@ Future<void> showStoryStepEditorDialog(
                 decoration:
                     const InputDecoration(labelText: 'XP reward', border: OutlineInputBorder()),
               ),
+              const SizedBox(height: 20),
+              const Text('Treasure Map & Clues (optional)', style: TextStyle(fontWeight: FontWeight.w700)),
+              const Text(
+                'Adds this step to the player\'s "Clues Found" collection — a separate layer '
+                'from the navigation map, never required.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('This step is a Treasure Map clue'),
+                value: isTreasureMapClue,
+                onChanged: (v) => setState(() => isTreasureMapClue = v),
+              ),
+              if (isTreasureMapClue) ...[
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: clueType,
+                  decoration:
+                      const InputDecoration(labelText: 'Clue type', border: OutlineInputBorder()),
+                  items: [
+                    for (final t in kClueTypes)
+                      DropdownMenuItem(value: t, child: Text(t.replaceAll('_', ' '))),
+                  ],
+                  onChanged: (v) => setState(() => clueType = v ?? clueType),
+                ),
+                if (clueType == kClueTypeImage || clueType == kClueTypeMapFragment) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                      controller: clueImageUrl,
+                      decoration: const InputDecoration(
+                          labelText: 'Clue image URL', border: OutlineInputBorder())),
+                ],
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String?>(
+                  initialValue: mapPieces.any((p) => p.id == unlocksMapPieceId) ? unlocksMapPieceId : null,
+                  decoration: const InputDecoration(
+                      labelText: 'Unlocks map piece (optional)', border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text('— none —')),
+                    for (final p in mapPieces) DropdownMenuItem(value: p.id, child: Text(p.title)),
+                  ],
+                  onChanged: (v) => setState(() => unlocksMapPieceId = v),
+                ),
+              ],
             ]),
           ),
         ),
@@ -620,6 +794,10 @@ Future<void> showStoryStepEditorDialog(
     'question_text': questionText.text.trim().isEmpty ? null : questionText.text.trim(),
     'answer_text': answerText.text.trim().isEmpty ? null : answerText.text.trim(),
     'xp_reward': int.tryParse(xpReward.text.trim()) ?? 0,
+    'is_clue': isTreasureMapClue,
+    'clue_type': isTreasureMapClue ? clueType : null,
+    'clue_image_url': clueImageUrl.text.trim().isEmpty ? null : clueImageUrl.text.trim(),
+    'unlocks_map_piece_id': isTreasureMapClue ? unlocksMapPieceId : null,
     'reveals_fact_keys': revealsFactKeys.text
         .split(',')
         .map((k) => k.trim())
