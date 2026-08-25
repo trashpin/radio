@@ -4,8 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/ask_the_guide_panel.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
-import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
 /// A test of attention/reasoning (spec: MEMORY/OBSERVATION/DEDUCTION/
 /// HISTORY/CODE/CONNECTION/DIRECTION). Today, always the mission's final
@@ -21,8 +22,8 @@ class MissionPuzzleScreen extends ConsumerStatefulWidget {
 
 class _MissionPuzzleScreenState extends ConsumerState<MissionPuzzleScreen> {
   final _answer = TextEditingController();
-  bool _showHint = false;
   bool _wrongAttempt = false;
+  int _hintsUsed = 0;
 
   @override
   void dispose() {
@@ -32,12 +33,18 @@ class _MissionPuzzleScreenState extends ConsumerState<MissionPuzzleScreen> {
 
   void _submit() {
     final controller = ref.read(activeMissionControllerProvider.notifier);
-    final correct = controller.solvePuzzle(_answer.text);
+    final correct = controller.solvePuzzle(_answer.text, hintsUsed: _hintsUsed);
     if (correct) {
       context.pushReplacement(AppRoute.missionComplete.path);
     } else {
       setState(() => _wrongAttempt = true);
     }
+  }
+
+  void _revealAnswer() {
+    final controller = ref.read(activeMissionControllerProvider.notifier);
+    controller.solvePuzzle('', revealed: true);
+    context.pushReplacement(AppRoute.missionComplete.path);
   }
 
   @override
@@ -89,22 +96,17 @@ class _MissionPuzzleScreenState extends ConsumerState<MissionPuzzleScreen> {
               },
             ),
             const SizedBox(height: RD.md),
-            if ((puzzle.hint ?? '').isNotEmpty) ...[
-              if (_showHint)
-                GlassPanel(
-                  child: Row(children: [
-                    const Icon(Icons.lightbulb_outline_rounded, color: RD.amber, size: 18),
-                    const SizedBox(width: RD.sm),
-                    Expanded(child: Text(puzzle.hint!, style: RD.body)),
-                  ]),
-                )
-              else
-                TextButton.icon(
-                  onPressed: () => setState(() => _showHint = true),
-                  icon: const Icon(Icons.lightbulb_outline_rounded, size: 16),
-                  label: const Text('Need a hint?'),
-                ),
-            ],
+            if (puzzle.hintLevels.isNotEmpty)
+              AskTheGuidePanel(
+                subjectId: 'hint:${puzzle.id}',
+                hintLevels: puzzle.hintLevels,
+                answerRevealText: puzzle.answerRevealText,
+                hintsUsed: _hintsUsed,
+                onRequestHint: () => setState(() => _hintsUsed++),
+                onRevealAnswer: (puzzle.answerRevealText ?? '').trim().isEmpty
+                    ? null
+                    : _revealAnswer,
+              ),
             const Spacer(),
             SizedBox(
               height: 52,

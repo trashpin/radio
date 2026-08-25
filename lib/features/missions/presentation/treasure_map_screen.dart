@@ -4,8 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import 'package:explorer_os_mobile/core/navigation/app_routes.dart';
 import 'package:explorer_os_mobile/features/missions/controllers/active_mission_controller.dart';
+import 'package:explorer_os_mobile/features/missions/controllers/mission_audio_controller.dart';
+import 'package:explorer_os_mobile/features/missions/data/game_guide_repository.dart';
 import 'package:explorer_os_mobile/features/missions/data/mission_repository.dart';
+import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/treasure_discovery.dart';
+import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
 import 'package:explorer_os_mobile/features/radio/widgets/radio_widgets.dart';
 
@@ -29,15 +33,35 @@ class TreasureMapScreen extends ConsumerStatefulWidget {
 class _TreasureMapScreenState extends ConsumerState<TreasureMapScreen> {
   int _hintsShown = 0;
 
-  void _requestHint(TreasureDiscovery discovery) {
+  Future<void> _requestHint(TreasureDiscovery discovery) async {
     final available = [
       if (discovery.hasHint1) discovery.hint1Text!,
       if (discovery.hasHint2) discovery.hint2Text!,
       if (discovery.hasFinalHint) discovery.finalHintText!,
     ];
     if (_hintsShown >= available.length) return;
+    final level = _hintsShown;
     setState(() => _hintsShown++);
     ref.read(activeMissionControllerProvider.notifier).useHint();
+
+    // Guide presentation only (spec: "The Guide should also support
+    // physical treasure-hunt hints") — the hint ladder/XP logic above is
+    // completely unchanged, this just speaks the new hint through the
+    // Guide's own voice, same as every other Guide-delivered hint.
+    final guide = ref.read(activeGuideCharacterProvider).value;
+    final text = available[level];
+    final result = await ref.read(missionNarrationServiceProvider).requestFor(
+          subjectId: 'hint:treasure:${discovery.id}:$level',
+          kind: 'guide',
+          subjectType: 'guide',
+          text: text,
+          voiceId: guide?.voiceId,
+        );
+    await ref.read(missionAudioControllerProvider.notifier).play(
+          title: guide?.name ?? 'The Guide',
+          audioUrl: result?.audioUrl,
+          spokenText: text,
+        );
   }
 
   @override
@@ -47,6 +71,7 @@ class _TreasureMapScreenState extends ConsumerState<TreasureMapScreen> {
     final discoveryAsync = discoveryId == null
         ? null
         : ref.watch(treasureDiscoveryByIdProvider(discoveryId));
+    final guide = ref.watch(activeGuideCharacterProvider).value;
 
     return Scaffold(
       backgroundColor: const Color(0xFF241B0F), // aged-paper-adjacent dark tone
@@ -68,6 +93,7 @@ class _TreasureMapScreenState extends ConsumerState<TreasureMapScreen> {
                         discovery: discovery,
                         hintsShown: _hintsShown,
                         onRequestHint: () => _requestHint(discovery),
+                        guide: guide,
                       ),
               ),
       ),
@@ -96,10 +122,12 @@ class _TreasureMapContent extends StatelessWidget {
     required this.discovery,
     required this.hintsShown,
     required this.onRequestHint,
+    this.guide,
   });
   final TreasureDiscovery discovery;
   final int hintsShown;
   final VoidCallback onRequestHint;
+  final MissionCharacter? guide;
 
   @override
   Widget build(BuildContext context) {
@@ -160,8 +188,25 @@ class _TreasureMapContent extends StatelessWidget {
           ),
         ],
 
-        for (var i = 0; i < hintsShown; i++) ...[
+        if (hintsShown > 0) ...[
           const SizedBox(height: RD.md),
+          Row(children: [
+            CircleAvatar(
+              radius: 16,
+              backgroundColor: RD.panelAlt,
+              backgroundImage:
+                  (guide?.imageUrl ?? '').isNotEmpty ? NetworkImage(guide!.imageUrl!) : null,
+              child: (guide?.imageUrl ?? '').isEmpty
+                  ? const Icon(Icons.person_rounded, color: RD.textSecondary, size: 16)
+                  : null,
+            ),
+            const SizedBox(width: RD.sm),
+            Text(guide?.name ?? 'The Guide',
+                style: RD.cardTitle.copyWith(color: Colors.white, fontSize: 14)),
+          ]),
+        ],
+        for (var i = 0; i < hintsShown; i++) ...[
+          const SizedBox(height: RD.sm),
           GlassPanel(
             color: Colors.black.withValues(alpha: 0.25),
             child: Row(children: [
@@ -183,8 +228,8 @@ class _TreasureMapContent extends StatelessWidget {
               side: const BorderSide(color: RD.amber),
               minimumSize: const Size(double.infinity, 44),
             ),
-            icon: const Icon(Icons.help_outline_rounded, size: 18),
-            label: Text(hintsShown == 0 ? 'Need a Hint?' : 'Stronger Hint'),
+            icon: const Text('🧭'),
+            label: Text(hintsShown == 0 ? 'Ask the Guide' : 'Stronger Hint'),
           ),
         ],
 

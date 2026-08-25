@@ -100,6 +100,11 @@ class MissionFactsPuzzlesPage extends ConsumerWidget {
                       subtitle: Text('Accepts: ${p.acceptedAnswers.join(", ")}'),
                       trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                         IconButton(
+                          tooltip: 'Preview hints',
+                          icon: const Icon(Icons.visibility_outlined),
+                          onPressed: () => showPuzzleHintsPreviewDialog(context, p),
+                        ),
+                        IconButton(
                           icon: const Icon(Icons.edit_outlined),
                           onPressed: () => showPuzzleEditorDialog(context, ref,
                               missionId: mission.id, stopId: null, puzzle: p),
@@ -194,6 +199,10 @@ Future<void> showPuzzleEditorDialog(
   final prompt = TextEditingController(text: puzzle?.prompt ?? '');
   final answers = TextEditingController(text: puzzle?.acceptedAnswers.join(', ') ?? '');
   final hint = TextEditingController(text: puzzle?.hint ?? '');
+  final hint2 = TextEditingController(text: puzzle?.hint2 ?? '');
+  final hint3 = TextEditingController(text: puzzle?.hint3 ?? '');
+  final answerReveal = TextEditingController(text: puzzle?.answerRevealText ?? '');
+  final hintXpPenalty = TextEditingController(text: '${puzzle?.hintXpPenalty ?? 5}');
   final successText = TextEditingController(text: puzzle?.successText ?? '');
   final rewardXp = TextEditingController(text: '${puzzle?.rewardXp ?? 0}');
   var type = puzzle?.type ?? 'memory';
@@ -233,12 +242,47 @@ Future<void> showPuzzleEditorDialog(
                       labelText: 'Accepted answers, comma-separated',
                       border: OutlineInputBorder()),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
+                const Text('Ask the Guide — progressive hints', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
                 TextField(
                     controller: hint,
+                    maxLines: 2,
                     decoration: const InputDecoration(
-                        labelText: 'Hint (optional)', border: OutlineInputBorder())),
+                        labelText: 'Hint 1 — Nudge (subtle, never the answer)',
+                        border: OutlineInputBorder())),
                 const SizedBox(height: 12),
+                TextField(
+                    controller: hint2,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                        labelText: 'Hint 2 — Clue (stronger, points at the solution)',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(
+                    controller: hint3,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                        labelText: 'Hint 3 — Guide Me (explains how, not the final answer)',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(
+                    controller: answerReveal,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                        labelText: 'Reveal Answer text',
+                        helperText: 'A teaching moment — explain the answer AND why, never just '
+                            '"Answer: X." Only offered after every hint above has been shown.',
+                        border: OutlineInputBorder())),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: hintXpPenalty,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: 'XP penalty per hint level used',
+                      border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 20),
                 TextField(
                     controller: successText,
                     decoration: const InputDecoration(
@@ -248,7 +292,8 @@ Future<void> showPuzzleEditorDialog(
                   controller: rewardXp,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                      labelText: 'Reward XP', border: OutlineInputBorder()),
+                      labelText: 'Reward XP (full amount, before any hint penalty)',
+                      border: OutlineInputBorder()),
                 ),
               ]),
             ),
@@ -271,6 +316,10 @@ Future<void> showPuzzleEditorDialog(
       'accepted_answers':
           answers.text.split(',').map((a) => a.trim()).where((a) => a.isNotEmpty).toList(),
       'hint': hint.text.trim().isEmpty ? null : hint.text.trim(),
+      'hint2': hint2.text.trim().isEmpty ? null : hint2.text.trim(),
+      'hint3': hint3.text.trim().isEmpty ? null : hint3.text.trim(),
+      'answer_reveal_text': answerReveal.text.trim().isEmpty ? null : answerReveal.text.trim(),
+      'hint_xp_penalty': int.tryParse(hintXpPenalty.text.trim()) ?? 5,
       'success_text': successText.text.trim().isEmpty ? null : successText.text.trim(),
       'reward_xp': int.tryParse(rewardXp.text.trim()) ?? 0,
     };
@@ -281,4 +330,48 @@ Future<void> showPuzzleEditorDialog(
     await repo.updatePuzzle(puzzle.id, row);
   }
   ref.read(missionsRefreshProvider.notifier).bump();
+}
+
+/// Read-only walkthrough of every hint level exactly as
+/// [AskTheGuidePanel]/`TreasureMapScreen` would show them to a player, in
+/// order — spec: "The administrator should be able to preview all hint
+/// levels."
+Future<void> showPuzzleHintsPreviewDialog(BuildContext context, MissionPuzzle puzzle) async {
+  final levels = puzzle.hintLevels;
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Hint preview'),
+      content: SizedBox(
+        width: 380,
+        child: SingleChildScrollView(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(puzzle.prompt, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 16),
+            if (levels.isEmpty) const Text('No hints configured yet.', style: TextStyle(color: Colors.grey)),
+            for (var i = 0; i < levels.length; i++) ...[
+              Text(['Hint 1 — Nudge', 'Hint 2 — Clue', 'Hint 3 — Guide Me'][i],
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 4),
+              Text(levels[i]),
+              const SizedBox(height: 12),
+            ],
+            if ((puzzle.answerRevealText ?? '').trim().isNotEmpty) ...[
+              const Text('Reveal Answer',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: Colors.grey)),
+              const SizedBox(height: 4),
+              Text(puzzle.answerRevealText!),
+              const SizedBox(height: 12),
+            ],
+            Text('XP penalty per hint level: ${puzzle.hintXpPenalty} '
+                '(reward: ${puzzle.rewardXp} XP full, 0 XP if revealed)',
+                style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Close')),
+      ],
+    ),
+  );
 }

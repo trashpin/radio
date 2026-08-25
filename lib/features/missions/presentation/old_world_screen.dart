@@ -11,6 +11,7 @@ import 'package:explorer_os_mobile/features/missions/data/mission_repository.dar
 import 'package:explorer_os_mobile/features/missions/models/mission_character.dart';
 import 'package:explorer_os_mobile/features/missions/models/mission_puzzle.dart';
 import 'package:explorer_os_mobile/features/missions/models/old_world.dart';
+import 'package:explorer_os_mobile/features/missions/presentation/widgets/ask_the_guide_panel.dart';
 import 'package:explorer_os_mobile/features/missions/presentation/widgets/character_video_hero.dart';
 import 'package:explorer_os_mobile/features/missions/services/mission_narration_service.dart';
 import 'package:explorer_os_mobile/features/radio/design/radio_design.dart';
@@ -146,9 +147,11 @@ class _OldWorldScreenState extends ConsumerState<OldWorldScreen>
       case _Phase.quiz:
         return _QuizPhase(
           puzzle: _stopPuzzle!,
-          onDone: (correct) {
-            if (correct) {
-              ref.read(activeMissionControllerProvider.notifier).awardBonusXp(_stopPuzzle!.rewardXp);
+          onDone: (correct, hintsUsed, revealed) {
+            if (correct && !revealed) {
+              final awarded = (_stopPuzzle!.rewardXp - hintsUsed * _stopPuzzle!.hintXpPenalty)
+                  .clamp(0, _stopPuzzle!.rewardXp);
+              ref.read(activeMissionControllerProvider.notifier).awardBonusXp(awarded);
             }
             _afterQuiz(world);
           },
@@ -351,7 +354,11 @@ class _OldWorldContent extends StatelessWidget {
 class _QuizPhase extends StatefulWidget {
   const _QuizPhase({required this.puzzle, required this.onDone});
   final MissionPuzzle puzzle;
-  final void Function(bool correct) onDone;
+
+  /// [hintsUsed]/[revealed] let the caller compute the same reduced-XP
+  /// award `MissionPuzzleScreen` uses for the final puzzle — see
+  /// `_afterQuiz`'s call to `awardBonusXp`.
+  final void Function(bool correct, int hintsUsed, bool revealed) onDone;
 
   @override
   State<_QuizPhase> createState() => _QuizPhaseState();
@@ -360,11 +367,21 @@ class _QuizPhase extends StatefulWidget {
 class _QuizPhaseState extends State<_QuizPhase> {
   final _answer = TextEditingController();
   bool? _correct;
+  int _hintsUsed = 0;
+  bool _revealed = false;
 
   void _submit() {
     if (_correct != null) return;
     final correct = widget.puzzle.checkAnswer(_answer.text);
     setState(() => _correct = correct);
+  }
+
+  void _reveal() {
+    if (_correct != null) return;
+    setState(() {
+      _correct = true;
+      _revealed = true;
+    });
   }
 
   @override
@@ -402,6 +419,18 @@ class _QuizPhaseState extends State<_QuizPhase> {
               child: const Text('Answer', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
+          if (widget.puzzle.hintLevels.isNotEmpty) ...[
+            const SizedBox(height: RD.lg),
+            AskTheGuidePanel(
+              subjectId: 'hint:${widget.puzzle.id}',
+              hintLevels: widget.puzzle.hintLevels,
+              answerRevealText: widget.puzzle.answerRevealText,
+              hintsUsed: _hintsUsed,
+              onRequestHint: () => setState(() => _hintsUsed++),
+              onRevealAnswer:
+                  (widget.puzzle.answerRevealText ?? '').trim().isEmpty ? null : _reveal,
+            ),
+          ],
         ] else ...[
           GlassPanel(
             color: (_correct! ? RD.green : Colors.orange).withValues(alpha: 0.15),
@@ -425,7 +454,7 @@ class _QuizPhaseState extends State<_QuizPhase> {
             height: 52,
             child: FilledButton(
               style: FilledButton.styleFrom(backgroundColor: RD.amber, foregroundColor: Colors.black),
-              onPressed: () => widget.onDone(_correct!),
+              onPressed: () => widget.onDone(_correct!, _hintsUsed, _revealed),
               child: const Text('Continue', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
